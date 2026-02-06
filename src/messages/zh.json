@@ -1,0 +1,93 @@
+{
+  "appName": "kemo",
+  "nav": {
+    "newJob": "新建任务",
+    "jobs": "任务列表",
+    "login": "登录",
+    "logout": "退出",
+    "settings": "个人设置"
+  },
+  "login": {
+    "title": "欢迎回来",
+    "subtitle": "登录以管理访谈任务",
+    "email": "邮箱",
+    "password": "密码",
+    "signIn": "登录",
+    "signUp": "注册",
+    "signingIn": "登录中...",
+    "error": "登录失败"
+  },
+  "register": {
+    "title": "注册",
+    "subtitle": "创建账号开始使用",
+    "confirmPassword": "确认密码"
+  },
+  "new": {
+    "title": "创建任务",
+    "subtitle": "上传访谈音频进行转写",
+    "uploadLabel": "音频文件",
+    "titleLabel": "任务标题",
+    "submit": "创建任务",
+    "plan": "当前套餐",
+    "limit": "单文件限制",
+    "limitNote": "免费版单文件最多 50MB，超出请压缩/切片或升级 Pro。",
+    "uploading": "上传中...",
+    "missingFile": "请选择音频文件",
+    "uploadSuccess": "上传成功",
+    "uploadFailed": "上传失败",
+    "autoRedirect": "正在自动跳转到任务详情...",
+    "goToJob": "立即查看",
+    "retry": "重试",
+    "backToJobs": "返回任务列表"
+  },
+  "jobs": {
+    "title": "任务列表",
+    "emptyTitle": "还没有任务",
+    "emptyBody": "上传第一份访谈音频即可开始。",
+    "createCta": "创建任务"
+  },
+  "job": {
+    "status": "状态",
+    "transcript": "转写",
+    "icMemo": "IC 纪要",
+    "wechat": "公众号长文",
+    "termsReview": "术语确认",
+    "output": "输出",
+    "noTranscript": "转写尚未完成。",
+    "noMemo": "纪要尚未生成。",
+    "noTerms": "暂无待确认术语。",
+    "memoReady": "已生成，点击查看",
+    "viewIcMemo": "查看 IC 纪要",
+    "viewWechat": "查看公众号长文",
+    "icDialogDesc": "由 AI 生成的 IC Q&A 纪要",
+    "wechatDialogDesc": "由 AI 生成的公众号长文"
+  },
+  "terms": {
+    "title": "确认术语",
+    "confirm": "确认术语",
+    "pending": "待确认",
+    "accepted": "已确认",
+    "rejected": "已拒绝",
+    "confirmed": "术语已确认。",
+    "fuzzyTitle": "模糊词确认",
+    "fuzzyDesc": "以下术语置信度较低，请仔细确认拼写和含义。",
+    "confidentTitle": "高置信度术语",
+    "needsReview": "需确认",
+    "undoReject": "撤销",
+    "editPlaceholder": "修改术语拼写...",
+    "contextLabel": "上下文"
+  },
+  "plan": {
+    "free": "免费版",
+    "pro": "专业版"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "loading": "加载中",
+    "error": "错误",
+    "copy": "复制",
+    "copied": "已复制",
+    "close": "关闭"
+  }
+}

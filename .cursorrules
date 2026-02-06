@@ -1,0 +1,11 @@
+# KEMO Rules
+
+- Stack is fixed: Next.js App Router + TypeScript + shadcn/ui + Tailwind + next-intl + Supabase + Stripe.
+- Do not introduce unnecessary frameworks or state management libraries.
+- Do not change the agreed architecture (async jobs, providers, pipeline).
+- Do not commit or expose secrets. Keep keys in server-only env.
+- Never use SUPABASE_SERVICE_ROLE_KEY in the browser.
+- Keep /src structure clean and consistent.
+- Use API response format: { ok, data } or { ok: false, error }.
+- Long tasks must not run in HTTP handlers in production.
+

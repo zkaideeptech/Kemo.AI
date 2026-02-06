@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# test audio files
+test-audio.mp3
+*.m4a
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

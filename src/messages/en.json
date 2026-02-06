@@ -1,0 +1,93 @@
+{
+  "appName": "kemo",
+  "nav": {
+    "newJob": "New job",
+    "jobs": "Jobs",
+    "login": "Login",
+    "logout": "Logout",
+    "settings": "Settings"
+  },
+  "login": {
+    "title": "Welcome back",
+    "subtitle": "Sign in to manage your interviews",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signingIn": "Signing in...",
+    "error": "Unable to sign in"
+  },
+  "register": {
+    "title": "Sign up",
+    "subtitle": "Create an account to get started",
+    "confirmPassword": "Confirm password"
+  },
+  "new": {
+    "title": "Create a job",
+    "subtitle": "Upload interview audio for transcription",
+    "uploadLabel": "Audio file",
+    "titleLabel": "Job title",
+    "submit": "Create job",
+    "plan": "Current plan",
+    "limit": "Single file limit",
+    "limitNote": "Free plan max 50MB. Compress/slice or upgrade to Pro.",
+    "uploading": "Uploading...",
+    "missingFile": "Please select an audio file",
+    "uploadSuccess": "Upload successful",
+    "uploadFailed": "Upload failed",
+    "autoRedirect": "Redirecting to job details...",
+    "goToJob": "View now",
+    "retry": "Retry",
+    "backToJobs": "Back to jobs"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "emptyTitle": "No jobs yet",
+    "emptyBody": "Upload your first interview audio to get started.",
+    "createCta": "Create a job"
+  },
+  "job": {
+    "status": "Status",
+    "transcript": "Transcript",
+    "icMemo": "IC Memo",
+    "wechat": "WeChat Article",
+    "termsReview": "Terms Review",
+    "output": "Output",
+    "noTranscript": "Transcript not ready yet.",
+    "noMemo": "Memo not ready yet.",
+    "noTerms": "No terms awaiting review.",
+    "memoReady": "Generated. Click to view.",
+    "viewIcMemo": "View IC Memo",
+    "viewWechat": "View WeChat Article",
+    "icDialogDesc": "AI-generated IC Q&A memo",
+    "wechatDialogDesc": "AI-generated WeChat long-form article"
+  },
+  "terms": {
+    "title": "Review terms",
+    "confirm": "Confirm terms",
+    "pending": "Pending",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "confirmed": "Terms confirmed.",
+    "fuzzyTitle": "Fuzzy terms",
+    "fuzzyDesc": "These terms have low confidence. Please review spelling and meaning carefully.",
+    "confidentTitle": "High-confidence terms",
+    "needsReview": "Review",
+    "undoReject": "Undo",
+    "editPlaceholder": "Edit term spelling...",
+    "contextLabel": "Context"
+  },
+  "plan": {
+    "free": "Free",
+    "pro": "Pro"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading",
+    "error": "Error",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close"
+  }
+}
