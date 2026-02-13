@@ -39,6 +39,8 @@ yarn-error.log*
 # test audio files
 test-audio.mp3
 *.m4a
+outputs/
+__pycache__/
 
 # typescript
 *.tsbuildinfo
