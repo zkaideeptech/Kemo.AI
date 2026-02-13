@@ -1,48 +1,220 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f7f7f6;
-  --foreground: #0f141a;
-  --card: #ffffff;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --primary: #0f172a;
-  --primary-foreground: #ffffff;
-  --accent: #f1f5f9;
-  --accent-foreground: #0f172a;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --font-sans: \"Avenir Next\", \"PingFang SC\", \"SF Pro Text\", \"Segoe UI\",
-    ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace;
+@theme {
+  --color-background: #040711;
+  --color-foreground: #f8fafc;
+  --color-card: rgba(255, 255, 255, 0.03);
+  --color-card-foreground: #f8fafc;
+  --color-popover: #040711;
+  --color-popover-foreground: #f8fafc;
+  --color-primary: #39FF14;
+  --color-primary-foreground: #000000;
+  --color-secondary: rgba(57, 255, 20, 0.1);
+  --color-secondary-foreground: #39FF14;
+  --color-muted: rgba(248, 250, 252, 0.05);
+  --color-muted-foreground: #94a3b8;
+  --color-accent: rgba(57, 255, 20, 0.1);
+  --color-accent-foreground: #39FF14;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #f8fafc;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-input: rgba(255, 255, 255, 0.1);
+  --color-ring: #39FF14;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  --radius-sm: 0.5rem;
+  --font-sans: "Inter", "Avenir Next", "PingFang SC", system-ui, sans-serif;
 }
 
 * {
-  border-color: var(--border);
+  border-color: var(--color-border);
+}
+
+@keyframes float {
+  0% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(15px, 25px);
+  }
+
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes pulse-slow {
+  0% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+}
+
+@keyframes shutter-left {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+}
+
+@keyframes shutter-right {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(100%);
+    visibility: hidden;
+  }
+}
+
+@keyframes logo-reveal {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0;
+  }
+
+  20% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+  }
+
+  80% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@keyframes content-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-shutter-left {
+  animation: shutter-left 1.2s cubic-bezier(0.85, 0, 0.15, 1) forwards;
+}
+
+.animate-shutter-right {
+  animation: shutter-right 1.2s cubic-bezier(0.85, 0, 0.15, 1) forwards;
+}
+
+.animate-logo-reveal {
+  animation: logo-reveal 2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-content-fade-in {
+  animation: content-fade-in 0.8s cubic-bezier(0.4, 0, 0.2, 1) 1.2s both;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-dark {
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.neon-glow {
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.5), 0 0 20px rgba(57, 255, 20, 0.3);
+}
+
+.neon-border {
+  box-shadow: 0 0 15px rgba(57, 255, 20, 0.1), inset 0 0 15px rgba(57, 255, 20, 0.1);
+  border-color: rgba(57, 255, 20, 0.3);
+}
+
+.neon-button {
+  background: linear-gradient(135deg, #39FF14 0%, #10b981 100%);
+  box-shadow: 0 4px 20px rgba(57, 255, 20, 0.3);
+  transition: all 0.3s ease;
+}
+
+.neon-button:hover {
+  box-shadow: 0 4px 25px rgba(57, 255, 20, 0.5);
+  transform: translateY(-2px);
 }
 
 body {
-  background: var(--background);
-  background-image: radial-gradient(
-      circle at 20% 20%,
-      rgba(15, 23, 42, 0.06),
-      transparent 45%
-    ),
-    radial-gradient(circle at 80% 10%, rgba(14, 116, 144, 0.08), transparent 40%);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+  background: var(--color-background);
+  background-image:
+    linear-gradient(rgba(57, 255, 20, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57, 255, 20, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  color: var(--color-foreground);
+  font-family: var(--color-font-sans);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: -20%;
+  left: -10%;
+  width: 50%;
+  height: 60%;
+  background: radial-gradient(circle, rgba(57, 255, 20, 0.06), transparent 70%);
+  z-index: -1;
+  animation: float 15s infinite ease-in-out;
+  pointer-events: none;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  bottom: -10%;
+  right: -5%;
+  width: 40%;
+  height: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.06), transparent 70%);
+  z-index: -1;
+  animation: float 20s infinite ease-in-out reverse;
+  pointer-events: none;
+}
+
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.015;
+  z-index: 50;
+  pointer-events: none;
 }

@@ -2,6 +2,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import { runJobPipeline } from "@/lib/workflows/jobPipeline";
 
+export type QueueRunSummary = {
+  scanned: number;
+  processed: number;
+  failed: number;
+};
+
 export async function enqueueJob(jobId: string) {
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase
@@ -14,7 +20,7 @@ export async function enqueueJob(jobId: string) {
   }
 }
 
-export async function runQueuedJobs(limit = 3) {
+export async function runQueuedJobs(limit = 3): Promise<QueueRunSummary> {
   const supabase = createSupabaseAdminClient();
 
   const { data: jobs, error } = await supabase
@@ -28,10 +34,16 @@ export async function runQueuedJobs(limit = 3) {
     throw new Error(error.message);
   }
 
-  for (const job of jobs || []) {
+  const queuedJobs = jobs || [];
+  let processed = 0;
+  let failed = 0;
+
+  for (const job of queuedJobs) {
     try {
       await runJobPipeline(job.id);
+      processed += 1;
     } catch (err: unknown) {
+      failed += 1;
       const message = err instanceof Error ? err.message : "Job failed";
       await supabase
         .from("jobs")
@@ -42,4 +54,10 @@ export async function runQueuedJobs(limit = 3) {
         .eq("id", job.id);
     }
   }
+
+  return {
+    scanned: queuedJobs.length,
+    processed,
+    failed,
+  };
 }

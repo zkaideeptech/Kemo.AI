@@ -7,14 +7,6 @@ import { useTranslations } from "next-intl";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useJobRealtime } from "@/hooks/useJobRealtime";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
 export type JobRow = {
@@ -60,33 +52,43 @@ export function JobsList({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Title</TableHead>
-          <TableHead>{t("job.status")}</TableHead>
-          <TableHead>Created</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {jobs.map((job) => (
-          <TableRow key={job.id}>
-            <TableCell>
-              <Link
-                href={`/${locale}/app/jobs/${job.id}`}
-                className="font-medium hover:underline"
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {jobs.map((job) => (
+        <Link
+          key={job.id}
+          href={`/${locale}/app/jobs/${job.id}`}
+          className="group relative block"
+        >
+          <div className="relative h-full overflow-hidden rounded-xl border border-border/40 bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.1)] hover:shadow-primary/10">
+            <div className="flex items-center justify-between mb-4">
+              <Badge
+                variant="secondary"
+                className={`px-2.5 py-0.5 text-xs font-semibold tracking-wide transition-colors duration-300
+                  ${job.status === 'completed' ? 'bg-primary/10 text-green-700 group-hover:bg-primary group-hover:text-primary-foreground' : ''}
+                  ${job.status === 'processing' ? 'bg-blue-50 text-blue-700 animate-pulse' : ''}
+                  ${job.status === 'failed' ? 'bg-red-50 text-red-700' : ''}
+                `}
               >
-                {job.title || `Job ${job.id.slice(0, 6)}`}
-              </Link>
-            </TableCell>
-            <TableCell>
-              <Badge variant="secondary">{job.status}</Badge>
-            </TableCell>
-            <TableCell>{new Date(job.created_at).toLocaleString()}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+                {job.status}
+              </Badge>
+              <span className="text-xs text-muted-foreground/60 font-mono">
+                {new Date(job.created_at).toLocaleDateString()}
+              </span>
+            </div>
+
+            <h3 className="text-lg font-bold tracking-tight text-foreground group-hover:text-primary transition-colors duration-200 line-clamp-2 mb-2">
+              {job.title || `Untitled Job`}
+            </h3>
+
+            <p className="text-xs text-muted-foreground font-mono opacity-50 truncate">
+              ID: {job.id}
+            </p>
+
+            <div className="absolute inset-0 border-2 border-primary/0 rounded-xl transition-all duration-300 group-hover:border-primary/10 pointer-events-none"></div>
+          </div>
+        </Link>
+      ))}
+    </div>
   );
 }
 

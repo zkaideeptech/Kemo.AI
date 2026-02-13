@@ -56,55 +56,61 @@ export function AppHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <div className="flex items-center gap-6">
-          <Link href={`/${locale}`} className="text-lg font-semibold">
+    <header className="sticky top-0 z-40 w-full glass-dark border-b border-white/5">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <div className="flex items-center gap-8">
+          <Link href={`/${locale}`} className="text-xl font-bold tracking-tight hover:text-primary transition-colors duration-300">
             {t("appName")}
           </Link>
           {hasSession && (
-            <nav className="hidden items-center gap-4 text-sm text-muted md:flex">
-              <Link href={`/${locale}/app/new`} className="hover:text-foreground">
+            <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
+              <Link
+                href={`/${locale}/app/new`}
+                className="transition-colors hover:text-foreground hover:drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]"
+              >
                 {t("nav.newJob")}
               </Link>
-              <Link href={`/${locale}/app/jobs`} className="hover:text-foreground">
+              <Link
+                href={`/${locale}/app/jobs`}
+                className="transition-colors hover:text-foreground hover:drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]"
+              >
                 {t("nav.jobs")}
               </Link>
             </nav>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <LanguageSwitcher />
           {hasSession ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="sm" className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" className="flex items-center gap-2 rounded-full border border-border/50 hover:bg-muted hover:border-primary/50 transition-all">
                   <User className="h-4 w-4" />
-                  <span className="max-w-[140px] truncate text-xs">
+                  <span className="max-w-[140px] truncate text-xs font-medium">
                     {userEmail || "用户"}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem className="text-xs text-muted" disabled>
+              <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/50 p-2 shadow-xl backdrop-blur-sm">
+                <DropdownMenuItem className="mb-1 rounded-lg text-xs text-muted-foreground" disabled>
                   {userEmail}
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
+                <DropdownMenuItem asChild className="rounded-lg focus:bg-primary/10 focus:text-foreground cursor-pointer">
                   <Link href={`/${locale}/app/settings`}>
                     {t("nav.settings") || "个人设置"}
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={signOut} className="text-destructive">
+                <DropdownMenuItem onClick={signOut} className="rounded-lg text-destructive focus:bg-destructive/10 cursor-pointer">
                   {t("nav.logout")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="flex items-center gap-2">
-              <Button asChild variant="secondary" size="sm">
+            <div className="flex items-center gap-3">
+              <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <Link href={`/${locale}/login`}>{t("nav.login")}</Link>
               </Button>
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all duration-300 font-semibold">
                 <Link href={`/${locale}/register`}>{t("login.signUp")}</Link>
               </Button>
             </div>

@@ -3,6 +3,7 @@ import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
+import { LogoSplash } from "@/components/logo-splash";
 import { locales, type Locale } from "@/i18n/config";
 
 export default async function LocaleLayout({
@@ -24,12 +25,15 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider messages={messages}>
-      <div className="min-h-screen bg-background">
-        <AppHeader />
-        <main className="mx-auto w-full max-w-6xl px-6 py-8">
-          {children}
-        </main>
-      </div>
+      <LogoSplash>
+        <div className="min-h-screen bg-background relative">
+          <div className="noise-overlay" />
+          <AppHeader />
+          <main className="mx-auto w-full max-w-6xl px-6 py-8 relative z-10">
+            {children}
+          </main>
+        </div>
+      </LogoSplash>
     </NextIntlClientProvider>
   );
 }

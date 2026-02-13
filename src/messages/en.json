@@ -1,5 +1,10 @@
 {
   "appName": "kemo",
+  "appDescription": "Interview audio to transcript, IC memo, and WeChat article.",
+  "home": {
+    "getStarted": "Get Started",
+    "description": "Choose an action to begin your workflow."
+  },
   "nav": {
     "newJob": "New job",
     "jobs": "Jobs",

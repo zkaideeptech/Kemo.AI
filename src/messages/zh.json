@@ -1,5 +1,10 @@
 {
   "appName": "kemo",
+  "appDescription": "每个人生都值得被记载（顶级特邀ai编辑）",
+  "home": {
+    "getStarted": "开始使用",
+    "description": "选择一个操作开始您的工作流。"
+  },
   "nav": {
     "newJob": "新建任务",
     "jobs": "任务列表",
