@@ -24,8 +24,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PlanTier } from "@/lib/billing/plan";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
+
+const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
+
+function sanitizeFileName(name: string) {
+  return name
+    .replace(/[^\w.\-]/g, "_")
+    .replace(/_+/g, "_");
+}
 
 /**
  * 新建任务表单
@@ -65,22 +74,62 @@ export function NewJobForm({
       return;
     }
 
+    const fileSizeMb = file.size / (1024 * 1024);
+    if (fileSizeMb > plan.maxFileSizeMb) {
+      setError(`File exceeds ${plan.maxFileSizeMb}MB limit`);
+      return;
+    }
+
     setUploadState("uploading");
     setError(null);
 
-    const formData = new FormData();
-    formData.append("title", title);
-    formData.append("file", file);
-
     try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setError("Not authenticated");
+        setUploadState("error");
+        return;
+      }
+
+      const safeFileName = sanitizeFileName(file.name);
+      const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
+
+      const { error: storageError } = await supabase.storage
+        .from(AUDIO_BUCKET)
+        .upload(storagePath, file, {
+          contentType: file.type || "audio/mpeg",
+          upsert: false,
+        });
+
+      if (storageError) {
+        setError(storageError.message || t("new.uploadFailed") || "Upload failed");
+        setUploadState("error");
+        return;
+      }
+
       const res = await fetch(`/api/jobs`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          storagePath,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || null,
+        }),
       });
 
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
+        // 元数据写入失败时尝试回滚已上传文件
+        await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {
+          // ignore cleanup failure
+        });
         setError(json?.error?.message || t("new.uploadFailed") || "Upload failed");
         setUploadState("error");
         return;

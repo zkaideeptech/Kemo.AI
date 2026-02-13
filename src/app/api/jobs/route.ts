@@ -13,10 +13,23 @@ import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import type { Database } from "@/lib/supabase/types";
 
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
+type JsonUploadPayload = {
+  title?: string;
+  storagePath?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+};
 
 const LOG = "[API /jobs]";
 
 export const runtime = "nodejs";
+
+function sanitizeFileName(name: string) {
+  return name
+    .replace(/[^\w.\-]/g, "_")
+    .replace(/_+/g, "_");
+}
 
 /**
  * 获取当前用户的任务列表
@@ -49,7 +62,10 @@ export async function GET() {
 }
 
 /**
- * 创建新任务并上传音频文件
+ * 创建新任务
+ * 支持两种模式：
+ * 1) multipart/form-data: 服务端接收文件并上传到 Storage（本地/小文件兼容）
+ * 2) application/json: 客户端已直传 Storage，服务端仅写入任务元数据（生产推荐）
  */
 export async function POST(req: Request) {
   console.log(`${LOG} POST 创建任务`);
@@ -95,18 +111,64 @@ export async function POST(req: Request) {
     }
   }
 
-  // 解析上传内容
-  const formData = await req.formData();
-  const file = formData.get("file");
-  const title = formData.get("title")?.toString() || null;
+  const bucket = process.env.SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
+  const contentType = req.headers.get("content-type") || "";
 
-  if (!(file instanceof File)) {
-    console.log(`${LOG} ✗ 缺少音频文件`);
-    return jsonError("invalid_file", "Missing audio file", { status: 400 });
+  let title: string | null = null;
+  let fileName = "";
+  let fileSize = 0;
+  let mimeType = "";
+  let storagePath = "";
+  let uploadedByClient = false;
+  let uploadedFile: File | null = null;
+
+  if (contentType.includes("application/json")) {
+    uploadedByClient = true;
+
+    const body = (await req.json()) as JsonUploadPayload;
+    title = typeof body.title === "string" ? body.title : null;
+    fileName = typeof body.fileName === "string" ? body.fileName : "";
+    storagePath = typeof body.storagePath === "string" ? body.storagePath : "";
+    mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
+    fileSize = Number(body.fileSize || 0);
+
+    if (!fileName || !storagePath || !Number.isFinite(fileSize) || fileSize <= 0) {
+      console.log(`${LOG} ✗ JSON payload 非法`);
+      return jsonError("invalid_payload", "Invalid upload metadata", { status: 400 });
+    }
+
+    if (!storagePath.startsWith(`${user.id}/`)) {
+      console.log(`${LOG} ✗ storagePath 不属于当前用户: ${storagePath}`);
+      return jsonError("invalid_payload", "Invalid storage path", { status: 400 });
+    }
+
+    // 客户端直传模式：先验证文件确实已存在，避免写入坏数据
+    const { error: verifyError } = await admin.storage
+      .from(bucket)
+      .createSignedUrl(storagePath, 60);
+
+    if (verifyError) {
+      console.log(`${LOG} ✗ 直传文件不存在: ${verifyError.message}`);
+      return jsonError("upload_missing", "Uploaded file not found in storage", { status: 400 });
+    }
+  } else {
+    const formData = await req.formData();
+    const fileEntry = formData.get("file");
+    title = formData.get("title")?.toString() || null;
+
+    if (!(fileEntry instanceof File)) {
+      console.log(`${LOG} ✗ 缺少音频文件`);
+      return jsonError("invalid_file", "Missing audio file", { status: 400 });
+    }
+
+    uploadedFile = fileEntry;
+    fileName = fileEntry.name;
+    fileSize = fileEntry.size;
+    mimeType = fileEntry.type || "";
   }
 
-  const fileSizeMb = file.size / (1024 * 1024);
-  console.log(`${LOG} 文件: ${file.name} / ${fileSizeMb.toFixed(2)}MB / ${file.type}`);
+  const fileSizeMb = fileSize / (1024 * 1024);
+  console.log(`${LOG} 文件: ${fileName} / ${fileSizeMb.toFixed(2)}MB / ${mimeType || "unknown"}`);
 
   // 权益检查：文件大小限制
   if (fileSizeMb > plan.maxFileSizeMb) {
@@ -139,34 +201,34 @@ export async function POST(req: Request) {
 
   console.log(`${LOG} ✓ Job 已创建: ${job.id}`);
 
-  // 上传音频到 Storage
-  // 清洗文件名：Supabase Storage 不支持中文/空格等特殊字符
-  const safeFileName = file.name
-    .replace(/[^\w.\-]/g, "_")  // 非字母数字点横线全部替换为下划线
-    .replace(/_+/g, "_");       // 连续下划线合并
-  const bucket = process.env.SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
-  const storagePath = `${user.id}/${job.id}/${safeFileName}`;
-  console.log(`${LOG} 原始文件名: ${file.name} → 安全文件名: ${safeFileName}`);
-  console.log(`${LOG} 上传音频: ${bucket}/${storagePath} (${fileSizeMb.toFixed(2)}MB)`);
+  if (!uploadedByClient && uploadedFile) {
+    // multipart 模式：服务端负责上传（本地开发兼容）
+    const safeFileName = sanitizeFileName(fileName);
+    storagePath = `${user.id}/${job.id}/${safeFileName}`;
+    console.log(`${LOG} 原始文件名: ${fileName} → 安全文件名: ${safeFileName}`);
+    console.log(`${LOG} 上传音频: ${bucket}/${storagePath} (${fileSizeMb.toFixed(2)}MB)`);
 
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
-  const { error: uploadError } = await admin.storage
-    .from(bucket)
-    .upload(storagePath, fileBuffer, {
-      contentType: file.type || "audio/mpeg",
-      upsert: false,
-    });
+    const fileBuffer = Buffer.from(await uploadedFile.arrayBuffer());
+    const { error: uploadError } = await admin.storage
+      .from(bucket)
+      .upload(storagePath, fileBuffer, {
+        contentType: mimeType || "audio/mpeg",
+        upsert: false,
+      });
 
-  if (uploadError) {
-    console.error(`${LOG} ✗ Storage 上传失败:`, uploadError.message);
-    await admin
-      .from("jobs")
-      .update({ status: JOB_STATUS.failed, error_message: uploadError.message })
-      .eq("id", job.id);
-    return jsonError("upload_failed", uploadError.message, { status: 500 });
+    if (uploadError) {
+      console.error(`${LOG} ✗ Storage 上传失败:`, uploadError.message);
+      await admin
+        .from("jobs")
+        .update({ status: JOB_STATUS.failed, error_message: uploadError.message })
+        .eq("id", job.id);
+      return jsonError("upload_failed", uploadError.message, { status: 500 });
+    }
+
+    console.log(`${LOG} ✓ 音频上传成功`);
+  } else {
+    console.log(`${LOG} ✓ 使用客户端直传音频: ${bucket}/${storagePath}`);
   }
-
-  console.log(`${LOG} ✓ 音频上传成功`);
 
   // 创建 audio_assets 记录
   const { data: audioAsset, error: audioError } = await admin
@@ -175,9 +237,9 @@ export async function POST(req: Request) {
       user_id: user.id,
       job_id: job.id,
       storage_path: storagePath,
-      file_name: file.name,
-      file_size: file.size,
-      mime_type: file.type,
+      file_name: fileName,
+      file_size: fileSize,
+      mime_type: mimeType || null,
     })
     .select("*")
     .single();
