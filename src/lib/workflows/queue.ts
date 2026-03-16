@@ -1,6 +1,9 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import { runJobPipeline } from "@/lib/workflows/jobPipeline";
+import type { Database } from "@/lib/supabase/types";
+
+type QueuedJobRow = Pick<Database["public"]["Tables"]["jobs"]["Row"], "id">;
 
 export type QueueRunSummary = {
   scanned: number;
@@ -34,7 +37,7 @@ export async function runQueuedJobs(limit = 3): Promise<QueueRunSummary> {
     throw new Error(error.message);
   }
 
-  const queuedJobs = jobs || [];
+  const queuedJobs = (jobs || []) as QueuedJobRow[];
   let processed = 0;
   let failed = 0;
 

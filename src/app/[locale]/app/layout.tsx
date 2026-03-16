@@ -10,6 +10,5 @@ export default async function AppLayout({
   const { locale } = await params;
   await requireUser(locale);
 
-  return <div className="space-y-6">{children}</div>;
+  return <div className="workspace-app-shell">{children}</div>;
 }
-

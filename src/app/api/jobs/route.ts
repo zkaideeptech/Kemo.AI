@@ -10,11 +10,18 @@ import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/sup
 import { jsonError, jsonOk } from "@/lib/api/response";
 import { getUserPlan, FREE_MAX_JOBS_PER_MONTH } from "@/lib/billing/plan";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
+import { ensureDefaultProject } from "@/lib/workspace";
 import type { Database } from "@/lib/supabase/types";
 
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
+type AudioAssetRow = Database["public"]["Tables"]["audio_assets"]["Row"];
 type JsonUploadPayload = {
   title?: string;
+  projectId?: string;
+  guestName?: string;
+  interviewerName?: string;
+  sourceType?: string;
+  captureMode?: string;
   storagePath?: string;
   fileName?: string;
   fileSize?: number;
@@ -58,7 +65,7 @@ export async function GET() {
   }
 
   console.log(`${LOG} ✓ 返回 ${data?.length || 0} 个任务`);
-  return jsonOk({ jobs: data });
+  return jsonOk({ jobs: (data || []) as JobRow[] });
 }
 
 /**
@@ -115,6 +122,11 @@ export async function POST(req: Request) {
   const contentType = req.headers.get("content-type") || "";
 
   let title: string | null = null;
+  let projectId: string | null = null;
+  let guestName: string | null = null;
+  let interviewerName: string | null = null;
+  let sourceType = "audio_upload";
+  let captureMode = "upload";
   let fileName = "";
   let fileSize = 0;
   let mimeType = "";
@@ -127,6 +139,11 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as JsonUploadPayload;
     title = typeof body.title === "string" ? body.title : null;
+    projectId = typeof body.projectId === "string" ? body.projectId : null;
+    guestName = typeof body.guestName === "string" ? body.guestName : null;
+    interviewerName = typeof body.interviewerName === "string" ? body.interviewerName : null;
+    sourceType = typeof body.sourceType === "string" ? body.sourceType : sourceType;
+    captureMode = typeof body.captureMode === "string" ? body.captureMode : captureMode;
     fileName = typeof body.fileName === "string" ? body.fileName : "";
     storagePath = typeof body.storagePath === "string" ? body.storagePath : "";
     mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
@@ -155,6 +172,11 @@ export async function POST(req: Request) {
     const formData = await req.formData();
     const fileEntry = formData.get("file");
     title = formData.get("title")?.toString() || null;
+    projectId = formData.get("projectId")?.toString() || null;
+    guestName = formData.get("guestName")?.toString() || null;
+    interviewerName = formData.get("interviewerName")?.toString() || null;
+    sourceType = formData.get("sourceType")?.toString() || sourceType;
+    captureMode = formData.get("captureMode")?.toString() || captureMode;
 
     if (!(fileEntry instanceof File)) {
       console.log(`${LOG} ✗ 缺少音频文件`);
@@ -165,6 +187,11 @@ export async function POST(req: Request) {
     fileName = fileEntry.name;
     fileSize = fileEntry.size;
     mimeType = fileEntry.type || "";
+  }
+
+  if (!projectId) {
+    const defaultProject = await ensureDefaultProject(supabase, user.id);
+    projectId = defaultProject.id;
   }
 
   const fileSizeMb = fileSize / (1024 * 1024);
@@ -186,8 +213,14 @@ export async function POST(req: Request) {
     .from("jobs")
     .insert({
       user_id: user.id,
+      project_id: projectId,
       title,
+      guest_name: guestName,
+      interviewer_name: interviewerName,
       status: JOB_STATUS.pending,
+      source_type: sourceType,
+      capture_mode: captureMode,
+      started_at: new Date().toISOString(),
     })
     .select("*")
     .single();
@@ -231,7 +264,7 @@ export async function POST(req: Request) {
   }
 
   // 创建 audio_assets 记录
-  const { data: audioAsset, error: audioError } = await admin
+  const { data: audioAssetData, error: audioError } = await admin
     .from("audio_assets")
     .insert({
       user_id: user.id,
@@ -243,6 +276,8 @@ export async function POST(req: Request) {
     })
     .select("*")
     .single();
+
+  const audioAsset = audioAssetData as AudioAssetRow | null;
 
   if (audioError || !audioAsset) {
     console.error(`${LOG} ✗ audio_assets 写入失败:`, audioError?.message);
@@ -269,5 +304,11 @@ export async function POST(req: Request) {
 
   console.log(`${LOG} ✓ 任务创建完成: jobId=${job.id}`);
 
-  return jsonOk({ jobId: job.id });
+  return jsonOk({
+    jobId: job.id,
+    job: {
+      ...job,
+      audio_asset_id: audioAsset.id,
+    } as JobRow,
+  });
 }

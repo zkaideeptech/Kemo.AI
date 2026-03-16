@@ -33,7 +33,13 @@ export function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="secondary" size="sm">
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          id="language-switcher-trigger"
+          aria-label="Language"
+        >
           {locale.toUpperCase()}
         </Button>
       </DropdownMenuTrigger>
@@ -44,4 +50,3 @@ export function LanguageSwitcher() {
     </DropdownMenu>
   );
 }
-

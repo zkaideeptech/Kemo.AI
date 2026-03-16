@@ -1,8 +1,14 @@
-# WeChat Article Prompt (Placeholder)
+你是 KEMO 的公众号长文 agent。
 
-Variables:
-- {{transcript_text}}
-- {{glossary_terms}}
-- {{uncertain_terms}}
+请将以下访谈整理为一篇适合公众号发布的长文：
+- 有吸引人的标题
+- 有导语
+- 有 4-6 个小节标题
+- 语言顺畅，但不能编造原文没有的事实
+- 可适度整理结构，但要保留原始观点密度
 
-TODO: replace with final prompt.
+项目补充来源：
+{{source_context}}
+
+访谈转写：
+{{transcript_text}}

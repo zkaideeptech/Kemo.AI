@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { User } from "lucide-react";
 
@@ -25,35 +26,69 @@ import {
 
 export function AppHeader() {
   const locale = useLocale();
+  const pathname = usePathname();
   const t = useTranslations();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [hasSession, setHasSession] = useState(false);
 
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
+    let unsubscribed = false;
+    let subscription:
+      | {
+          unsubscribe: () => void;
+        }
+      | null = null;
+
+    let supabase: ReturnType<typeof createSupabaseBrowserClient>;
+    try {
+      supabase = createSupabaseBrowserClient();
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Supabase client unavailable in AppHeader:", error);
+      }
+      return;
+    }
 
     // 首次加载读取 session
     supabase.auth.getSession().then(({ data }) => {
+      if (unsubscribed) {
+        return;
+      }
       setHasSession(Boolean(data.session));
       setUserEmail(data.session?.user?.email || null);
     });
 
     // 监听登录/退出事件，实时更新 Header 状态
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (unsubscribed) {
+        return;
+      }
       setHasSession(Boolean(session));
       setUserEmail(session?.user?.email || null);
     });
+    subscription = data.subscription;
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribed = true;
+      subscription?.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Supabase signOut skipped:", error);
+      }
+    }
     window.location.href = `/${locale}/login`;
   };
+
+  if (pathname?.includes(`/${locale}/app`)) {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full glass-dark border-b border-white/5">
@@ -84,7 +119,13 @@ export function AppHeader() {
           {hasSession ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="flex items-center gap-2 rounded-full border border-border/50 hover:bg-muted hover:border-primary/50 transition-all">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  id="user-menu-trigger"
+                  className="flex items-center gap-2 rounded-full border border-border/50 hover:bg-muted hover:border-primary/50 transition-all"
+                >
                   <User className="h-4 w-4" />
                   <span className="max-w-[140px] truncate text-xs font-medium">
                     {userEmail || "用户"}

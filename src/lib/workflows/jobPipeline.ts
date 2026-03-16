@@ -10,7 +10,15 @@ import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import { startTranscription, pollResult } from "@/lib/providers/asrProvider";
 import { extractTerms } from "@/lib/providers/termProvider";
-import { generateIcQa, generateWeChatArticle } from "@/lib/providers/llmProvider";
+import { generateArtifactText, generateIcQa, generateWeChatArticle } from "@/lib/providers/llmProvider";
+import type { Database, Json } from "@/lib/supabase/types";
+
+type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
+type AudioAssetRow = Database["public"]["Tables"]["audio_assets"]["Row"];
+type TranscriptRow = Database["public"]["Tables"]["transcripts"]["Row"];
+type GlossaryTermRow = Pick<Database["public"]["Tables"]["glossary_terms"]["Row"], "term" | "normalized_term">;
+type TermOccurrenceRow = Database["public"]["Tables"]["term_occurrences"]["Row"];
+type MemoRow = Database["public"]["Tables"]["memos"]["Row"];
 
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 const DEFAULT_POLL_MAX_ATTEMPTS = 120;
@@ -18,28 +26,6 @@ const LOG = "[Pipeline]";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * 转录完成后删除原始音频文件（宪法第十三条）
- */
-async function deleteAudioAfterTranscription(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  bucket: string,
-  storagePath: string,
-  audioAssetId: string
-) {
-  try {
-    console.log(`${LOG} 🗑 删除原始音频: ${storagePath}`);
-    await supabase.storage.from(bucket).remove([storagePath]);
-    await supabase
-      .from("audio_assets")
-      .update({ storage_path: `deleted:${storagePath}` })
-      .eq("id", audioAssetId);
-    console.log(`${LOG} ✓ 音频已删除`);
-  } catch (err) {
-    console.error(`${LOG} ⚠ 音频删除失败（不影响主流程）:`, err);
-  }
 }
 
 /**
@@ -55,11 +41,13 @@ export async function runJobPipeline(jobId: string) {
   const supabase = createSupabaseAdminClient();
 
   // ── 加载 Job ──
-  const { data: job, error: jobError } = await supabase
+  const { data: jobData, error: jobError } = await supabase
     .from("jobs")
     .select("*")
     .eq("id", jobId)
     .single();
+
+  const job = jobData as JobRow | null;
 
   if (jobError || !job) {
     console.error(`${LOG} ✗ Job 不存在: ${jobError?.message}`);
@@ -75,11 +63,13 @@ export async function runJobPipeline(jobId: string) {
   console.log(`${LOG} Job: ${jobId.slice(0, 8)}... / User: ${userId.slice(0, 8)}... / Status: ${job.status}`);
 
   // ── 加载音频资源 ──
-  const { data: audioAsset } = await supabase
+  const { data: audioAssetData } = await supabase
     .from("audio_assets")
     .select("*")
     .eq("job_id", jobId)
     .maybeSingle();
+
+  const audioAsset = audioAssetData as AudioAssetRow | null;
 
   if (!audioAsset) {
     console.error(`${LOG} ✗ 音频资源不存在`);
@@ -93,11 +83,13 @@ export async function runJobPipeline(jobId: string) {
   // ================================================================
   // 阶段 1：ASR 转写
   // ================================================================
-  let { data: transcript } = await supabase
+  const { data: transcriptData } = await supabase
     .from("transcripts")
     .select("*")
     .eq("job_id", jobId)
     .maybeSingle();
+
+  let transcript = transcriptData as TranscriptRow | null;
 
   if (!transcript) {
     console.log(`\n${LOG} ── 阶段 1/4: ASR 转写 ──`);
@@ -151,7 +143,7 @@ export async function runJobPipeline(jobId: string) {
         user_id: userId,
         job_id: jobId,
         transcript_text: result.transcriptText || "",
-        raw: result.raw || null,
+        raw: (result.raw || null) as Json,
       })
       .select("*")
       .single();
@@ -161,7 +153,7 @@ export async function runJobPipeline(jobId: string) {
       throw new Error(transcriptError?.message || "Failed to write transcript");
     }
 
-    transcript = transcriptRow;
+    transcript = transcriptRow as TranscriptRow;
     console.log(`${LOG} ✓ 转写完成: ${transcript.transcript_text.length} 字符`);
 
     await supabase
@@ -169,8 +161,6 @@ export async function runJobPipeline(jobId: string) {
       .update({ transcript_id: transcript.id, status: JOB_STATUS.extracting_terms })
       .eq("id", jobId);
 
-    // 宪法第十三条：转录完成后删除原始音频
-    await deleteAudioAfterTranscription(supabase, bucket, audioAsset.storage_path, audioAsset.id);
   } else {
     console.log(`${LOG} ⏭ 转写已存在，跳过 ASR`);
   }
@@ -178,10 +168,12 @@ export async function runJobPipeline(jobId: string) {
   // ================================================================
   // 阶段 2：术语抽取
   // ================================================================
-  const { data: existingTerms } = await supabase
+  const { data: existingTermsData } = await supabase
     .from("term_occurrences")
     .select("*")
     .eq("job_id", jobId);
+
+  const existingTerms = (existingTermsData || null) as TermOccurrenceRow[] | null;
 
   if (!existingTerms || existingTerms.length === 0) {
     console.log(`\n${LOG} ── 阶段 2/4: 术语抽取 ──`);
@@ -191,12 +183,13 @@ export async function runJobPipeline(jobId: string) {
       .update({ status: JOB_STATUS.extracting_terms })
       .eq("id", jobId);
 
-    const { data: glossaryTerms } = await supabase
+    const { data: glossaryTermsData } = await supabase
       .from("glossary_terms")
       .select("term, normalized_term")
       .eq("user_id", userId);
 
-    const glossaryList = (glossaryTerms || []).map((t: any) => t.term);
+    const glossaryTerms = (glossaryTermsData || []) as GlossaryTermRow[];
+    const glossaryList = glossaryTerms.map((t) => t.term);
     console.log(`${LOG} 用户术语库: ${glossaryList.length} 个术语`);
 
     const extraction = await extractTerms({
@@ -232,11 +225,13 @@ export async function runJobPipeline(jobId: string) {
   // ================================================================
   // 阶段 3：术语确认检查
   // ================================================================
-  const { data: pendingTerms } = await supabase
+  const { data: pendingTermsData } = await supabase
     .from("term_occurrences")
     .select("*")
     .eq("job_id", jobId)
     .eq("status", "pending");
+
+  const pendingTerms = (pendingTermsData || null) as TermOccurrenceRow[] | null;
 
   if (pendingTerms && pendingTerms.length > 0) {
     console.log(`\n${LOG} ── 阶段 3/4: 等待用户确认 ──`);
@@ -280,12 +275,24 @@ export async function runJobPipeline(jobId: string) {
     .update({ status: JOB_STATUS.summarizing, needs_review: false })
     .eq("id", jobId);
 
-  const { data: glossary } = await supabase
+  const { data: glossaryData } = await supabase
     .from("glossary_terms")
     .select("term")
     .eq("user_id", userId);
 
-  const glossaryTerms = (glossary || []).map((g: any) => g.term);
+  const glossary = (glossaryData || []) as Array<Pick<GlossaryTermRow, "term">>;
+  const glossaryTerms = glossary.map((g) => g.term);
+
+  console.log(`${LOG} 生成发布稿整理...`);
+  const publishScript = await generateArtifactText("publish_script", {
+    transcriptText: transcript.transcript_text,
+    glossaryTerms,
+    uncertainTerms: [],
+    title: job.title || "",
+    guestName: job.guest_name || "",
+    interviewerName: job.interviewer_name || "",
+  });
+  console.log(`${LOG} ✓ 发布稿整理: ${publishScript.length} 字符`);
 
   console.log(`${LOG} 生成 IC Q&A 纪要...`);
   const icQa = await generateIcQa({
@@ -303,7 +310,7 @@ export async function runJobPipeline(jobId: string) {
   });
   console.log(`${LOG} ✓ 公众号长文: ${wechat.length} 字符`);
 
-  const { data: memoRow, error: memoError } = await supabase
+  const { data: memoData, error: memoError } = await supabase
     .from("memos")
     .insert({
       user_id: userId,
@@ -314,6 +321,8 @@ export async function runJobPipeline(jobId: string) {
     .select("*")
     .single();
 
+  const memoRow = memoData as MemoRow | null;
+
   if (memoError || !memoRow) {
     console.error(`${LOG} ✗ 摘要写入失败:`, memoError?.message);
     throw new Error(memoError?.message || "Failed to write memo");
@@ -323,6 +332,43 @@ export async function runJobPipeline(jobId: string) {
     .from("jobs")
     .update({ memo_id: memoRow.id, status: JOB_STATUS.completed })
     .eq("id", jobId);
+
+  try {
+    await supabase.from("artifacts").insert([
+      {
+        user_id: userId,
+        project_id: job.project_id,
+        job_id: jobId,
+        kind: "publish_script",
+        title: "发布稿整理",
+        content: publishScript,
+        summary: publishScript.slice(0, 180),
+        status: "ready",
+      },
+      {
+        user_id: userId,
+        project_id: job.project_id,
+        job_id: jobId,
+        kind: "ic_qa",
+        title: "IC 纪要",
+        content: icQa,
+        summary: icQa.slice(0, 180),
+        status: "ready",
+      },
+      {
+        user_id: userId,
+        project_id: job.project_id,
+        job_id: jobId,
+        kind: "wechat_article",
+        title: "公众号长文",
+        content: wechat,
+        summary: wechat.slice(0, 180),
+        status: "ready",
+      },
+    ]);
+  } catch (error) {
+    console.error(`${LOG} ⚠ artifact 写入失败（保留 legacy memo）:`, error);
+  }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n${"=".repeat(60)}`);

@@ -29,7 +29,7 @@ export default async function LocaleLayout({
         <div className="min-h-screen bg-background relative">
           <div className="noise-overlay" />
           <AppHeader />
-          <main className="mx-auto w-full max-w-6xl px-6 py-8 relative z-10">
+          <main className="relative z-10 w-full px-4 py-6 sm:px-6 sm:py-8">
             {children}
           </main>
         </div>
@@ -37,4 +37,3 @@ export default async function LocaleLayout({
     </NextIntlClientProvider>
   );
 }
-

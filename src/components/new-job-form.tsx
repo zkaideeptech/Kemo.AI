@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PlanTier } from "@/lib/billing/plan";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { JobRow } from "@/lib/workspace";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
@@ -43,13 +44,21 @@ function sanitizeFileName(name: string) {
  */
 export function NewJobForm({
   plan,
+  projectId,
+  embedded = false,
+  onCreated,
 }: {
   plan: { plan: PlanTier; maxFileSizeMb: number };
+  projectId?: string | null;
+  embedded?: boolean;
+  onCreated?: (job: JobRow) => void;
 }) {
   const t = useTranslations();
   const router = useRouter();
   const locale = useLocale();
   const [title, setTitle] = useState("");
+  const [guestName, setGuestName] = useState("");
+  const [interviewerName, setInterviewerName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
@@ -57,13 +66,13 @@ export function NewJobForm({
 
   // 上传成功后 2 秒自动跳转任务详情
   useEffect(() => {
-    if (uploadState === "success" && jobId) {
+    if (uploadState === "success" && jobId && !onCreated) {
       const timer = setTimeout(() => {
         router.push(`/${locale}/app/jobs/${jobId}`);
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [uploadState, jobId, locale, router]);
+  }, [uploadState, jobId, locale, onCreated, router]);
 
   /**
    * 提交表单，上传音频并创建任务
@@ -116,6 +125,11 @@ export function NewJobForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
+          projectId,
+          guestName,
+          interviewerName,
+          sourceType: "audio_upload",
+          captureMode: "upload",
           storagePath,
           fileName: file.name,
           fileSize: file.size,
@@ -136,8 +150,12 @@ export function NewJobForm({
       }
 
       const newJobId = json.data.jobId;
+      const createdJob = json.data.job as JobRow | undefined;
       setJobId(newJobId);
       setUploadState("success");
+      if (createdJob) {
+        onCreated?.(createdJob);
+      }
 
       // 触发任务执行管道
       fetch(`/api/jobs/${newJobId}/run`, { method: "POST" }).catch(() => {
@@ -219,9 +237,9 @@ export function NewJobForm({
 
   // 默认表单界面
   return (
-    <Card className="glass border-white/5 shadow-2xl hover:shadow-primary/5 transition-all duration-700 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+    <Card className={`glass border-white/5 shadow-2xl hover:shadow-primary/5 transition-all duration-700 ${embedded ? "" : "animate-in fade-in slide-in-from-bottom-8 duration-1000"}`}>
       <CardHeader className="text-center">
-        <CardTitle className="text-3xl font-black tracking-tighter bg-gradient-to-r from-primary to-emerald-400 bg-clip-text text-transparent">
+        <CardTitle className={`${embedded ? "text-2xl" : "text-3xl"} font-black tracking-tighter bg-gradient-to-r from-primary to-emerald-400 bg-clip-text text-transparent`}>
           {t("new.title")}
         </CardTitle>
         <CardDescription className="text-muted-foreground font-medium italic">
@@ -241,6 +259,32 @@ export function NewJobForm({
             placeholder="Interview with ..."
             className="glass border-white/5 bg-white/5 focus-visible:ring-primary focus-visible:border-primary/50 transition-all duration-500 h-12 text-lg"
           />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3">
+            <Label htmlFor="guestName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+              Guest
+            </Label>
+            <Input
+              id="guestName"
+              value={guestName}
+              onChange={(event) => setGuestName(event.target.value)}
+              placeholder="Guest name"
+              className="glass border-white/5 bg-white/5 h-12"
+            />
+          </div>
+          <div className="grid gap-3">
+            <Label htmlFor="interviewerName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+              Interviewer
+            </Label>
+            <Input
+              id="interviewerName"
+              value={interviewerName}
+              onChange={(event) => setInterviewerName(event.target.value)}
+              placeholder="Interviewer name"
+              className="glass border-white/5 bg-white/5 h-12"
+            />
+          </div>
         </div>
         <div className="grid gap-4">
           <Label htmlFor="file" className="text-sm font-bold tracking-widest uppercase text-muted-foreground flex items-center gap-2">
