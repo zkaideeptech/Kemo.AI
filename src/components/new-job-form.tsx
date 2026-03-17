@@ -1,6 +1,6 @@
 /**
  * @file new-job-form.tsx
- * @description 新建任务表单组件，上传音频后显示成功/失败界面，成功后自动跳转任务详情
+ * @description 新建任务表单组件，上传音频后在三段式工作台内继续处理
  * @author KEMO
  * @created 2026-02-05
  * @modified 2026-02-06
@@ -39,7 +39,7 @@ function sanitizeFileName(name: string) {
 
 /**
  * 新建任务表单
- * 流程：选择文件 → 上传 → 显示成功/失败 → 成功后自动跳转任务详情
+ * 流程：选择文件 → 上传 → 显示成功/失败 → 成功后回到三段式工作台
  * @param plan - 用户当前套餐信息
  */
 export function NewJobForm({
@@ -64,11 +64,11 @@ export function NewJobForm({
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [jobId, setJobId] = useState<string | null>(null);
 
-  // 上传成功后 2 秒自动跳转任务详情
+  // 上传成功后 2 秒自动回到三段式工作台
   useEffect(() => {
     if (uploadState === "success" && jobId && !onCreated) {
       const timer = setTimeout(() => {
-        router.push(`/${locale}/app/jobs/${jobId}`);
+        router.push(`/${locale}/app/jobs?job=${jobId}`);
       }, 2000);
       return () => clearTimeout(timer);
     }
@@ -181,14 +181,14 @@ export function NewJobForm({
               {t("new.uploadSuccess") || "上传成功"}
             </h2>
             <p className="text-muted-foreground">
-              {t("new.autoRedirect") || "正在自动跳转到任务详情..."}
+              {t("new.autoRedirect") || "正在自动返回工作台..."}
             </p>
           </div>
           <Loader2 className="h-6 w-6 animate-spin text-primary/50" />
           <Button
             variant="secondary"
             className="w-full sm:w-auto border-white/10 hover:bg-white/5"
-            onClick={() => router.push(`/${locale}/app/jobs/${jobId}`)}
+            onClick={() => router.push(`/${locale}/app/jobs?job=${jobId}`)}
           >
             {t("new.goToJob") || "立即查看"}
           </Button>

@@ -16,10 +16,13 @@ import { NotebookWorkspace } from "@/components/notebook-workspace";
 
 export default async function JobsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ job?: string; new?: string }>;
 }) {
   const { locale } = await params;
+  const query = await searchParams;
   const user = await requireUser(locale);
   const supabase = await createSupabaseServerClient();
   const plan = await getUserPlan(supabase, user.id);
@@ -52,6 +55,9 @@ export default async function JobsPage({
   const safeArtifacts = (artifacts || []) as ArtifactRow[];
   const safeFavorites = (favorites || []) as FavoriteRow[];
   const safeSources = (sources || []) as SourceRow[];
+  const requestedJobId =
+    typeof query.job === "string" && safeJobs.some((job) => job.id === query.job) ? query.job : null;
+  const openNewInterview = query.new === "1";
 
   const legacyArtifacts: WorkspaceArtifact[] = safeJobs.flatMap((job) => {
     const transcript = safeTranscripts.find((item) => item.job_id === job.id) || null;
@@ -84,6 +90,8 @@ export default async function JobsPage({
       artifacts={[...(safeArtifacts as WorkspaceArtifact[]), ...legacyArtifacts]}
       favorites={safeFavorites}
       sources={safeSources}
+      initialJobId={requestedJobId}
+      initialNewInterviewOpen={openNewInterview}
     />
   );
 }

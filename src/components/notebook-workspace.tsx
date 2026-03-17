@@ -62,6 +62,8 @@ export function NotebookWorkspace({
   artifacts,
   favorites,
   sources,
+  initialJobId = null,
+  initialNewInterviewOpen = false,
 }: {
   locale: string;
   userEmail: string | null;
@@ -72,12 +74,14 @@ export function NotebookWorkspace({
   artifacts: WorkspaceArtifact[];
   favorites: FavoriteRow[];
   sources: SourceRow[];
+  initialJobId?: string | null;
+  initialNewInterviewOpen?: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [newInterviewOpen, setNewInterviewOpen] = useState(false);
+  const [newInterviewOpen, setNewInterviewOpen] = useState(initialNewInterviewOpen);
   const [newSourceOpen, setNewSourceOpen] = useState(false);
   const [uiMode, setUiMode] = useState<"system" | "light" | "dark">("system");
   const [projectState, setProjectState] = useState(projects);
@@ -86,7 +90,7 @@ export function NotebookWorkspace({
   const [favoriteState, setFavoriteState] = useState(favorites);
   const [sourceState, setSourceState] = useState(sources);
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || null);
-  const [selectedJobId, setSelectedJobId] = useState(jobs[0]?.id || null);
+  const [selectedJobId, setSelectedJobId] = useState(initialJobId || jobs[0]?.id || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(sources[0]?.id || null);
   const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
@@ -743,9 +747,9 @@ export function NotebookWorkspace({
                   </p>
                 </div>
                 {selectedJob ? (
-                  <Link href={`/${locale}/app/jobs/${selectedJob.id}`} className="workspace-nav-button">
-                    打开详情页
-                  </Link>
+                  <div className="workspace-status-pill">
+                    {selectedJob.status || "draft"}
+                  </div>
                 ) : (
                   <div className="workspace-search-toolbar">
                     <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>

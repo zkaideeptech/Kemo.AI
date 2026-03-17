@@ -100,7 +100,7 @@ export function AppHeader() {
           {hasSession && (
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
               <Link
-                href={`/${locale}/app/new`}
+                href={`/${locale}/app/jobs?new=1`}
                 className="transition-colors hover:text-foreground hover:drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]"
               >
                 {t("nav.newJob")}
