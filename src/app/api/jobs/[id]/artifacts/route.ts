@@ -8,6 +8,7 @@ import type { Database } from "@/lib/supabase/types";
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
 type TranscriptRow = Database["public"]["Tables"]["transcripts"]["Row"];
 type SourceRow = Database["public"]["Tables"]["sources"]["Row"];
+type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
 
 function buildSourceContext(sources: SourceRow[]) {
   return sources
@@ -113,10 +114,54 @@ export async function POST(
   const sourceContext = buildSourceContext((sourcesData || []) as SourceRow[]);
   let content = "";
   let audioUrl: string | null = null;
+  let publishScriptText = "";
   const metadata: Record<string, string> = {
     generated_at: new Date().toISOString(),
     source_count: String((sourcesData || []).length),
   };
+
+  if (kind === "roadshow_transcript" || kind === "meeting_minutes") {
+    const { data: existingPublishArtifact } = await supabase
+      .from("artifacts")
+      .select("*")
+      .eq("job_id", id)
+      .eq("kind", "publish_script")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const upstreamArtifact = existingPublishArtifact as ArtifactRow | null;
+
+    publishScriptText = upstreamArtifact?.content || "";
+
+    if (!publishScriptText.trim()) {
+      publishScriptText = await generateArtifactText("publish_script", {
+        transcriptText: transcript.transcript_text,
+        glossaryTerms,
+        uncertainTerms: [],
+        sourceContext,
+        title: job.title || "",
+        guestName: job.guest_name || "",
+        interviewerName: job.interviewer_name || "",
+      });
+
+      await admin.from("artifacts").insert({
+        user_id: user.id,
+        project_id: job.project_id,
+        job_id: job.id,
+        kind: "publish_script",
+        title: getArtifactLabel("publish_script"),
+        content: publishScriptText,
+        summary: publishScriptText.slice(0, 180),
+        metadata: {
+          generated_at: new Date().toISOString(),
+          source_count: String((sourcesData || []).length),
+          auto_generated_as_upstream: "true",
+        },
+        status: "ready",
+      });
+    }
+  }
 
   if (kind === "podcast_audio") {
     const script = await generateArtifactText("podcast_script", {
@@ -150,7 +195,13 @@ export async function POST(
       title: job.title || "",
       guestName: job.guest_name || "",
       interviewerName: job.interviewer_name || "",
+      publishScriptText,
     });
+  }
+
+  if (kind === "roadshow_transcript" || kind === "meeting_minutes") {
+    metadata.export_format = "docx";
+    metadata.upstream_kind = "publish_script";
   }
 
   const { data, error } = await admin
@@ -174,5 +225,21 @@ export async function POST(
     return jsonError("db_error", error?.message || "Artifact save failed", { status: 500 });
   }
 
-  return jsonOk({ artifact: data }, { status: 201 });
+  const artifact = data as ArtifactRow;
+
+  if (kind === "roadshow_transcript" || kind === "meeting_minutes") {
+    const nextMetadata = {
+      ...((artifact.metadata as Record<string, string | null>) || {}),
+      download_path: `/api/artifacts/${artifact.id}/download`,
+    };
+
+    await admin
+      .from("artifacts")
+      .update({ metadata: nextMetadata })
+      .eq("id", artifact.id);
+
+    artifact.metadata = nextMetadata;
+  }
+
+  return jsonOk({ artifact }, { status: 201 });
 }

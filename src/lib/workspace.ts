@@ -6,6 +6,8 @@ export const DEFAULT_PROJECT_TITLE = "Kemo Notebook";
 
 export const ARTIFACT_KINDS = [
   "publish_script",
+  "roadshow_transcript",
+  "meeting_minutes",
   "quick_summary",
   "key_insights",
   "inspiration_questions",
@@ -46,6 +48,8 @@ export function isArtifactKind(value: string): value is ArtifactKind {
 export function getArtifactLabel(kind: ArtifactKind) {
   const labels: Record<ArtifactKind, string> = {
     publish_script: "发布稿整理",
+    roadshow_transcript: "路演整理稿",
+    meeting_minutes: "会议纪要",
     quick_summary: "快速摘要",
     key_insights: "关键洞察",
     inspiration_questions: "灵感追问",
@@ -63,6 +67,8 @@ export function getArtifactLabel(kind: ArtifactKind) {
 export function getArtifactDescription(kind: ArtifactKind) {
   const descriptions: Record<ArtifactKind, string> = {
     publish_script: "按照访谈编辑规范整理成可发布对话稿",
+    roadshow_transcript: "基于发布稿整理成结构清晰的路演整理稿并导出 docx",
+    meeting_minutes: "基于发布稿整理成结构完整的会议纪要并导出 docx",
     quick_summary: "让用户快速 catch up 的一屏摘要",
     key_insights: "抽出可行动的判断、观点和信号",
     inspiration_questions: "为下一轮采访提供追问与发散方向",

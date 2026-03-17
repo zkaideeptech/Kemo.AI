@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   AudioLines,
@@ -8,6 +8,7 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  Download,
   ExternalLink,
   FolderPlus,
   Globe,
@@ -101,6 +102,7 @@ export function NotebookWorkspace({
   const [isImportingSource, setIsImportingSource] = useState(false);
   const [liveTranscriptSnapshot, setLiveTranscriptSnapshot] = useState("");
   const [liveCaptureStatus, setLiveCaptureStatus] = useState("准备开始实时访谈");
+  const lastLiveSyncRef = useRef("");
 
   const filteredJobs = useMemo(() => {
     return jobState.filter((job) => {
@@ -198,6 +200,62 @@ export function NotebookWorkspace({
       setSelectedSourceId(nextSources[0].id);
     }
   }, [selectedProjectId, selectedSourceId, sourceState]);
+
+  useEffect(() => {
+    lastLiveSyncRef.current = "";
+  }, [selectedJobId]);
+
+  useEffect(() => {
+    if (!selectedJob?.id) return;
+
+    const nextSnapshot = liveTranscriptSnapshot.trim();
+    if (!nextSnapshot || nextSnapshot === lastLiveSyncRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${selectedJob.id}/live`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcriptText: nextSnapshot,
+            statusText: liveCaptureStatus,
+          }),
+        });
+        const json = await res.json();
+
+        if (!res.ok || !json.ok) return;
+
+        lastLiveSyncRef.current = nextSnapshot;
+
+        if (json.data.job) {
+          setJobState((prev) => [json.data.job, ...prev.filter((item) => item.id !== json.data.job.id)]);
+        }
+
+        if (Array.isArray(json.data.draftArtifacts) && json.data.draftArtifacts.length > 0) {
+          setArtifactState((prev) => {
+            const next = [...prev];
+            for (const draftArtifact of json.data.draftArtifacts) {
+              const existingIndex = next.findIndex((item) => item.id === draftArtifact.id);
+              if (existingIndex >= 0) {
+                next[existingIndex] = draftArtifact;
+              } else {
+                next.unshift(draftArtifact);
+              }
+            }
+            return next;
+          });
+        }
+      } catch {
+        // Keep local drafting usable even if sync fails.
+      }
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [liveCaptureStatus, liveTranscriptSnapshot, selectedJob?.id]);
 
   async function createProject() {
     if (!newProjectTitle.trim()) {
@@ -356,6 +414,16 @@ export function NotebookWorkspace({
   }
 
   const favoriteArtifacts = artifactState.filter((artifact) => favoriteArtifactIds.has(artifact.id));
+
+  function getArtifactDownloadPath(artifact: WorkspaceArtifact) {
+    const metadata = artifact.metadata as Record<string, unknown> | null;
+    const metadataPath = typeof metadata?.download_path === "string" ? metadata.download_path : null;
+    if (metadataPath) return metadataPath;
+    if (artifact.kind === "roadshow_transcript" || artifact.kind === "meeting_minutes") {
+      return `/api/artifacts/${artifact.id}/download`;
+    }
+    return null;
+  }
 
   return (
     <>
@@ -740,6 +808,17 @@ export function NotebookWorkspace({
                         <div className="workspace-scroll-content min-h-[140px] whitespace-pre-wrap text-sm text-slate-700">
                           {artifact.content || "This card is still generating."}
                         </div>
+                        {getArtifactDownloadPath(artifact) ? (
+                          <div className="flex justify-end">
+                            <a
+                              href={getArtifactDownloadPath(artifact) || undefined}
+                              className="workspace-chip-button"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              导出 docx
+                            </a>
+                          </div>
+                        ) : null}
                         {artifact.audio_url ? (
                           <audio controls className="mt-2 w-full">
                             <source src={artifact.audio_url} />
