@@ -92,9 +92,9 @@ export function NotebookWorkspace({
   const [artifactState, setArtifactState] = useState(artifacts);
   const [favoriteState, setFavoriteState] = useState(favorites);
   const [sourceState, setSourceState] = useState(sources);
-  const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || projects[0]?.id || null);
-  const [selectedJobId, setSelectedJobId] = useState(initialJobId || jobs[0]?.id || null);
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(sources[0]?.id || null);
+  const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || null);
+  const [selectedJobId, setSelectedJobId] = useState(initialJobId || null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [isProjectSearching, setIsProjectSearching] = useState(false);
@@ -112,19 +112,22 @@ export function NotebookWorkspace({
   const lastLiveSyncRef = useRef("");
 
   const filteredJobs = useMemo(() => {
+    if (!selectedProjectId) {
+      return [];
+    }
+
     return jobState.filter((job) => {
-      const matchesProject = !selectedProjectId || job.project_id === selectedProjectId;
+      const matchesProject = job.project_id === selectedProjectId;
       const haystack = `${job.title || ""} ${job.guest_name || ""} ${job.interviewer_name || ""}`.toLowerCase();
       return matchesProject && haystack.includes(search.toLowerCase());
     });
   }, [jobState, search, selectedProjectId]);
 
-  const selectedJob = filteredJobs.find((job) => job.id === selectedJobId) || filteredJobs[0] || null;
+  const selectedJob = filteredJobs.find((job) => job.id === selectedJobId) || null;
   const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
   const selectedArtifacts = artifactState.filter((artifact) => artifact.job_id === selectedJob?.id);
   const projectSources = sourceState.filter((source) => source.project_id === selectedProjectId);
-  const selectedSource =
-    projectSources.find((source) => source.id === selectedSourceId) || projectSources[0] || null;
+  const selectedSource = projectSources.find((source) => source.id === selectedSourceId) || null;
   const favoriteArtifactIds = new Set(
     favoriteState.map((favorite) => favorite.artifact_id).filter(Boolean) as string[]
   );
@@ -161,7 +164,7 @@ export function NotebookWorkspace({
     }
 
     if (!projectState.some((project) => project.id === selectedProjectId)) {
-      setSelectedProjectId(projectState[0].id);
+      setSelectedProjectId(null);
     }
   }, [projectState, selectedProjectId]);
 
@@ -201,25 +204,25 @@ export function NotebookWorkspace({
 
   useEffect(() => {
     const projectJobs = jobState.filter((job) => job.project_id === selectedProjectId);
-    if (!projectJobs.length) {
+    if (!selectedProjectId || !projectJobs.length) {
       setSelectedJobId(null);
       return;
     }
 
     if (!projectJobs.some((job) => job.id === selectedJobId)) {
-      setSelectedJobId(projectJobs[0].id);
+      setSelectedJobId(null);
     }
   }, [jobState, selectedJobId, selectedProjectId]);
 
   useEffect(() => {
     const nextSources = sourceState.filter((source) => source.project_id === selectedProjectId);
-    if (!nextSources.length) {
+    if (!selectedProjectId || !nextSources.length) {
       setSelectedSourceId(null);
       return;
     }
 
     if (!nextSources.some((source) => source.id === selectedSourceId)) {
-      setSelectedSourceId(nextSources[0].id);
+      setSelectedSourceId(null);
     }
   }, [selectedProjectId, selectedSourceId, sourceState]);
 
@@ -727,7 +730,13 @@ export function NotebookWorkspace({
                     <button
                       key={project.id}
                       type="button"
-                      onClick={() => setSelectedProjectId(project.id)}
+                      onClick={() => {
+                        setSelectedProjectId(project.id);
+                        setSelectedJobId(null);
+                        setSelectedSourceId(null);
+                        setLiveTranscriptSnapshot("");
+                        setLiveCaptureStatus("准备开始实时访谈");
+                      }}
                       className={`workspace-list-item ${selectedProjectId === project.id ? "workspace-list-item-active" : ""}`}
                     >
                       <span className="truncate">{project.title}</span>
@@ -938,7 +947,7 @@ export function NotebookWorkspace({
                       ? `${selectedJob.interviewer_name || "Interviewer"} × ${selectedJob.guest_name || "Guest"}`
                       : liveTranscriptSnapshot
                         ? liveCaptureStatus
-                        : liveAutoCreateHint}
+                        : "先从左侧选择一条历史访谈，或直接开始实时访谈自动新建。"}
                   </p>
                 </div>
                 {selectedJob ? (
@@ -1044,10 +1053,13 @@ export function NotebookWorkspace({
                               先创建一个项目
                             </button>
                           ) : !selectedJob ? (
-                            <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
-                              <Plus className="h-3.5 w-3.5" />
-                              先创建一个访谈
-                            </button>
+                            <div className="workspace-search-toolbar">
+                              <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
+                                <Plus className="h-3.5 w-3.5" />
+                                上传新访谈
+                              </button>
+                              <span className="workspace-muted-copy">或直接点上方“开始实时访谈”自动新建</span>
+                            </div>
                           ) : null}
                         </div>
                       </div>
@@ -1109,7 +1121,7 @@ export function NotebookWorkspace({
           </section>
 
           <aside className="workspace-studio">
-            <div className="workspace-panel workspace-studio-panel">
+            <div className={`workspace-panel workspace-studio-panel ${!hasSelectedProject || !hasSelectedJob ? "workspace-panel-disabled" : ""}`}>
               <div className="workspace-card-header">
                 <div>
                   <p className="workspace-kicker">Studio</p>
@@ -1153,6 +1165,16 @@ export function NotebookWorkspace({
                   </div>
                 </button>
               </div>
+
+                {!hasSelectedProject || !hasSelectedJob ? (
+                  <div className="workspace-empty-card">
+                    <p className="workspace-muted-copy">
+                      {!hasSelectedProject
+                        ? "先创建或选择一个项目，Studio 才会启用。"
+                        : "先从左侧选择一条访谈，或开始实时访谈自动新建，Studio 才会启用。"}
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="workspace-recent-list">
                   <p className="workspace-section-title"><span>Recent outputs</span></p>

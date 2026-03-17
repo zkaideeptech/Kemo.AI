@@ -179,6 +179,7 @@ export async function startRealtimeAsrSession({
   const ws = new WebSocket(wsUrl, {
     headers: {
       Authorization: `bearer ${apiKey}`,
+      "OpenAI-Beta": "realtime=v1",
     },
   });
 
