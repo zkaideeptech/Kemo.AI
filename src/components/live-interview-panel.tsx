@@ -182,11 +182,17 @@ export function LiveInterviewPanel({
 
     try {
       await postAudio("append", payload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "实时音频上送失败";
+      setStatus(message);
+      throw error;
     } finally {
       isFlushingRef.current = false;
       if (needsFlushRef.current) {
         needsFlushRef.current = false;
-        void flushAudio(true);
+        void flushAudio(true).catch(() => {
+          // status already updated
+        });
       }
     }
   }
@@ -266,12 +272,19 @@ export function LiveInterviewPanel({
         if (!runningRef.current) return;
         const pcmBytes = floatToPcm16Chunk(event.inputBuffer, audioContext.sampleRate);
         pcmChunksRef.current.push(pcmBytes);
-        void flushAudio();
+        void flushAudio().catch(() => {
+          runningRef.current = false;
+          setIsRunning(false);
+          tracksRef.current.forEach((track) => track.stop());
+          tracksRef.current = [];
+          teardownAudioGraph();
+        });
       };
 
       sourceNode.connect(processorNode);
       processorNode.connect(muteGain);
       muteGain.connect(audioContext.destination);
+      await audioContext.resume();
 
       audioContextRef.current = audioContext;
       sourceNodeRef.current = sourceNode;

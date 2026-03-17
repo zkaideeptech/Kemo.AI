@@ -933,7 +933,7 @@ export function NotebookWorkspace({
               />
             )}
 
-            <section className="workspace-panel">
+            <section className={`workspace-panel ${!hasSelectedProject || !hasSelectedJob ? "workspace-panel-disabled" : ""}`}>
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <p className="workspace-kicker">Current Interview</p>
@@ -978,7 +978,7 @@ export function NotebookWorkspace({
               </div>
 
               <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
-                <article className="workspace-card workspace-transcript-card">
+                <article className={`workspace-card workspace-transcript-card ${!hasSelectedProject || !hasSelectedJob ? "workspace-panel-disabled" : ""}`}>
                   <div className="workspace-card-header">
                     <div>
                       <p className="workspace-kicker">Transcript</p>
@@ -993,7 +993,7 @@ export function NotebookWorkspace({
                   </div>
                 </article>
 
-                <article className="workspace-card">
+                <article className={`workspace-card ${!hasSelectedProject || !hasSelectedJob ? "workspace-panel-disabled" : ""}`}>
                   <div className="workspace-card-header">
                     <div>
                       <p className="workspace-kicker">Task Rail</p>
@@ -1068,7 +1068,7 @@ export function NotebookWorkspace({
                 </article>
               </div>
 
-              <article className="workspace-card">
+              <article className={`workspace-card ${!hasSelectedProject ? "workspace-panel-disabled" : ""}`}>
                 <div className="workspace-card-header">
                   <div>
                     <p className="workspace-kicker">Source Context</p>
