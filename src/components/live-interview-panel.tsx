@@ -8,6 +8,23 @@ import { Button } from "@/components/ui/button";
 const TARGET_SAMPLE_RATE = 16000;
 const MIN_FLUSH_BYTES = 12000;
 
+type DisplayAudioConstraints = MediaTrackConstraints & {
+  suppressLocalAudioPlayback?: boolean;
+};
+
+type DisplayVideoConstraints = MediaTrackConstraints & {
+  displaySurface?: "browser" | "window" | "monitor";
+};
+
+type ExtendedDisplayMediaStreamOptions = DisplayMediaStreamOptions & {
+  preferCurrentTab?: boolean;
+  systemAudio?: "include" | "exclude";
+  selfBrowserSurface?: "include" | "exclude";
+  surfaceSwitching?: "include" | "exclude";
+  audio?: boolean | DisplayAudioConstraints;
+  video?: boolean | DisplayVideoConstraints;
+};
+
 type StartLiveResult = {
   jobId: string | null;
   statusText?: string;
@@ -247,10 +264,25 @@ export function LiveInterviewPanel({
 
       if (captureSystemAudio) {
         const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          audio: true,
-          video: true,
-        });
-        tracks.push(...displayStream.getAudioTracks());
+          video: {
+            displaySurface: "browser",
+          },
+          audio: {
+            suppressLocalAudioPlayback: false,
+          },
+          preferCurrentTab: true,
+          selfBrowserSurface: "include",
+          surfaceSwitching: "include",
+          systemAudio: "include",
+        } as ExtendedDisplayMediaStreamOptions);
+
+        const displayAudioTracks = displayStream.getAudioTracks();
+
+        if (!displayAudioTracks.length) {
+          setStatus("没有捕获到标签页音频。请共享浏览器标签页，并勾选“分享音频”；共享整个屏幕通常不会带网页视频音频。");
+        }
+
+        tracks.push(...displayAudioTracks);
       }
 
       if (!tracks.length) {
@@ -408,6 +440,10 @@ export function LiveInterviewPanel({
           系统/标签页音频
         </button>
       </div>
+
+      <p className="workspace-muted-copy">
+        浏览器视频要被采到，必须共享“浏览器标签页”并勾选“分享音频”。如果你共享的是整个屏幕或窗口，常见浏览器不会把网页视频音频一并给到实时转写。
+      </p>
 
       <div className="rounded-[28px] border border-black/8 bg-white/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
         <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">

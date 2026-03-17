@@ -124,6 +124,7 @@ export function NotebookWorkspace({
   }, [jobState, search, selectedProjectId]);
 
   const selectedJob = filteredJobs.find((job) => job.id === selectedJobId) || null;
+  const selectedProject = projectState.find((project) => project.id === selectedProjectId) || null;
   const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
   const selectedArtifacts = artifactState.filter((artifact) => artifact.job_id === selectedJob?.id);
   const projectSources = sourceState.filter((source) => source.project_id === selectedProjectId);
@@ -594,6 +595,44 @@ export function NotebookWorkspace({
 
           {!collapsed ? (
             <div className="workspace-sidebar-body">
+              <section className="workspace-sidebar-section workspace-project-rail">
+                <div className="workspace-section-title">
+                  <span>Projects</span>
+                  <button type="button" className="workspace-inline-action" onClick={() => setNewProjectOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="grid gap-2">
+                  {projectState.length ? projectState.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectId(project.id);
+                        setSelectedJobId(null);
+                        setSelectedSourceId(null);
+                        setLiveTranscriptSnapshot("");
+                        setLiveCaptureStatus("准备开始实时访谈");
+                      }}
+                      className={`workspace-list-item workspace-project-item ${selectedProjectId === project.id ? "workspace-list-item-active" : ""}`}
+                    >
+                      <span className="truncate">{project.title}</span>
+                    </button>
+                  )) : (
+                    <div className="workspace-empty-card workspace-empty-card-strong">
+                      <div className="grid gap-2">
+                        <p className="font-semibold text-slate-900">项目目录还是空的</p>
+                        <p className="workspace-muted-copy">先创建一个项目。项目创建后会出现在这里，访谈、来源和输出都会按项目归档。</p>
+                        <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
+                          <FolderPlus className="h-3.5 w-3.5" />
+                          创建第一个项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
               <section className="workspace-sidebar-section">
                 <div className="workspace-section-title">
                   <span>界面模式</span>
@@ -720,44 +759,6 @@ export function NotebookWorkspace({
 
               <section className="workspace-sidebar-section">
                 <div className="workspace-section-title">
-                  <span>Projects</span>
-                  <button type="button" className="workspace-inline-action" onClick={() => setNewProjectOpen(true)}>
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <div className="grid gap-2">
-                  {projectState.length ? projectState.map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProjectId(project.id);
-                        setSelectedJobId(null);
-                        setSelectedSourceId(null);
-                        setLiveTranscriptSnapshot("");
-                        setLiveCaptureStatus("准备开始实时访谈");
-                      }}
-                      className={`workspace-list-item ${selectedProjectId === project.id ? "workspace-list-item-active" : ""}`}
-                    >
-                      <span className="truncate">{project.title}</span>
-                    </button>
-                  )) : (
-                    <div className="workspace-empty-card workspace-empty-card-strong">
-                      <div className="grid gap-2">
-                        <p className="font-semibold text-slate-900">项目目录还是空的</p>
-                        <p className="workspace-muted-copy">先创建一个项目。项目创建后会出现在这里，访谈、来源和输出都会按项目归档。</p>
-                        <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
-                          <FolderPlus className="h-3.5 w-3.5" />
-                          创建第一个项目
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              <section className="workspace-sidebar-section">
-                <div className="workspace-section-title">
                   <span>Sources</span>
                   <Link2 className="h-3.5 w-3.5" />
                 </div>
@@ -878,8 +879,12 @@ export function NotebookWorkspace({
           <section className="workspace-center">
             <section className="workspace-toolbar">
               <div>
-                <p className="workspace-kicker">Workspace</p>
-                <h2 className="workspace-heading">Project cockpit</h2>
+                {selectedProject ? (
+                  <>
+                    <p className="workspace-kicker">Current Project</p>
+                    <h2 className="workspace-heading">{selectedProject.title}</h2>
+                  </>
+                ) : null}
               </div>
               <div className="workspace-search-toolbar">
                 <button
