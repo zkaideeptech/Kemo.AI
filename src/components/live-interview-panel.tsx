@@ -248,13 +248,12 @@ export function LiveInterviewPanel({
       const micPromise = captureMic ? navigator.mediaDevices.getUserMedia({ audio: true }) : Promise.resolve(null);
       const displayPromise = captureSystemAudio
         ? navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true,
-            preferCurrentTab: true,
-            selfBrowserSurface: "include",
-            surfaceSwitching: "include",
-            systemAudio: "include",
-          } as ExtendedDisplayMediaStreamOptions)
+          video: true,
+          audio: true,
+          selfBrowserSurface: "exclude",
+          surfaceSwitching: "include",
+          systemAudio: "include",
+        } as ExtendedDisplayMediaStreamOptions)
         : Promise.resolve(null);
 
       const [ensured, micStream, displayStream] = await Promise.all([ensurePromise, micPromise, displayPromise]);

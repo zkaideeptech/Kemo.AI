@@ -13,6 +13,8 @@ type SessionSnapshot = {
 type LiveAsrSession = {
   jobId: string;
   ws: WebSocket;
+  language: string;
+  corpusText: string;
   readyPromise: Promise<void>;
   resolveReady: () => void;
   rejectReady: (error: Error) => void;
@@ -27,6 +29,8 @@ type LiveAsrSession = {
   hasFinished: boolean;
   errorMessage: string | null;
   updatedAt: number;
+  closeCode: number | null;
+  closeReason: string | null;
 };
 
 const LOG = "[LiveASR]";
@@ -84,6 +88,10 @@ function buildSnapshot(session: LiveAsrSession): SessionSnapshot {
     hasFinished: session.hasFinished,
     errorMessage: session.errorMessage,
   };
+}
+
+function isSessionOpen(session: LiveAsrSession) {
+  return session.ws.readyState === WebSocket.OPEN && !session.hasFinished;
 }
 
 function sendJson(session: LiveAsrSession, payload: Record<string, unknown>) {
@@ -157,10 +165,12 @@ export async function startRealtimeAsrSession({
   jobId,
   language = "zh",
   corpusText,
+  forceRestart = false,
 }: {
   jobId: string;
   language?: string;
   corpusText?: string;
+  forceRestart?: boolean;
 }) {
   const apiKey = process.env.DASHSCOPE_API_KEY || "";
   if (!apiKey) {
@@ -169,8 +179,18 @@ export async function startRealtimeAsrSession({
 
   const store = getSessionStore();
   const existing = store.get(jobId);
-  if (existing) {
+  if (existing && !forceRestart && isSessionOpen(existing)) {
     return buildSnapshot(existing);
+  }
+
+  const seededTranscript = existing ? buildSnapshot(existing).finalTranscriptText : "";
+  if (existing) {
+    try {
+      existing.ws.close();
+    } catch {
+      // ignore close failures
+    }
+    store.delete(jobId);
   }
 
   const wsUrl = `${resolveRealtimeWsUrl()}?model=${encodeURIComponent(DEFAULT_MODEL)}`;
@@ -186,6 +206,8 @@ export async function startRealtimeAsrSession({
   const session: LiveAsrSession = {
     jobId,
     ws,
+    language,
+    corpusText: corpusText || "",
     readyPromise: ready.promise,
     resolveReady: ready.resolve,
     rejectReady: ready.reject,
@@ -195,11 +217,13 @@ export async function startRealtimeAsrSession({
     statusText: "正在连接阿里实时 ASR",
     partialConfirmedText: "",
     partialStashText: "",
-    finalSegments: [],
+    finalSegments: seededTranscript ? [seededTranscript] : [],
     isReady: false,
     hasFinished: false,
     errorMessage: null,
     updatedAt: Date.now(),
+    closeCode: null,
+    closeReason: null,
   };
 
   store.set(jobId, session);
@@ -249,11 +273,16 @@ export async function startRealtimeAsrSession({
     session.rejectFinish(new Error(message));
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reasonBuffer) => {
+    const reason = reasonBuffer.toString() || null;
+    session.closeCode = code;
+    session.closeReason = reason;
     if (!session.hasFinished && !session.errorMessage) {
-      session.statusText = "实时转写连接已关闭";
+      session.statusText = `实时转写连接已关闭${code ? ` (${code}${reason ? `: ${reason}` : ""})` : ""}`;
+      session.hasFinished = true;
       session.resolveFinish();
     }
+    console.log(`${LOG} closed ${jobId} code=${code} reason=${reason || "-"}`);
   });
 
   try {
@@ -270,11 +299,25 @@ export async function startRealtimeAsrSession({
 export async function appendRealtimeAsrAudio({
   jobId,
   audioBase64,
+  language = "zh",
+  corpusText,
 }: {
   jobId: string;
   audioBase64: string;
+  language?: string;
+  corpusText?: string;
 }) {
-  const session = getSessionStore().get(jobId);
+  const store = getSessionStore();
+  let session = store.get(jobId);
+  if (!session || !isSessionOpen(session)) {
+    await startRealtimeAsrSession({
+      jobId,
+      language: session?.language || language,
+      corpusText: session?.corpusText || corpusText,
+      forceRestart: true,
+    });
+    session = store.get(jobId);
+  }
   if (!session) {
     throw new Error("Realtime ASR session not found");
   }

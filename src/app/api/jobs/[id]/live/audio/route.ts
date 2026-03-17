@@ -28,6 +28,34 @@ function buildRealtimeCorpus({
     .slice(0, 12000);
 }
 
+async function loadRealtimeSessionConfig(supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, userId: string, job: JobRow) {
+  const [{ data: glossary }, { data: sources }] = await Promise.all([
+    supabase.from("glossary_terms").select("term").eq("user_id", userId),
+    job.project_id
+      ? supabase
+          .from("sources")
+          .select("title, url, extracted_text")
+          .eq("user_id", userId)
+          .eq("project_id", job.project_id)
+          .order("created_at", { ascending: false })
+          .limit(4)
+      : Promise.resolve({ data: [] as Array<{ title: string | null; url: string | null; extracted_text: string | null }> }),
+  ]);
+
+  const corpusText = buildRealtimeCorpus({
+    glossaryTerms: (glossary || []).map((item) => item.term).filter(Boolean),
+    sourceSnippets: (sources || [])
+      .map((item, index) => {
+        const title = item.title || item.url || `Source ${index + 1}`;
+        const bodyText = (item.extracted_text || "").slice(0, 1200);
+        return `${title}\n${bodyText}`;
+      })
+      .filter((item) => item.trim().length > 0),
+  });
+
+  return { corpusText };
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -60,29 +88,7 @@ export async function POST(
   }
 
   if (action === "start") {
-    const [{ data: glossary }, { data: sources }] = await Promise.all([
-      supabase.from("glossary_terms").select("term").eq("user_id", user.id),
-      job.project_id
-        ? supabase
-            .from("sources")
-            .select("title, url, extracted_text")
-            .eq("user_id", user.id)
-            .eq("project_id", job.project_id)
-            .order("created_at", { ascending: false })
-            .limit(4)
-        : Promise.resolve({ data: [] as Array<{ title: string | null; url: string | null; extracted_text: string | null }> }),
-    ]);
-
-    const corpusText = buildRealtimeCorpus({
-      glossaryTerms: (glossary || []).map((item) => item.term).filter(Boolean),
-      sourceSnippets: (sources || [])
-        .map((item, index) => {
-          const title = item.title || item.url || `Source ${index + 1}`;
-          const bodyText = (item.extracted_text || "").slice(0, 1200);
-          return `${title}\n${bodyText}`;
-        })
-        .filter((item) => item.trim().length > 0),
-    });
+    const { corpusText } = await loadRealtimeSessionConfig(supabase, user.id, job);
 
     const snapshot = await startRealtimeAsrSession({
       jobId: id,
@@ -98,9 +104,12 @@ export async function POST(
       return jsonError("invalid_payload", "Missing audio chunk", { status: 400 });
     }
 
+    const { corpusText } = await loadRealtimeSessionConfig(supabase, user.id, job);
     const snapshot = await appendRealtimeAsrAudio({
       jobId: id,
       audioBase64,
+      language,
+      corpusText,
     });
 
     return jsonOk(snapshot);
