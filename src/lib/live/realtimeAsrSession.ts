@@ -35,6 +35,8 @@ type LiveAsrSession = {
 
 const LOG = "[LiveASR]";
 const DEFAULT_MODEL = process.env.DASHSCOPE_REALTIME_MODEL || "qwen3-asr-flash-realtime";
+const DEFAULT_VAD_THRESHOLD = Number(process.env.DASHSCOPE_REALTIME_VAD_THRESHOLD || "0.35");
+const DEFAULT_VAD_SILENCE_MS = Number(process.env.DASHSCOPE_REALTIME_VAD_SILENCE_MS || "600");
 
 declare global {
   var __kemoLiveAsrSessions: Map<string, LiveAsrSession> | undefined;
@@ -248,8 +250,8 @@ export async function startRealtimeAsrSession({
         },
         turn_detection: {
           type: "server_vad",
-          threshold: 0.0,
-          silence_duration_ms: 400,
+          threshold: Number.isFinite(DEFAULT_VAD_THRESHOLD) ? DEFAULT_VAD_THRESHOLD : 0.35,
+          silence_duration_ms: Number.isFinite(DEFAULT_VAD_SILENCE_MS) ? DEFAULT_VAD_SILENCE_MS : 600,
         },
       },
     });

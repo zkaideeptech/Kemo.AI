@@ -142,7 +142,7 @@ export function NotebookWorkspace({
     selectedJob?.live_transcript_snapshot ||
     liveTranscriptSnapshot ||
     "";
-  const primaryWorkspaceContent = selectedPublishArtifact?.content || transcriptContent;
+  const primaryWorkspaceContent = selectedPublishArtifact?.content?.trim() || "";
   const hasSelectedProject = Boolean(selectedProjectId);
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "请先创建一个项目，项目建好后才可继续录音、实时访谈和导入来源。";
@@ -1095,7 +1095,10 @@ export function NotebookWorkspace({
                   <div className="workspace-scroll-content whitespace-pre-wrap">
                     {!hasSelectedProject
                       ? projectLockedReason
-                      : primaryWorkspaceContent || (transcriptContent ? "00 skill 正在整理发布稿草稿。" : liveAutoCreateHint)}
+                      : primaryWorkspaceContent ||
+                        (transcriptContent
+                          ? (liveCaptureStatus.includes("00 skill") ? liveCaptureStatus : "00 skill 正在整理发布稿草稿。当前尚未返回有效草稿。")
+                          : liveAutoCreateHint)}
                   </div>
                 </article>
 
