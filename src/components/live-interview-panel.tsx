@@ -164,6 +164,23 @@ export function LiveInterviewPanel({
     if (typeof json.data.statusText === "string" && json.data.statusText) {
       setStatus(json.data.statusText);
     }
+    if (json.data.debug && typeof json.data.debug === "object") {
+      const debug = json.data.debug as { wsState?: string; closeCode?: number | null; closeReason?: string | null };
+      const debugText = [
+        debug.wsState ? `ASR ${debug.wsState}` : null,
+        debug.closeCode ? `close ${debug.closeCode}` : null,
+        debug.closeReason ? debug.closeReason : null,
+      ]
+        .filter(Boolean)
+        .join(" / ");
+
+      if (debugText) {
+        setCaptureDetails((current) => {
+          const base = current.split(" · ")[0];
+          return `${base} · ${debugText}`;
+        });
+      }
+    }
 
     return json.data as {
       previewText?: string;

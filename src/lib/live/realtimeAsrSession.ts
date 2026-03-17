@@ -371,3 +371,35 @@ export function getRealtimeAsrSnapshot(jobId: string) {
   if (!session) return null;
   return buildSnapshot(session);
 }
+
+export function getRealtimeAsrDebugState(jobId: string) {
+  const session = getSessionStore().get(jobId);
+  if (!session) {
+    return {
+      exists: false,
+      isOpen: false,
+      hasFinished: false,
+      updatedAt: null,
+      closeCode: null,
+      closeReason: null,
+      wsState: "missing",
+    };
+  }
+
+  return {
+    exists: true,
+    isOpen: isSessionOpen(session),
+    hasFinished: session.hasFinished,
+    updatedAt: session.updatedAt,
+    closeCode: session.closeCode,
+    closeReason: session.closeReason,
+    wsState:
+      session.ws.readyState === WebSocket.CONNECTING
+        ? "connecting"
+        : session.ws.readyState === WebSocket.OPEN
+          ? "open"
+          : session.ws.readyState === WebSocket.CLOSING
+            ? "closing"
+            : "closed",
+  };
+}

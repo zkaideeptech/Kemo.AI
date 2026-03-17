@@ -3,6 +3,7 @@ import { jsonError, jsonOk } from "@/lib/api/response";
 import {
   appendRealtimeAsrAudio,
   finishRealtimeAsrSession,
+  getRealtimeAsrDebugState,
   getRealtimeAsrSnapshot,
   startRealtimeAsrSession,
 } from "@/lib/live/realtimeAsrSession";
@@ -96,7 +97,7 @@ export async function POST(
       corpusText,
     });
 
-    return jsonOk(snapshot);
+    return jsonOk({ ...snapshot, debug: getRealtimeAsrDebugState(id) });
   }
 
   if (action === "append") {
@@ -104,7 +105,12 @@ export async function POST(
       return jsonError("invalid_payload", "Missing audio chunk", { status: 400 });
     }
 
-    const { corpusText } = await loadRealtimeSessionConfig(supabase, user.id, job);
+    const debugState = getRealtimeAsrDebugState(id);
+    const needsConfig = !debugState.exists || !debugState.isOpen;
+    const { corpusText } = needsConfig
+      ? await loadRealtimeSessionConfig(supabase, user.id, job)
+      : { corpusText: undefined };
+
     const snapshot = await appendRealtimeAsrAudio({
       jobId: id,
       audioBase64,
@@ -112,24 +118,24 @@ export async function POST(
       corpusText,
     });
 
-    return jsonOk(snapshot);
+    return jsonOk({ ...snapshot, debug: getRealtimeAsrDebugState(id) });
   }
 
   if (action === "finish") {
     const snapshot = await finishRealtimeAsrSession(id);
-
-    return jsonOk(
+    const payload =
       snapshot ||
-        getRealtimeAsrSnapshot(id) || {
-          jobId: id,
-          statusText: "实时会话已结束",
-          previewText: "",
-          finalTranscriptText: "",
-          isReady: false,
-          hasFinished: true,
-          errorMessage: null,
-        }
-    );
+      getRealtimeAsrSnapshot(id) || {
+        jobId: id,
+        statusText: "实时会话已结束",
+        previewText: "",
+        finalTranscriptText: "",
+        isReady: false,
+        hasFinished: true,
+        errorMessage: null,
+      };
+
+    return jsonOk({ ...payload, debug: getRealtimeAsrDebugState(id) });
   }
 
   return jsonError("invalid_payload", "Unsupported live audio action", { status: 400 });
