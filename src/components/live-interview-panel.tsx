@@ -8,21 +8,13 @@ import { Button } from "@/components/ui/button";
 const TARGET_SAMPLE_RATE = 16000;
 const MIN_FLUSH_BYTES = 12000;
 
-type DisplayAudioConstraints = MediaTrackConstraints & {
-  suppressLocalAudioPlayback?: boolean;
-};
-
-type DisplayVideoConstraints = MediaTrackConstraints & {
-  displaySurface?: "browser" | "window" | "monitor";
-};
-
 type ExtendedDisplayMediaStreamOptions = DisplayMediaStreamOptions & {
   preferCurrentTab?: boolean;
   systemAudio?: "include" | "exclude";
   selfBrowserSurface?: "include" | "exclude";
   surfaceSwitching?: "include" | "exclude";
-  audio?: boolean | DisplayAudioConstraints;
-  video?: boolean | DisplayVideoConstraints;
+  audio?: boolean;
+  video?: boolean;
 };
 
 type StartLiveResult = {
@@ -116,6 +108,7 @@ export function LiveInterviewPanel({
   const [captureSystemAudio, setCaptureSystemAudio] = useState(true);
   const [liveText, setLiveText] = useState("");
   const [status, setStatus] = useState("准备开始实时访谈");
+  const [captureDetails, setCaptureDetails] = useState("未开始采集");
   const [isRunning, setIsRunning] = useState(false);
 
   const activeJobIdRef = useRef<string | null>(null);
@@ -241,59 +234,66 @@ export function LiveInterviewPanel({
       return;
     }
 
-    const ensured = await onEnsureJob?.();
-    if (!ensured?.jobId) {
-      setStatus(ensured?.statusText || "无法创建实时访谈");
-      return;
-    }
-
-    activeJobIdRef.current = ensured.jobId;
     pcmChunksRef.current = [];
     setLiveText("");
+    setCaptureDetails("正在请求浏览器权限");
 
-    const tracks: MediaStreamTrack[] = [];
+    const cleanupTracks: MediaStreamTrack[] = [];
+    const audioTracks: MediaStreamTrack[] = [];
 
     try {
-      setStatus("正在建立实时访谈连接");
-      await postAudio("start");
+      setStatus("正在请求麦克风和标签页音频权限");
 
-      if (captureMic) {
-        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        tracks.push(...micStream.getAudioTracks());
+      const ensurePromise = onEnsureJob?.();
+      const micPromise = captureMic ? navigator.mediaDevices.getUserMedia({ audio: true }) : Promise.resolve(null);
+      const displayPromise = captureSystemAudio
+        ? navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true,
+            preferCurrentTab: true,
+            selfBrowserSurface: "include",
+            surfaceSwitching: "include",
+            systemAudio: "include",
+          } as ExtendedDisplayMediaStreamOptions)
+        : Promise.resolve(null);
+
+      const [ensured, micStream, displayStream] = await Promise.all([ensurePromise, micPromise, displayPromise]);
+      if (!ensured?.jobId) {
+        setStatus(ensured?.statusText || "无法创建实时访谈");
+        return;
       }
 
-      if (captureSystemAudio) {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            displaySurface: "browser",
-          },
-          audio: {
-            suppressLocalAudioPlayback: false,
-          },
-          preferCurrentTab: true,
-          selfBrowserSurface: "include",
-          surfaceSwitching: "include",
-          systemAudio: "include",
-        } as ExtendedDisplayMediaStreamOptions);
+      activeJobIdRef.current = ensured.jobId;
 
-        const displayAudioTracks = displayStream.getAudioTracks();
+      const micAudioTracks = micStream?.getAudioTracks() || [];
+      const displayAudioTracks = displayStream?.getAudioTracks() || [];
 
-        if (!displayAudioTracks.length) {
-          setStatus("没有捕获到标签页音频。请共享浏览器标签页，并勾选“分享音频”；共享整个屏幕通常不会带网页视频音频。");
-        }
+      cleanupTracks.push(...(micStream?.getTracks() || []), ...(displayStream?.getTracks() || []));
+      audioTracks.push(...micAudioTracks, ...displayAudioTracks);
 
-        tracks.push(...displayAudioTracks);
+      const detailParts = [
+        captureMic ? `麦克风 ${micAudioTracks.length} 轨` : null,
+        captureSystemAudio ? `标签页音频 ${displayAudioTracks.length} 轨` : null,
+      ].filter(Boolean);
+      setCaptureDetails(detailParts.join(" / ") || "未拿到音轨");
+
+      if (!displayAudioTracks.length && captureSystemAudio) {
+        setStatus("没有捕获到标签页音频。当前只会收到麦克风或外放环境声，请重新选择“浏览器标签页 + 分享音频”。");
+      } else {
+        setStatus("权限已获取，正在连接阿里实时 ASR");
       }
 
-      if (!tracks.length) {
+      if (!audioTracks.length) {
         throw new Error("没有拿到任何音频轨道");
       }
 
-      tracksRef.current = tracks;
+      await postAudio("start");
+
+      tracksRef.current = cleanupTracks;
       runningRef.current = true;
       setIsRunning(true);
 
-      const mixedAudioStream = new MediaStream(tracks);
+      const mixedAudioStream = new MediaStream(audioTracks);
       const audioContext = new AudioContext();
       const sourceNode = audioContext.createMediaStreamSource(mixedAudioStream);
       const processorNode = audioContext.createScriptProcessor(4096, sourceNode.channelCount || 1, 1);
@@ -323,12 +323,16 @@ export function LiveInterviewPanel({
       processorNodeRef.current = processorNode;
       muteGainRef.current = muteGain;
 
-      setStatus("实时采集中：系统音频和麦克风正送入阿里 ASR");
+      if (!displayAudioTracks.length && captureSystemAudio) {
+        setStatus("实时采集中，但当前没有标签页音轨，只能收到麦克风或外放环境声。");
+      } else {
+        setStatus(`实时采集中：${detailParts.join(" / ")} 正送入阿里 ASR`);
+      }
     } catch (error) {
       runningRef.current = false;
       setIsRunning(false);
       teardownAudioGraph();
-      tracks.forEach((track) => track.stop());
+      cleanupTracks.forEach((track) => track.stop());
       tracksRef.current = [];
       if (activeJobIdRef.current) {
         void fetch(`/api/jobs/${activeJobIdRef.current}/live/audio`, {
@@ -340,6 +344,7 @@ export function LiveInterviewPanel({
         });
       }
       activeJobIdRef.current = null;
+      setCaptureDetails("启动失败");
       setStatus(error instanceof Error ? error.message : "无法启动实时访谈");
     }
   }
@@ -393,6 +398,7 @@ export function LiveInterviewPanel({
     } finally {
       activeJobIdRef.current = null;
       setIsRunning(false);
+      setCaptureDetails("未开始采集");
     }
   }
 
@@ -437,7 +443,7 @@ export function LiveInterviewPanel({
           className={`workspace-toggle ${captureSystemAudio ? "workspace-toggle-active" : ""}`}
         >
           <ScreenShare className="h-4 w-4" />
-          系统/标签页音频
+          浏览器标签页音频
         </button>
       </div>
 
@@ -449,6 +455,9 @@ export function LiveInterviewPanel({
         <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">
           <Waves className="h-4 w-4" />
           {disabled ? disabledReason : status}
+        </div>
+        <div className="mb-3 rounded-[16px] bg-slate-100/70 px-3 py-2 text-xs text-slate-500">
+          {disabled ? disabledReason : captureDetails}
         </div>
         <div className="min-h-[120px] whitespace-pre-wrap rounded-[20px] bg-[#f6f2ea] p-4 text-sm leading-6 text-slate-700">
           {disabled ? disabledReason : liveText || "开始后，这里会显示阿里实时 ASR 返回的转写内容。"}

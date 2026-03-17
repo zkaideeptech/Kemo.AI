@@ -6,13 +6,13 @@ import {
   AudioLines,
   BookMarked,
   Bot,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
   FolderPlus,
   Globe,
-  LayoutPanelLeft,
   Link2,
   Loader2,
   Monitor,
@@ -95,6 +95,7 @@ export function NotebookWorkspace({
   const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || null);
   const [selectedJobId, setSelectedJobId] = useState(initialJobId || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>(initialJobProjectId ? [initialJobProjectId] : []);
   const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
   const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [isProjectSearching, setIsProjectSearching] = useState(false);
@@ -111,19 +112,20 @@ export function NotebookWorkspace({
   const [liveCaptureStatus, setLiveCaptureStatus] = useState("准备开始实时访谈");
   const lastLiveSyncRef = useRef("");
 
-  const filteredJobs = useMemo(() => {
-    if (!selectedProjectId) {
-      return [];
+  const jobsByProject = useMemo(() => {
+    const grouped = new Map<string, JobRow[]>();
+    for (const project of projectState) {
+      grouped.set(
+        project.id,
+        jobState
+          .filter((job) => job.project_id === project.id)
+          .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+      );
     }
+    return grouped;
+  }, [jobState, projectState]);
 
-    return jobState.filter((job) => {
-      const matchesProject = job.project_id === selectedProjectId;
-      const haystack = `${job.title || ""} ${job.guest_name || ""} ${job.interviewer_name || ""}`.toLowerCase();
-      return matchesProject && haystack.includes(search.toLowerCase());
-    });
-  }, [jobState, search, selectedProjectId]);
-
-  const selectedJob = filteredJobs.find((job) => job.id === selectedJobId) || null;
+  const selectedJob = jobState.find((job) => job.id === selectedJobId && job.project_id === selectedProjectId) || null;
   const selectedProject = projectState.find((project) => project.id === selectedProjectId) || null;
   const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
   const selectedArtifacts = artifactState.filter((artifact) => artifact.job_id === selectedJob?.id);
@@ -141,6 +143,7 @@ export function NotebookWorkspace({
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "请先创建一个项目，项目建好后才可继续录音、实时访谈和导入来源。";
   const liveAutoCreateHint = "点开始后会自动在当前项目下创建一条实时访谈并持续保存。";
+  const selectedProjectJobs = selectedProjectId ? jobsByProject.get(selectedProjectId) || [] : [];
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("kemo-ui-mode");
@@ -168,6 +171,15 @@ export function NotebookWorkspace({
       setSelectedProjectId(null);
     }
   }, [projectState, selectedProjectId]);
+
+  useEffect(() => {
+    setExpandedProjectIds((prev) => prev.filter((projectId) => projectState.some((project) => project.id === projectId)));
+  }, [projectState]);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    setExpandedProjectIds((prev) => (prev.includes(selectedProjectId) ? prev : [selectedProjectId, ...prev]));
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId || search.trim().length < 2) {
@@ -538,6 +550,51 @@ export function NotebookWorkspace({
 
   const favoriteArtifacts = artifactState.filter((artifact) => favoriteArtifactIds.has(artifact.id));
 
+  function toggleProjectExpanded(projectId: string) {
+    setExpandedProjectIds((prev) =>
+      prev.includes(projectId) ? prev.filter((item) => item !== projectId) : [...prev, projectId]
+    );
+  }
+
+  function getJobDisplayTitle(job: JobRow) {
+    const transcriptText =
+      transcripts.find((item) => item.job_id === job.id)?.transcript_text ||
+      job.live_transcript_snapshot ||
+      "";
+    const normalized = transcriptText.replace(/\s+/g, " ").trim();
+    const summary = normalized ? `${normalized.slice(0, 28)}${normalized.length > 28 ? "…" : ""}` : null;
+    const title = (job.title || "").trim();
+
+    if (summary) {
+      return summary;
+    }
+
+    if (title) {
+      return title;
+    }
+
+    return "未命名访谈";
+  }
+
+  function getJobDisplayMeta(job: JobRow) {
+    const participants = [job.interviewer_name, job.guest_name].filter(Boolean).join(" × ");
+    const title = (job.title || "").trim();
+
+    if (participants && title) {
+      return `${participants} · ${title}`;
+    }
+
+    if (participants) {
+      return participants;
+    }
+
+    if (title) {
+      return title;
+    }
+
+    return job.capture_mode === "live" ? "实时访谈" : "上传录音";
+  }
+
   function getArtifactDownloadPath(artifact: WorkspaceArtifact) {
     const metadata = artifact.metadata as Record<string, unknown> | null;
     const metadataPath = typeof metadata?.download_path === "string" ? metadata.download_path : null;
@@ -575,21 +632,10 @@ export function NotebookWorkspace({
               type="button"
               className="workspace-nav-button"
               onClick={() => hasSelectedProject ? setNewInterviewOpen(true) : setNewProjectOpen(true)}
-              disabled={!hasSelectedProject}
-              title={!hasSelectedProject ? projectLockedReason : undefined}
+              title={!hasSelectedProject ? projectLockedReason : "在当前项目中添加新访谈"}
             >
               <Plus className="h-4 w-4" />
-              {!collapsed ? "新建访谈" : null}
-            </button>
-            <button
-              type="button"
-              className="workspace-nav-button"
-              onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
-              disabled={!hasSelectedProject}
-              title={!hasSelectedProject ? projectLockedReason : undefined}
-            >
-              <Link2 className="h-4 w-4" />
-              {!collapsed ? "导入网址" : null}
+              {!collapsed ? (hasSelectedProject ? "添加到当前项目" : "先创建项目") : null}
             </button>
           </div>
 
@@ -604,20 +650,93 @@ export function NotebookWorkspace({
                 </div>
                 <div className="grid gap-2">
                   {projectState.length ? projectState.map((project) => (
-                    <button
+                    <div
                       key={project.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProjectId(project.id);
-                        setSelectedJobId(null);
-                        setSelectedSourceId(null);
-                        setLiveTranscriptSnapshot("");
-                        setLiveCaptureStatus("准备开始实时访谈");
-                      }}
-                      className={`workspace-list-item workspace-project-item ${selectedProjectId === project.id ? "workspace-list-item-active" : ""}`}
+                      className={`workspace-project-tree ${selectedProjectId === project.id ? "workspace-project-tree-active" : ""}`}
                     >
-                      <span className="truncate">{project.title}</span>
-                    </button>
+                      <div className="workspace-project-tree-row">
+                        <button
+                          type="button"
+                          onClick={() => toggleProjectExpanded(project.id)}
+                          className="workspace-project-chevron"
+                          aria-label={expandedProjectIds.includes(project.id) ? "收起项目" : "展开项目"}
+                        >
+                          <ChevronDown
+                            className={`h-4 w-4 transition-transform ${expandedProjectIds.includes(project.id) ? "" : "-rotate-90"}`}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(project.id);
+                            setSelectedJobId(null);
+                            setSelectedSourceId(null);
+                            setLiveTranscriptSnapshot("");
+                            setLiveCaptureStatus("准备开始实时访谈");
+                            setExpandedProjectIds((prev) => (prev.includes(project.id) ? prev : [...prev, project.id]));
+                          }}
+                          className={`workspace-project-select ${selectedProjectId === project.id ? "workspace-list-item-active" : ""}`}
+                        >
+                          <span className="truncate font-medium">{project.title}</span>
+                          <span className="workspace-project-count">{(jobsByProject.get(project.id) || []).length}</span>
+                        </button>
+                      </div>
+
+                      {expandedProjectIds.includes(project.id) ? (
+                        <div className="workspace-project-children">
+                          <div className="workspace-project-actions">
+                            <button
+                              type="button"
+                              className="workspace-chip-button"
+                              onClick={() => {
+                                setSelectedProjectId(project.id);
+                                setNewInterviewOpen(true);
+                              }}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              新建访谈
+                            </button>
+                            <button
+                              type="button"
+                              className="workspace-chip-button"
+                              onClick={() => {
+                                setSelectedProjectId(project.id);
+                                setNewSourceOpen(true);
+                              }}
+                            >
+                              <Link2 className="h-3.5 w-3.5" />
+                              导入来源
+                            </button>
+                          </div>
+
+                          {(jobsByProject.get(project.id) || []).length ? (
+                            <div className="grid gap-1.5">
+                              {(jobsByProject.get(project.id) || []).map((job) => (
+                                <button
+                                  key={job.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedProjectId(project.id);
+                                    setSelectedJobId(job.id);
+                                    setSelectedSourceId(null);
+                                    setLiveTranscriptSnapshot("");
+                                    setLiveCaptureStatus("准备开始实时访谈");
+                                  }}
+                                  className={`workspace-project-child ${selectedJobId === job.id ? "workspace-list-item-active" : ""}`}
+                                >
+                                  <span className="truncate font-medium">{getJobDisplayTitle(job)}</span>
+                                  <span className="truncate text-xs text-slate-500">{getJobDisplayMeta(job)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="workspace-empty-card">
+                              <p className="workspace-muted-copy">这个项目还没有访谈。先新建一条，再开始录音或实时访谈。</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
                   )) : (
                     <div className="workspace-empty-card workspace-empty-card-strong">
                       <div className="grid gap-2">
@@ -815,7 +934,10 @@ export function NotebookWorkspace({
                     <button
                       key={artifact.id}
                       type="button"
-                      onClick={() => setSelectedJobId(artifact.job_id)}
+                      onClick={() => {
+                        setSelectedProjectId(artifact.project_id);
+                        setSelectedJobId(artifact.job_id);
+                      }}
                       className="workspace-list-item"
                     >
                       <Star className="h-3.5 w-3.5 fill-current text-amber-500" />
@@ -825,39 +947,6 @@ export function NotebookWorkspace({
                 </div>
               </section>
 
-              <section className="workspace-sidebar-section">
-                <div className="workspace-section-title">
-                  <span>当前项目访谈</span>
-                  <LayoutPanelLeft className="h-3.5 w-3.5" />
-                </div>
-                <div className="grid gap-2">
-                  {!hasSelectedProject ? (
-                    <div className="workspace-empty-card">
-                      <p className="workspace-muted-copy">{projectLockedReason}</p>
-                    </div>
-                  ) : filteredJobs.length ? filteredJobs.map((job) => (
-                    <button
-                      key={job.id}
-                      type="button"
-                      onClick={() => setSelectedJobId(job.id)}
-                      className={`workspace-list-item ${selectedJob?.id === job.id ? "workspace-list-item-active" : ""}`}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{job.title || "Untitled interview"}</p>
-                        <p className="truncate text-xs text-slate-500">{job.guest_name || "Guest TBD"}</p>
-                      </div>
-                    </button>
-                  )) : (
-                    <div className="workspace-empty-card">
-                      <p className="workspace-muted-copy">当前项目还没有访谈任务。</p>
-                      <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
-                        <Plus className="h-3.5 w-3.5" />
-                        新建访谈
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </section>
             </div>
           ) : null}
 
@@ -952,7 +1041,9 @@ export function NotebookWorkspace({
                       ? `${selectedJob.interviewer_name || "Interviewer"} × ${selectedJob.guest_name || "Guest"}`
                       : liveTranscriptSnapshot
                         ? liveCaptureStatus
-                        : "先从左侧选择一条历史访谈，或直接开始实时访谈自动新建。"}
+                        : selectedProjectJobs.length
+                          ? "先从左侧项目树里选一条访谈，或直接开始实时访谈自动新建。"
+                          : "当前项目还没有访谈。先从左侧项目树里新建一条，或直接开始实时访谈自动新建。"}
                   </p>
                 </div>
                 {selectedJob ? (
@@ -1188,7 +1279,10 @@ export function NotebookWorkspace({
                       key={artifact.id}
                       type="button"
                       className="workspace-list-item"
-                      onClick={() => setSelectedJobId(artifact.job_id)}
+                      onClick={() => {
+                        setSelectedProjectId(artifact.project_id);
+                        setSelectedJobId(artifact.job_id);
+                      }}
                     >
                       <span className="min-w-0 truncate">{artifact.title}</span>
                       <span className="shrink-0 text-xs uppercase text-slate-400">{artifact.kind}</span>
