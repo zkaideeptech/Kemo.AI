@@ -2,11 +2,13 @@ import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/sup
 import { jsonError, jsonOk } from "@/lib/api/response";
 import { generateArtifactText } from "@/lib/providers/llmProvider";
 import { getArtifactLabel } from "@/lib/workspace";
+import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import type { Database } from "@/lib/supabase/types";
 
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
 type SourceRow = Database["public"]["Tables"]["sources"]["Row"];
 type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
+type TranscriptRow = Database["public"]["Tables"]["transcripts"]["Row"];
 
 function buildSourceContext(sources: SourceRow[]) {
   return sources
@@ -41,6 +43,7 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const transcriptText = typeof body?.transcriptText === "string" ? body.transcriptText.trim() : "";
   const statusText = typeof body?.statusText === "string" ? body.statusText.trim() : "";
+  const finalize = Boolean(body?.finalize);
 
   if (!transcriptText) {
     return jsonError("invalid_payload", "Missing transcriptText", { status: 400 });
@@ -76,8 +79,8 @@ export async function POST(
     return jsonError("db_error", updateJobError?.message || "Failed to update live transcript", { status: 500 });
   }
 
-  if (transcriptText.length < 80) {
-    return jsonOk({ job: updatedJobData, draftArtifact: null, statusText });
+  if (transcriptText.length < 80 && !finalize) {
+    return jsonOk({ job: updatedJobData, draftArtifacts: [], statusText });
   }
 
   const { data: glossary } = await supabase
@@ -157,6 +160,8 @@ export async function POST(
     return createdDraftData as ArtifactRow;
   }
 
+  const draftArtifacts: ArtifactRow[] = [];
+
   try {
     const draftText = await generateArtifactText("publish_script", {
       transcriptText,
@@ -169,7 +174,6 @@ export async function POST(
       isLiveDraft: true,
     });
 
-    const draftArtifacts: ArtifactRow[] = [];
     draftArtifacts.push(await upsertDraftArtifact("publish_script", draftText));
 
     if (transcriptText.length >= 120) {
@@ -188,17 +192,129 @@ export async function POST(
       draftArtifacts.push(await upsertDraftArtifact("inspiration_questions", inspirationText));
     }
 
-    return jsonOk({
-      job: updatedJobData,
-      draftArtifacts,
-      statusText,
-    });
+    if (!finalize) {
+      return jsonOk({
+        job: updatedJobData,
+        draftArtifacts,
+        statusText,
+      });
+    }
   } catch (error) {
-    return jsonOk({
-      job: updatedJobData,
-      draftArtifacts: [],
-      statusText,
-      warning: error instanceof Error ? error.message : "Live draft generation failed",
-    });
+    if (!finalize) {
+      return jsonOk({
+        job: updatedJobData,
+        draftArtifacts: [],
+        statusText,
+        warning: error instanceof Error ? error.message : "Live draft generation failed",
+      });
+    }
   }
+
+  let transcriptRow: TranscriptRow | null = null;
+  const { data: existingTranscriptData } = await supabase
+    .from("transcripts")
+    .select("*")
+    .eq("job_id", id)
+    .maybeSingle();
+
+  const existingTranscript = existingTranscriptData as TranscriptRow | null;
+
+  if (existingTranscript) {
+    const { data: updatedTranscriptData, error: transcriptUpdateError } = await admin
+      .from("transcripts")
+      .update({
+        transcript_text: transcriptText,
+        raw: {
+          source: "live_capture",
+          finalized_at: new Date().toISOString(),
+          status_text: statusText,
+        },
+      })
+      .eq("id", existingTranscript.id)
+      .select("*")
+      .single();
+
+    if (transcriptUpdateError || !updatedTranscriptData) {
+      return jsonError("db_error", transcriptUpdateError?.message || "Failed to finalize transcript", { status: 500 });
+    }
+
+    transcriptRow = updatedTranscriptData as TranscriptRow;
+  } else {
+    const { data: createdTranscriptData, error: transcriptCreateError } = await admin
+      .from("transcripts")
+      .insert({
+        user_id: userId,
+        job_id: id,
+        transcript_text: transcriptText,
+        raw: {
+          source: "live_capture",
+          finalized_at: new Date().toISOString(),
+          status_text: statusText,
+        },
+      })
+      .select("*")
+      .single();
+
+    if (transcriptCreateError || !createdTranscriptData) {
+      return jsonError("db_error", transcriptCreateError?.message || "Failed to finalize transcript", { status: 500 });
+    }
+
+    transcriptRow = createdTranscriptData as TranscriptRow;
+  }
+
+  await admin
+    .from("jobs")
+    .update({
+      transcript_id: transcriptRow.id,
+      status: JOB_STATUS.completed,
+      ended_at: new Date().toISOString(),
+      live_transcript_snapshot: transcriptText,
+    })
+    .eq("id", id);
+
+  const { data: finalArtifactsData } = await admin
+    .from("artifacts")
+    .select("*")
+    .eq("job_id", id)
+    .in("kind", ["publish_script", "inspiration_questions"])
+    .order("updated_at", { ascending: false });
+
+  const finalArtifacts = ((finalArtifactsData || []) as ArtifactRow[]).map((artifact) => ({
+    ...artifact,
+    title:
+      artifact.status === "draft"
+        ? getArtifactLabel(artifact.kind as "publish_script" | "inspiration_questions")
+        : artifact.title,
+    status: "ready",
+    metadata: {
+      ...((artifact.metadata as Record<string, string | null>) || {}),
+      live_draft: "false",
+      finalized_at: new Date().toISOString(),
+      status_text: statusText,
+    },
+  }));
+
+  for (const artifact of finalArtifacts) {
+    await admin
+      .from("artifacts")
+      .update({
+        title: artifact.title,
+        status: artifact.status,
+        metadata: artifact.metadata,
+      })
+      .eq("id", artifact.id);
+  }
+
+  const { data: finalizedJobData } = await admin
+    .from("jobs")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  return jsonOk({
+    job: finalizedJobData || updatedJobData,
+    draftArtifacts: finalArtifacts,
+    transcript: transcriptRow,
+    statusText,
+  });
 }

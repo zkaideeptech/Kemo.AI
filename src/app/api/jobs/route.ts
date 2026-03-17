@@ -27,6 +27,10 @@ type JsonUploadPayload = {
   mimeType?: string;
 };
 
+function isLiveCapturePayload(payload: JsonUploadPayload) {
+  return payload.captureMode === "live" && !payload.storagePath && !payload.fileName;
+}
+
 const LOG = "[API /jobs]";
 
 export const runtime = "nodejs";
@@ -148,24 +152,34 @@ export async function POST(req: Request) {
     mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
     fileSize = Number(body.fileSize || 0);
 
-    if (!fileName || !storagePath || !Number.isFinite(fileSize) || fileSize <= 0) {
+    if (isLiveCapturePayload(body)) {
+      uploadedByClient = false;
+      fileName = "";
+      storagePath = "";
+      mimeType = "";
+      fileSize = 0;
+      sourceType = "live_capture";
+      captureMode = "live";
+    } else if (!fileName || !storagePath || !Number.isFinite(fileSize) || fileSize <= 0) {
       console.log(`${LOG} ✗ JSON payload 非法`);
       return jsonError("invalid_payload", "Invalid upload metadata", { status: 400 });
     }
 
-    if (!storagePath.startsWith(`${user.id}/`)) {
+    if (storagePath && !storagePath.startsWith(`${user.id}/`)) {
       console.log(`${LOG} ✗ storagePath 不属于当前用户: ${storagePath}`);
       return jsonError("invalid_payload", "Invalid storage path", { status: 400 });
     }
 
     // 客户端直传模式：先验证文件确实已存在，避免写入坏数据
-    const { error: verifyError } = await admin.storage
-      .from(bucket)
-      .createSignedUrl(storagePath, 60);
+    if (storagePath) {
+      const { error: verifyError } = await admin.storage
+        .from(bucket)
+        .createSignedUrl(storagePath, 60);
 
-    if (verifyError) {
-      console.log(`${LOG} ✗ 直传文件不存在: ${verifyError.message}`);
-      return jsonError("upload_missing", "Uploaded file not found in storage", { status: 400 });
+      if (verifyError) {
+        console.log(`${LOG} ✗ 直传文件不存在: ${verifyError.message}`);
+        return jsonError("upload_missing", "Uploaded file not found in storage", { status: 400 });
+      }
     }
   } else {
     const formData = await req.formData();
@@ -204,10 +218,14 @@ export async function POST(req: Request) {
   }
 
   const fileSizeMb = fileSize / (1024 * 1024);
-  console.log(`${LOG} 文件: ${fileName} / ${fileSizeMb.toFixed(2)}MB / ${mimeType || "unknown"}`);
+  if (captureMode === "live") {
+    console.log(`${LOG} 实时访谈模式：创建空 Job，音频后续实时进入 ASR`);
+  } else {
+    console.log(`${LOG} 文件: ${fileName} / ${fileSizeMb.toFixed(2)}MB / ${mimeType || "unknown"}`);
+  }
 
   // 权益检查：文件大小限制
-  if (fileSizeMb > plan.maxFileSizeMb) {
+  if (captureMode !== "live" && fileSizeMb > plan.maxFileSizeMb) {
     console.log(`${LOG} ✗ 文件超限: ${fileSizeMb.toFixed(2)}MB > ${plan.maxFileSizeMb}MB`);
     return jsonError(
       "file_too_large",
@@ -242,6 +260,14 @@ export async function POST(req: Request) {
   }
 
   console.log(`${LOG} ✓ Job 已创建: ${job.id}`);
+
+  if (captureMode === "live") {
+    return jsonOk({
+      jobId: job.id,
+      job,
+      audioAssetId: null,
+    }, { status: 201 });
+  }
 
   if (!uploadedByClient && uploadedFile) {
     // multipart 模式：服务端负责上传（本地开发兼容）

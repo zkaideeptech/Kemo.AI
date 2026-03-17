@@ -136,7 +136,7 @@ export function NotebookWorkspace({
   const hasSelectedProject = Boolean(selectedProjectId);
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "请先创建一个项目，项目建好后才可继续录音、实时访谈和导入来源。";
-  const interviewLockedReason = "请先在当前项目里新建一个访谈，实时访谈和生成链路才会保存到后台。";
+  const liveAutoCreateHint = "点开始后会自动在当前项目下创建一条实时访谈并持续保存。";
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("kemo-ui-mode");
@@ -452,6 +452,84 @@ export function NotebookWorkspace({
     setLiveTranscriptSnapshot("");
     setLiveCaptureStatus("准备开始实时访谈");
     setNewInterviewOpen(false);
+  }
+
+  function handleLiveFinalized(payload: {
+    job?: unknown;
+    draftArtifacts?: unknown[];
+    transcriptText: string;
+    statusText: string;
+  }) {
+    if (payload.job) {
+      const job = payload.job as JobRow;
+      setJobState((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
+      setSelectedJobId(job.id);
+    }
+
+    if (Array.isArray(payload.draftArtifacts) && payload.draftArtifacts.length) {
+      const nextArtifacts = payload.draftArtifacts as WorkspaceArtifact[];
+      setArtifactState((prev) => {
+        const merged = [...prev];
+        for (const artifact of nextArtifacts) {
+          const index = merged.findIndex((item) => item.id === artifact.id);
+          if (index >= 0) {
+            merged[index] = artifact;
+          } else {
+            merged.unshift(artifact);
+          }
+        }
+        return merged;
+      });
+    }
+
+    setLiveTranscriptSnapshot(payload.transcriptText);
+    setLiveCaptureStatus(payload.statusText);
+  }
+
+  async function ensureLiveJob() {
+    if (!selectedProjectId) {
+      setNewProjectOpen(true);
+      return { jobId: null, statusText: projectLockedReason };
+    }
+
+    const reusableJob =
+      selectedJob &&
+      selectedJob.project_id === selectedProjectId &&
+      selectedJob.capture_mode === "live" &&
+      !["completed", "failed"].includes(selectedJob.status || "")
+        ? selectedJob
+        : null;
+
+    if (reusableJob) {
+      return { jobId: reusableJob.id, statusText: "已接入当前实时访谈" };
+    }
+
+    const title = `实时访谈 ${new Date().toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        projectId: selectedProjectId,
+        sourceType: "live_capture",
+        captureMode: "live",
+      }),
+    });
+    const json = await res.json();
+
+    if (!res.ok || !json.ok) {
+      return { jobId: null, statusText: json?.error?.message || "无法创建实时访谈" };
+    }
+
+    const createdJob = json.data.job as JobRow;
+    handleJobCreated(createdJob);
+    return { jobId: createdJob.id, statusText: "已创建实时访谈" };
   }
 
   const favoriteArtifacts = artifactState.filter((artifact) => favoriteArtifactIds.has(artifact.id));
@@ -836,11 +914,13 @@ export function NotebookWorkspace({
               </section>
             ) : (
               <LiveInterviewPanel
-                key={selectedJob?.id || selectedProjectId || "workspace-live"}
+                key={selectedProjectId || "workspace-live"}
                 onTranscriptChange={setLiveTranscriptSnapshot}
                 onStatusChange={setLiveCaptureStatus}
-                disabled={!hasSelectedJob}
-                disabledReason={interviewLockedReason}
+                onEnsureJob={ensureLiveJob}
+                onFinalized={handleLiveFinalized}
+                disabled={!hasSelectedProject}
+                disabledReason={projectLockedReason}
               />
             )}
 
@@ -858,7 +938,7 @@ export function NotebookWorkspace({
                       ? `${selectedJob.interviewer_name || "Interviewer"} × ${selectedJob.guest_name || "Guest"}`
                       : liveTranscriptSnapshot
                         ? liveCaptureStatus
-                        : interviewLockedReason}
+                        : liveAutoCreateHint}
                   </p>
                 </div>
                 {selectedJob ? (
@@ -900,7 +980,7 @@ export function NotebookWorkspace({
                     </div>
                   </div>
                   <div className="workspace-scroll-content whitespace-pre-wrap">
-                    {!hasSelectedProject ? projectLockedReason : transcriptContent || interviewLockedReason}
+                    {!hasSelectedProject ? projectLockedReason : transcriptContent || liveAutoCreateHint}
                   </div>
                 </article>
 
@@ -1086,7 +1166,7 @@ export function NotebookWorkspace({
                       <span className="min-w-0 truncate">{artifact.title}</span>
                       <span className="shrink-0 text-xs uppercase text-slate-400">{artifact.kind}</span>
                     </button>
-                  )) : <p className="workspace-muted-copy">{hasSelectedJob ? "当前访谈还没有生成过输出。" : interviewLockedReason}</p>}
+                  )) : <p className="workspace-muted-copy">{hasSelectedJob ? "当前访谈还没有生成过输出。" : liveAutoCreateHint}</p>}
                 </div>
               </div>
           </aside>
