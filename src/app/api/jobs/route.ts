@@ -8,7 +8,7 @@
 
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/response";
-import { getUserPlan, FREE_MAX_JOBS_PER_MONTH } from "@/lib/billing/plan";
+import { getUserPlan } from "@/lib/billing/plan";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import type { Database } from "@/lib/supabase/types";
 
@@ -95,31 +95,6 @@ export async function POST(req: Request) {
   // 获取用户套餐
   const plan = await getUserPlan(supabase, user.id);
   console.log(`${LOG} 套餐: ${plan.plan} / 单文件上限: ${plan.maxFileSizeMb}MB`);
-
-  // 权益检查：Free 用户每月任务数限制
-  if (plan.plan === "free") {
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    const { count } = await admin
-      .from("jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .gte("created_at", monthStart.toISOString());
-
-    const jobsThisMonth = count || 0;
-    console.log(`${LOG} 本月已用任务: ${jobsThisMonth}/${FREE_MAX_JOBS_PER_MONTH}`);
-
-    if (jobsThisMonth >= FREE_MAX_JOBS_PER_MONTH) {
-      console.log(`${LOG} ✗ Free 用户月度任务数已达上限`);
-      return jsonError(
-        "quota_exceeded",
-        `Free plan allows ${FREE_MAX_JOBS_PER_MONTH} jobs/month. Upgrade to Pro.`,
-        { status: 403 }
-      );
-    }
-  }
 
   const bucket = process.env.SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
   const contentType = req.headers.get("content-type") || "";
