@@ -25,9 +25,13 @@ type SpeechRecognitionCtor = new () => {
 export function LiveInterviewPanel({
   onTranscriptChange,
   onStatusChange,
+  disabled = false,
+  disabledReason = "请先创建访谈",
 }: {
   onTranscriptChange?: (value: string) => void;
   onStatusChange?: (value: string) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const [captureMic, setCaptureMic] = useState(true);
   const [captureSystemAudio, setCaptureSystemAudio] = useState(true);
@@ -56,6 +60,11 @@ export function LiveInterviewPanel({
   }, [onStatusChange, status]);
 
   async function startLive() {
+    if (disabled) {
+      setStatus(disabledReason);
+      return;
+    }
+
     const tracks: MediaStreamTrack[] = [];
 
     try {
@@ -133,7 +142,7 @@ export function LiveInterviewPanel({
   }
 
   return (
-    <section className="workspace-panel flex min-h-[240px] flex-col gap-4">
+    <section className={`workspace-panel flex min-h-[240px] flex-col gap-4 ${disabled ? "workspace-panel-disabled" : ""}`}>
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <p className="workspace-kicker">Live Transcript</p>
@@ -141,7 +150,7 @@ export function LiveInterviewPanel({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!isRunning ? (
-            <Button onClick={startLive} className="workspace-primary-button">
+            <Button onClick={startLive} className="workspace-primary-button" disabled={disabled}>
               <Radio className="h-4 w-4" />
               开始实时访谈
             </Button>
@@ -158,6 +167,8 @@ export function LiveInterviewPanel({
         <button
           type="button"
           onClick={() => setCaptureMic((value) => !value)}
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
           className={`workspace-toggle ${captureMic ? "workspace-toggle-active" : ""}`}
         >
           <Mic className="h-4 w-4" />
@@ -166,6 +177,8 @@ export function LiveInterviewPanel({
         <button
           type="button"
           onClick={() => setCaptureSystemAudio((value) => !value)}
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
           className={`workspace-toggle ${captureSystemAudio ? "workspace-toggle-active" : ""}`}
         >
           <ScreenShare className="h-4 w-4" />
@@ -176,10 +189,10 @@ export function LiveInterviewPanel({
       <div className="rounded-[28px] border border-black/8 bg-white/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
         <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">
           <Waves className="h-4 w-4" />
-          {status}
+          {disabled ? disabledReason : status}
         </div>
         <div className="min-h-[120px] whitespace-pre-wrap rounded-[20px] bg-[#f6f2ea] p-4 text-sm leading-6 text-slate-700">
-          {liveText || "开始后，这里会显示浏览器实时捕获的转写片段。"}
+          {disabled ? disabledReason : liveText || "开始后，这里会显示浏览器实时捕获的转写片段。"}
         </div>
       </div>
     </section>

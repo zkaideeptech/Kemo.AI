@@ -78,6 +78,11 @@ export function NewJobForm({
    * 提交表单，上传音频并创建任务
    */
   const submit = async () => {
+    if (!projectId) {
+      setError("请先创建并选中一个项目");
+      return;
+    }
+
     if (!file) {
       setError(t("new.missingFile") || "Missing audio file");
       return;

@@ -3,7 +3,6 @@ import { getUserPlan } from "@/lib/billing/plan";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   buildLegacyArtifacts,
-  ensureDefaultProject,
   type ArtifactRow,
   type FavoriteRow,
   type JobRow,
@@ -27,8 +26,6 @@ export default async function JobsPage({
   const supabase = await createSupabaseServerClient();
   const plan = await getUserPlan(supabase, user.id);
 
-  const defaultProject = await ensureDefaultProject(supabase, user.id);
-
   const [{ data: projects }, { data: jobs }, { data: transcripts }, { data: memos }, { data: artifacts }, { data: favorites }, { data: sources }] =
     await Promise.all([
       supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
@@ -40,8 +37,7 @@ export default async function JobsPage({
       supabase.from("sources").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     ]);
 
-  const safeProjects = projects?.length ? projects : [defaultProject];
-  const safeProjectsTyped = safeProjects as ProjectRow[];
+  const safeProjectsTyped = (projects || []) as ProjectRow[];
   const safeJobs = (jobs || []) as JobRow[];
   const safeTranscripts = (transcripts || []) as TranscriptRow[];
   const safeMemos = (memos || []) as Array<{

@@ -10,7 +10,6 @@ import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/sup
 import { jsonError, jsonOk } from "@/lib/api/response";
 import { getUserPlan, FREE_MAX_JOBS_PER_MONTH } from "@/lib/billing/plan";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
-import { ensureDefaultProject } from "@/lib/workspace";
 import type { Database } from "@/lib/supabase/types";
 
 type JobRow = Database["public"]["Tables"]["jobs"]["Row"];
@@ -190,8 +189,18 @@ export async function POST(req: Request) {
   }
 
   if (!projectId) {
-    const defaultProject = await ensureDefaultProject(supabase, user.id);
-    projectId = defaultProject.id;
+    return jsonError("missing_project", "Please create and select a project first", { status: 400 });
+  }
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!project) {
+    return jsonError("invalid_project", "Selected project does not exist", { status: 400 });
   }
 
   const fileSizeMb = fileSize / (1024 * 1024);

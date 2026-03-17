@@ -77,6 +77,9 @@ export function NotebookWorkspace({
   initialJobId?: string | null;
   initialNewInterviewOpen?: boolean;
 }) {
+  const initialJobProjectId = initialJobId
+    ? jobs.find((job) => job.id === initialJobId)?.project_id || null
+    : null;
   const [isPending, startTransition] = useTransition();
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState("");
@@ -89,7 +92,7 @@ export function NotebookWorkspace({
   const [artifactState, setArtifactState] = useState(artifacts);
   const [favoriteState, setFavoriteState] = useState(favorites);
   const [sourceState, setSourceState] = useState(sources);
-  const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || null);
+  const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || projects[0]?.id || null);
   const [selectedJobId, setSelectedJobId] = useState(initialJobId || jobs[0]?.id || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(sources[0]?.id || null);
   const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
@@ -130,6 +133,10 @@ export function NotebookWorkspace({
     selectedJob?.live_transcript_snapshot ||
     liveTranscriptSnapshot ||
     "";
+  const hasSelectedProject = Boolean(selectedProjectId);
+  const hasSelectedJob = Boolean(selectedJob?.id);
+  const projectLockedReason = "请先创建一个项目，项目建好后才可继续录音、实时访谈和导入来源。";
+  const interviewLockedReason = "请先在当前项目里新建一个访谈，实时访谈和生成链路才会保存到后台。";
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("kemo-ui-mode");
@@ -146,6 +153,17 @@ export function NotebookWorkspace({
     }
     window.localStorage.setItem("kemo-ui-mode", uiMode);
   }, [uiMode]);
+
+  useEffect(() => {
+    if (!projectState.length) {
+      setSelectedProjectId(null);
+      return;
+    }
+
+    if (!projectState.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId(projectState[0].id);
+    }
+  }, [projectState, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId || search.trim().length < 2) {
@@ -208,6 +226,13 @@ export function NotebookWorkspace({
   useEffect(() => {
     lastLiveSyncRef.current = "";
   }, [selectedJobId]);
+
+  useEffect(() => {
+    if (!hasSelectedProject && initialNewInterviewOpen) {
+      setNewInterviewOpen(false);
+      setNewProjectOpen(true);
+    }
+  }, [hasSelectedProject, initialNewInterviewOpen]);
 
   useEffect(() => {
     if (!selectedJob?.id) return;
@@ -287,6 +312,8 @@ export function NotebookWorkspace({
 
     setProjectState((prev) => [json.data.project, ...prev]);
     setSelectedProjectId(json.data.project.id);
+    setSelectedJobId(null);
+    setSelectedSourceId(null);
     setNewProjectTitle("");
     setNewProjectDescription("");
     setNewProjectOpen(false);
@@ -294,7 +321,11 @@ export function NotebookWorkspace({
   }
 
   async function importSource(url: string, title?: string, sourceType = "url") {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId) {
+      setSourceError(projectLockedReason);
+      setNewProjectOpen(true);
+      return;
+    }
 
     setIsImportingSource(true);
     setSourceError(null);
@@ -377,6 +408,11 @@ export function NotebookWorkspace({
   }
 
   async function runWebSearch() {
+    if (!selectedProjectId) {
+      setWebResults([]);
+      return;
+    }
+
     if (search.trim().length < 2) {
       setWebResults([]);
       return;
@@ -414,6 +450,7 @@ export function NotebookWorkspace({
     setSelectedProjectId(job.project_id);
     setSelectedJobId(job.id);
     setLiveTranscriptSnapshot("");
+    setLiveCaptureStatus("准备开始实时访谈");
     setNewInterviewOpen(false);
   }
 
@@ -452,11 +489,23 @@ export function NotebookWorkspace({
               <FolderPlus className="h-4 w-4" />
               {!collapsed ? "新建项目" : null}
             </button>
-            <button type="button" className="workspace-nav-button" onClick={() => setNewInterviewOpen(true)}>
+            <button
+              type="button"
+              className="workspace-nav-button"
+              onClick={() => hasSelectedProject ? setNewInterviewOpen(true) : setNewProjectOpen(true)}
+              disabled={!hasSelectedProject}
+              title={!hasSelectedProject ? projectLockedReason : undefined}
+            >
               <Plus className="h-4 w-4" />
               {!collapsed ? "新建访谈" : null}
             </button>
-            <button type="button" className="workspace-nav-button" onClick={() => setNewSourceOpen(true)}>
+            <button
+              type="button"
+              className="workspace-nav-button"
+              onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
+              disabled={!hasSelectedProject}
+              title={!hasSelectedProject ? projectLockedReason : undefined}
+            >
               <Link2 className="h-4 w-4" />
               {!collapsed ? "导入网址" : null}
             </button>
@@ -503,14 +552,27 @@ export function NotebookWorkspace({
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="搜索项目、访谈、来源、输出"
+                    disabled={!hasSelectedProject}
                   />
                 </label>
                 <div className="workspace-search-toolbar">
-                  <button type="button" className="workspace-chip-button" onClick={runWebSearch}>
+                  <button
+                    type="button"
+                    className="workspace-chip-button"
+                    onClick={runWebSearch}
+                    disabled={!hasSelectedProject}
+                    title={!hasSelectedProject ? projectLockedReason : undefined}
+                  >
                     {isWebSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
                     <span>Web</span>
                   </button>
-                  <button type="button" className="workspace-chip-button" onClick={() => setNewSourceOpen(true)}>
+                  <button
+                    type="button"
+                    className="workspace-chip-button"
+                    onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
+                    disabled={!hasSelectedProject}
+                    title={!hasSelectedProject ? projectLockedReason : undefined}
+                  >
                     <Link2 className="h-3.5 w-3.5" />
                     <span>导入 URL</span>
                   </button>
@@ -583,7 +645,7 @@ export function NotebookWorkspace({
                   </button>
                 </div>
                 <div className="grid gap-2">
-                  {projectState.map((project) => (
+                  {projectState.length ? projectState.map((project) => (
                     <button
                       key={project.id}
                       type="button"
@@ -592,7 +654,18 @@ export function NotebookWorkspace({
                     >
                       <span className="truncate">{project.title}</span>
                     </button>
-                  ))}
+                  )) : (
+                    <div className="workspace-empty-card workspace-empty-card-strong">
+                      <div className="grid gap-2">
+                        <p className="font-semibold text-slate-900">项目目录还是空的</p>
+                        <p className="workspace-muted-copy">先创建一个项目。项目创建后会出现在这里，访谈、来源和输出都会按项目归档。</p>
+                        <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
+                          <FolderPlus className="h-3.5 w-3.5" />
+                          创建第一个项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -602,7 +675,11 @@ export function NotebookWorkspace({
                   <Link2 className="h-3.5 w-3.5" />
                 </div>
                 <div className="grid gap-2">
-                  {projectSources.length ? projectSources.map((source) => (
+                  {!hasSelectedProject ? (
+                    <div className="workspace-empty-card">
+                      <p className="workspace-muted-copy">{projectLockedReason}</p>
+                    </div>
+                  ) : projectSources.length ? projectSources.map((source) => (
                     <div
                       key={source.id}
                       className={`workspace-list-item ${selectedSource?.id === source.id ? "workspace-list-item-active" : ""}`}
@@ -666,7 +743,11 @@ export function NotebookWorkspace({
                   <LayoutPanelLeft className="h-3.5 w-3.5" />
                 </div>
                 <div className="grid gap-2">
-                  {filteredJobs.length ? filteredJobs.map((job) => (
+                  {!hasSelectedProject ? (
+                    <div className="workspace-empty-card">
+                      <p className="workspace-muted-copy">{projectLockedReason}</p>
+                    </div>
+                  ) : filteredJobs.length ? filteredJobs.map((job) => (
                     <button
                       key={job.id}
                       type="button"
@@ -714,36 +795,70 @@ export function NotebookWorkspace({
                 <h2 className="workspace-heading">Project cockpit</h2>
               </div>
               <div className="workspace-search-toolbar">
-                <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
+                <button
+                  type="button"
+                  className="workspace-chip-button"
+                  onClick={() => hasSelectedProject ? setNewInterviewOpen(true) : setNewProjectOpen(true)}
+                  disabled={!hasSelectedProject}
+                  title={!hasSelectedProject ? projectLockedReason : undefined}
+                >
                   <Plus className="h-3.5 w-3.5" />
                   新建访谈
                 </button>
-                <button type="button" className="workspace-chip-button" onClick={() => setNewSourceOpen(true)}>
+                <button
+                  type="button"
+                  className="workspace-chip-button"
+                  onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
+                  disabled={!hasSelectedProject}
+                  title={!hasSelectedProject ? projectLockedReason : undefined}
+                >
                   <Link2 className="h-3.5 w-3.5" />
                   导入来源
                 </button>
               </div>
             </section>
 
-            <LiveInterviewPanel
-              key={selectedJob?.id || selectedProjectId || "workspace-live"}
-              onTranscriptChange={setLiveTranscriptSnapshot}
-              onStatusChange={setLiveCaptureStatus}
-            />
+            {!hasSelectedProject ? (
+              <section className="workspace-panel workspace-blocking-state">
+                <div className="workspace-blocking-copy">
+                  <p className="workspace-kicker">Step 1</p>
+                  <h2 className="workspace-heading">先创建项目，再开始访谈</h2>
+                  <p className="workspace-muted-copy">
+                    项目是整条工作流的归档根节点。没有项目时，录音、实时访谈、导入网址和 Studio 生成都不应该开放。
+                  </p>
+                  <div className="workspace-search-toolbar">
+                    <button type="button" className="workspace-primary-button workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
+                      <FolderPlus className="h-3.5 w-3.5" />
+                      创建第一个项目
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <LiveInterviewPanel
+                key={selectedJob?.id || selectedProjectId || "workspace-live"}
+                onTranscriptChange={setLiveTranscriptSnapshot}
+                onStatusChange={setLiveCaptureStatus}
+                disabled={!hasSelectedJob}
+                disabledReason={interviewLockedReason}
+              />
+            )}
 
             <section className="workspace-panel">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <p className="workspace-kicker">Current Interview</p>
                   <h1 className="workspace-heading text-[1.6rem]">
-                    {selectedJob?.title || "选择一个访谈开始工作"}
+                    {!hasSelectedProject ? "先创建项目" : selectedJob?.title || "选择一个访谈开始工作"}
                   </h1>
                   <p className="workspace-muted-copy">
-                    {selectedJob
+                    {!hasSelectedProject
+                      ? projectLockedReason
+                      : selectedJob
                       ? `${selectedJob.interviewer_name || "Interviewer"} × ${selectedJob.guest_name || "Guest"}`
                       : liveTranscriptSnapshot
                         ? liveCaptureStatus
-                        : "你可以先新建访谈，或者导入一个来源。"}
+                        : interviewLockedReason}
                   </p>
                 </div>
                 {selectedJob ? (
@@ -752,11 +867,20 @@ export function NotebookWorkspace({
                   </div>
                 ) : (
                   <div className="workspace-search-toolbar">
-                    <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
+                    <button
+                      type="button"
+                      className="workspace-chip-button"
+                      onClick={() => hasSelectedProject ? setNewInterviewOpen(true) : setNewProjectOpen(true)}
+                    >
                       <Plus className="h-3.5 w-3.5" />
-                      新建访谈
+                      {hasSelectedProject ? "新建访谈" : "先创建项目"}
                     </button>
-                    <button type="button" className="workspace-chip-button" onClick={() => setNewSourceOpen(true)}>
+                    <button
+                      type="button"
+                      className="workspace-chip-button"
+                      onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
+                      disabled={!hasSelectedProject}
+                    >
                       <Link2 className="h-3.5 w-3.5" />
                       导入来源
                     </button>
@@ -772,11 +896,11 @@ export function NotebookWorkspace({
                       <h2 className="workspace-heading">语音识别窗口</h2>
                     </div>
                     <div className="workspace-status-pill">
-                      {selectedJob?.status || (liveTranscriptSnapshot ? "live" : "idle")}
+                      {!hasSelectedProject ? "project required" : selectedJob?.status || (liveTranscriptSnapshot ? "live" : "idle")}
                     </div>
                   </div>
                   <div className="workspace-scroll-content whitespace-pre-wrap">
-                    {transcriptContent || "转写完成后，这里会显示语音识别内容。"}
+                    {!hasSelectedProject ? projectLockedReason : transcriptContent || interviewLockedReason}
                   </div>
                 </article>
 
@@ -834,7 +958,12 @@ export function NotebookWorkspace({
                         <Sparkles className="h-5 w-5" />
                         <div className="grid gap-3">
                           <p className="workspace-muted-copy">点右侧 Studio 功能卡后，结果会以任务卡形式出现在这里。</p>
-                          {!selectedJob ? (
+                          {!hasSelectedProject ? (
+                            <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
+                              <FolderPlus className="h-3.5 w-3.5" />
+                              先创建一个项目
+                            </button>
+                          ) : !selectedJob ? (
                             <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
                               <Plus className="h-3.5 w-3.5" />
                               先创建一个访谈
@@ -881,10 +1010,16 @@ export function NotebookWorkspace({
                   <div className="workspace-empty-card">
                     <Link2 className="h-5 w-5" />
                     <div className="grid gap-3">
-                      <p className="workspace-muted-copy">当前项目还没有可用来源。导入网页后，这里会展示正文内容。</p>
-                      <button type="button" className="workspace-chip-button" onClick={() => setNewSourceOpen(true)}>
+                      <p className="workspace-muted-copy">
+                        {hasSelectedProject ? "当前项目还没有可用来源。导入网页后，这里会展示正文内容。" : projectLockedReason}
+                      </p>
+                      <button
+                        type="button"
+                        className="workspace-chip-button"
+                        onClick={() => hasSelectedProject ? setNewSourceOpen(true) : setNewProjectOpen(true)}
+                      >
                         <Link2 className="h-3.5 w-3.5" />
-                        添加第一个来源
+                        {hasSelectedProject ? "添加第一个来源" : "先创建项目"}
                       </button>
                     </div>
                   </div>
@@ -951,14 +1086,20 @@ export function NotebookWorkspace({
                       <span className="min-w-0 truncate">{artifact.title}</span>
                       <span className="shrink-0 text-xs uppercase text-slate-400">{artifact.kind}</span>
                     </button>
-                  )) : <p className="workspace-muted-copy">当前访谈还没有生成过输出。</p>}
+                  )) : <p className="workspace-muted-copy">{hasSelectedJob ? "当前访谈还没有生成过输出。" : interviewLockedReason}</p>}
                 </div>
               </div>
           </aside>
         </main>
       </div>
 
-      <Dialog open={newInterviewOpen} onOpenChange={setNewInterviewOpen}>
+      <Dialog open={newInterviewOpen} onOpenChange={(open) => {
+        if (open && !hasSelectedProject) {
+          setNewProjectOpen(true);
+          return;
+        }
+        setNewInterviewOpen(open);
+      }}>
         <DialogContent className="max-w-3xl border-0 bg-transparent p-0 shadow-none">
           <DialogHeader className="sr-only">
             <DialogTitle>新建访谈</DialogTitle>
