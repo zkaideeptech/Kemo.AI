@@ -79,7 +79,7 @@ export async function POST(
     return jsonError("db_error", updateJobError?.message || "Failed to update live transcript", { status: 500 });
   }
 
-  if (transcriptText.length < 80 && !finalize) {
+  if (transcriptText.length < 24 && !finalize) {
     return jsonOk({ job: updatedJobData, draftArtifacts: [], statusText });
   }
 
@@ -176,7 +176,7 @@ export async function POST(
 
     draftArtifacts.push(await upsertDraftArtifact("publish_script", draftText));
 
-    if (transcriptText.length >= 120) {
+    if (transcriptText.length >= 60) {
       const inspirationText = await generateArtifactText("inspiration_questions", {
         transcriptText,
         glossaryTerms,

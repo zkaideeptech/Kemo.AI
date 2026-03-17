@@ -129,6 +129,9 @@ export function NotebookWorkspace({
   const selectedProject = projectState.find((project) => project.id === selectedProjectId) || null;
   const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
   const selectedArtifacts = artifactState.filter((artifact) => artifact.job_id === selectedJob?.id);
+  const selectedPublishArtifact =
+    selectedArtifacts.find((artifact) => artifact.kind === "publish_script") || null;
+  const selectedTaskArtifacts = selectedArtifacts.filter((artifact) => artifact.id !== selectedPublishArtifact?.id);
   const projectSources = sourceState.filter((source) => source.project_id === selectedProjectId);
   const selectedSource = projectSources.find((source) => source.id === selectedSourceId) || null;
   const favoriteArtifactIds = new Set(
@@ -139,6 +142,7 @@ export function NotebookWorkspace({
     selectedJob?.live_transcript_snapshot ||
     liveTranscriptSnapshot ||
     "";
+  const primaryWorkspaceContent = selectedPublishArtifact?.content || transcriptContent;
   const hasSelectedProject = Boolean(selectedProjectId);
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "请先创建一个项目，项目建好后才可继续录音、实时访谈和导入来源。";
@@ -273,6 +277,10 @@ export function NotebookWorkspace({
         if (!res.ok || !json.ok) return;
 
         lastLiveSyncRef.current = nextSnapshot;
+
+        if (typeof json.data?.warning === "string" && json.data.warning.trim()) {
+          setLiveCaptureStatus(`转写已同步，00 skill 暂未完成：${json.data.warning}`);
+        }
 
         if (json.data.job) {
           setJobState((prev) => [json.data.job, ...prev.filter((item) => item.id !== json.data.job.id)]);
@@ -1077,15 +1085,17 @@ export function NotebookWorkspace({
                 <article className={`workspace-card workspace-transcript-card ${!hasSelectedProject || !hasSelectedJob ? "workspace-panel-disabled" : ""}`}>
                   <div className="workspace-card-header">
                     <div>
-                      <p className="workspace-kicker">Transcript</p>
-                      <h2 className="workspace-heading">语音识别窗口</h2>
+                      <p className="workspace-kicker">{selectedPublishArtifact ? "00 Skill Draft" : "Transcript"}</p>
+                      <h2 className="workspace-heading">{selectedPublishArtifact ? "发布稿草稿" : "语音识别窗口"}</h2>
                     </div>
                     <div className="workspace-status-pill">
-                      {!hasSelectedProject ? "project required" : selectedJob?.status || (liveTranscriptSnapshot ? "live" : "idle")}
+                      {!hasSelectedProject ? "project required" : selectedPublishArtifact?.status || selectedJob?.status || (liveTranscriptSnapshot ? "live" : "idle")}
                     </div>
                   </div>
                   <div className="workspace-scroll-content whitespace-pre-wrap">
-                    {!hasSelectedProject ? projectLockedReason : transcriptContent || liveAutoCreateHint}
+                    {!hasSelectedProject
+                      ? projectLockedReason
+                      : primaryWorkspaceContent || (transcriptContent ? "00 skill 正在整理发布稿草稿。" : liveAutoCreateHint)}
                   </div>
                 </article>
 
@@ -1095,10 +1105,10 @@ export function NotebookWorkspace({
                       <p className="workspace-kicker">Task Rail</p>
                       <h2 className="workspace-heading">任务栏</h2>
                     </div>
-                    <div className="workspace-status-pill">{selectedArtifacts.length} cards</div>
+                    <div className="workspace-status-pill">{selectedTaskArtifacts.length} cards</div>
                   </div>
                   <div className="workspace-card-stack">
-                    {selectedArtifacts.length ? selectedArtifacts.map((artifact) => (
+                    {selectedTaskArtifacts.length ? selectedTaskArtifacts.map((artifact) => (
                       <section key={artifact.id} className="workspace-task-card">
                         <header className="flex items-start justify-between gap-3">
                           <div>

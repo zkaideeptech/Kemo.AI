@@ -276,6 +276,21 @@ export function LiveInterviewPanel({
       ].filter(Boolean);
       setCaptureDetails(detailParts.join(" / ") || "未拿到音轨");
 
+      const displayTrackSet = new Set(displayAudioTracks);
+      cleanupTracks.forEach((track) => {
+        track.addEventListener(
+          "ended",
+          () => {
+            if (displayTrackSet.has(track)) {
+              setStatus("浏览器标签页音频已中断，实时转写会停在最后一段。请重新开始并再次勾选“分享音频”。");
+            } else if (track.kind === "audio") {
+              setStatus("麦克风音频已中断，实时转写会停在最后一段。");
+            }
+          },
+          { once: true }
+        );
+      });
+
       if (!displayAudioTracks.length && captureSystemAudio) {
         setStatus("没有捕获到标签页音频。当前只会收到麦克风或外放环境声，请重新选择“浏览器标签页 + 分享音频”。");
       } else {
