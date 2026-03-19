@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "asr:gateway": "tsx scripts/live-asr-gateway.ts",
     "worker": "tsx scripts/worker.ts",
     "seed:terms": "tsx scripts/import-seed-terms.ts"
   },
@@ -28,9 +29,11 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "stripe": "^20.3.0",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "ws": "^8.18.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

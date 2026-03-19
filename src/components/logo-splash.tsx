@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { KemoMark } from "@/components/kemo-mark";
 
 export function LogoSplash({ children }: { children: React.ReactNode }) {
   const [showContent, setShowContent] = useState(false);
@@ -45,7 +46,9 @@ export function LogoSplash({ children }: { children: React.ReactNode }) {
         />
 
         <div className="splash-center animate-logo-reveal">
-          <div className="splash-brand-mark">K</div>
+          <div className="splash-brand-mark">
+            <KemoMark className="splash-brand-mark-icon" />
+          </div>
           <div className="splash-brand-copy">
             <p className="splash-wordmark">KEMO NOTEBOOK</p>
             <p className="splash-subtitle">Interview workspace for scripts, insights, and sources.</p>

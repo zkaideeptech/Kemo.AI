@@ -8,7 +8,13 @@
 
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
-import { startTranscription, pollResult } from "@/lib/providers/asrProvider";
+import {
+  formatSpeakerTranscript,
+  extractSpeakerSegments,
+  startTranscription,
+  pollResult,
+  transcribeWithSpeakerDiarization,
+} from "@/lib/providers/asrProvider";
 import { extractTerms } from "@/lib/providers/termProvider";
 import { generateArtifactText, generateIcQa, generateWeChatArticle } from "@/lib/providers/llmProvider";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -26,6 +32,26 @@ const LOG = "[Pipeline]";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollUntilCompleted(vendorTaskId: string) {
+  let attempt = 0;
+  let result;
+
+  while (attempt < DEFAULT_POLL_MAX_ATTEMPTS) {
+    result = await pollResult({ vendorTaskId });
+    if (result.status === "completed") {
+      return result;
+    }
+    if (result.status === "failed") {
+      throw new Error(`ASR failed: ${result.errorMessage || "unknown"}`);
+    }
+
+    attempt += 1;
+    await sleep(DEFAULT_POLL_INTERVAL_MS);
+  }
+
+  throw new Error("ASR polling timed out");
 }
 
 /**
@@ -111,29 +137,41 @@ export async function runJobPipeline(jobId: string) {
 
     console.log(`${LOG} Signed URL 已生成 (1h有效期)`);
 
-    // 提交 ASR 任务
+    // 提交主转写任务
     const { vendorTaskId } = await startTranscription({
       audioUrl: signed.signedUrl,
     });
 
-    // 轮询结果
-    let attempt = 0;
-    let result;
+    const result = await pollUntilCompleted(vendorTaskId);
 
-    while (attempt < DEFAULT_POLL_MAX_ATTEMPTS) {
-      result = await pollResult({ vendorTaskId });
-      if (result.status === "completed") break;
-      if (result.status === "failed") {
-        console.error(`${LOG} ✗ ASR 转写失败:`, result.errorMessage);
-        throw new Error(`ASR failed: ${result.errorMessage || "unknown"}`);
+    let transcriptText = result.transcriptText || "";
+    let speakerTranscriptText = "";
+    let diarizationRaw: unknown = null;
+
+    try {
+      console.log(`${LOG} 尝试生成说话人分离版本...`);
+      const diarizationTaskId = await transcribeWithSpeakerDiarization({
+        audioUrl: signed.signedUrl,
+      });
+      const diarizationResult = await pollUntilCompleted(diarizationTaskId);
+      const diarizationPayload =
+        diarizationResult.raw &&
+        typeof diarizationResult.raw === "object" &&
+        "transcription" in (diarizationResult.raw as Record<string, unknown>)
+          ? (diarizationResult.raw as Record<string, unknown>).transcription
+          : diarizationResult.raw;
+      const speakerSegments = extractSpeakerSegments(diarizationPayload);
+      speakerTranscriptText = formatSpeakerTranscript(speakerSegments);
+      diarizationRaw = diarizationResult.raw;
+
+      if (speakerTranscriptText.trim()) {
+        transcriptText = speakerTranscriptText;
+        console.log(`${LOG} ✓ 说话人分离完成: ${speakerSegments.length} 句 / ${speakerTranscriptText.length} 字符`);
+      } else {
+        console.log(`${LOG} ⏭ 说话人分离未返回 speaker_id，保留主转写`);
       }
-      attempt += 1;
-      await sleep(DEFAULT_POLL_INTERVAL_MS);
-    }
-
-    if (!result || result.status !== "completed") {
-      console.error(`${LOG} ✗ ASR 轮询超时 (${attempt} 次)`);
-      throw new Error("ASR polling timed out");
+    } catch (error) {
+      console.warn(`${LOG} ⚠ 说话人分离失败，保留主转写:`, error instanceof Error ? error.message : error);
     }
 
     // 写入转写结果
@@ -142,8 +180,12 @@ export async function runJobPipeline(jobId: string) {
       .insert({
         user_id: userId,
         job_id: jobId,
-        transcript_text: result.transcriptText || "",
-        raw: (result.raw || null) as Json,
+        transcript_text: transcriptText,
+        raw: ({
+          primary: result.raw || null,
+          diarization: diarizationRaw,
+          speaker_transcript_text: speakerTranscriptText || null,
+        } satisfies Record<string, unknown>) as Json,
       })
       .select("*")
       .single();
@@ -294,6 +336,29 @@ export async function runJobPipeline(jobId: string) {
   });
   console.log(`${LOG} ✓ 发布稿整理: ${publishScript.length} 字符`);
 
+  console.log(`${LOG} 生成快速摘要...`);
+  const quickSummary = await generateArtifactText("quick_summary", {
+    transcriptText: transcript.transcript_text,
+    glossaryTerms,
+    uncertainTerms: [],
+    title: job.title || "",
+    guestName: job.guest_name || "",
+    interviewerName: job.interviewer_name || "",
+  });
+  console.log(`${LOG} ✓ 快速摘要: ${quickSummary.length} 字符`);
+
+  console.log(`${LOG} 生成灵感追问...`);
+  const inspirationQuestions = await generateArtifactText("inspiration_questions", {
+    transcriptText: transcript.transcript_text,
+    glossaryTerms,
+    uncertainTerms: [],
+    title: job.title || "",
+    guestName: job.guest_name || "",
+    interviewerName: job.interviewer_name || "",
+    publishScriptText: publishScript,
+  });
+  console.log(`${LOG} ✓ 灵感追问: ${inspirationQuestions.length} 字符`);
+
   console.log(`${LOG} 生成 IC Q&A 纪要...`);
   const icQa = await generateIcQa({
     transcriptText: transcript.transcript_text,
@@ -343,6 +408,26 @@ export async function runJobPipeline(jobId: string) {
         title: "发布稿整理",
         content: publishScript,
         summary: publishScript.slice(0, 180),
+        status: "ready",
+      },
+      {
+        user_id: userId,
+        project_id: job.project_id,
+        job_id: jobId,
+        kind: "quick_summary",
+        title: "快速摘要",
+        content: quickSummary,
+        summary: quickSummary.slice(0, 180),
+        status: "ready",
+      },
+      {
+        user_id: userId,
+        project_id: job.project_id,
+        job_id: jobId,
+        kind: "inspiration_questions",
+        title: "灵感追问",
+        content: inspirationQuestions,
+        summary: inspirationQuestions.slice(0, 180),
         status: "ready",
       },
       {

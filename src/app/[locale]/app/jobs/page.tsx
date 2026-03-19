@@ -78,7 +78,6 @@ export default async function JobsPage({
   return (
     <NotebookWorkspace
       locale={locale}
-      userEmail={user.email || null}
       plan={plan}
       projects={safeProjectsTyped}
       jobs={safeJobs}

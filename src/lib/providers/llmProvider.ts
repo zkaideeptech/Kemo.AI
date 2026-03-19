@@ -8,13 +8,14 @@ import path from "node:path";
 
 import type { ArtifactKind } from "@/lib/workspace";
 
-const LOG = "[LLM/GPT-5.2]";
+const LOG = "[LLM]";
 
 type ArtifactInput = {
   transcriptText: string;
   glossaryTerms: string[];
   uncertainTerms: string[];
   sourceContext?: string;
+  clarificationContext?: string;
   title?: string;
   guestName?: string;
   interviewerName?: string;
@@ -40,15 +41,21 @@ async function loadSkillPrompt(skillDir: string) {
   return loadTextFile(path.join("skills", skillDir), "SKILL.md");
 }
 
-async function callOpenAI(prompt: string, label: string) {
-  const apiKey = process.env.OPENAI_API_KEY || "";
-  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  const model = process.env.OPENAI_MODEL || "gpt-5.2";
-
-  if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY");
-  }
-
+async function callResponsesApi({
+  prompt,
+  label,
+  apiKey,
+  baseUrl,
+  model,
+  provider,
+}: {
+  prompt: string;
+  label: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  provider: string;
+}) {
   const endpoint = `${baseUrl}/responses`;
   const startTime = Date.now();
 
@@ -69,23 +76,184 @@ async function callOpenAI(prompt: string, label: string) {
 
   if (!res.ok) {
     const errBody = await res.text();
-    console.error(`${LOG} ✗ HTTP ${res.status} [${label}] (${elapsed}s)`);
+    console.error(`${LOG} ✗ HTTP ${res.status} [${label}] via ${provider} (${elapsed}s)`);
     console.error(`${LOG}   响应: ${errBody.slice(0, 500)}`);
-    throw new Error(`OpenAI ${res.status}: ${errBody.slice(0, 200)}`);
+    throw new Error(`${provider} ${res.status}: ${errBody.slice(0, 200)}`);
   }
 
   const json = await res.json();
+  const messageText = Array.isArray(json?.output)
+    ? json.output
+        .filter((item: { type?: string }) => item?.type === "message")
+        .flatMap((item: { content?: Array<{ text?: string; type?: string }> }) => item.content || [])
+        .map((part: { text?: string; type?: string }) => (typeof part?.text === "string" ? part.text : ""))
+        .filter(Boolean)
+        .join("\n")
+    : "";
   const text =
     (typeof json.output_text === "string" && json.output_text) ||
+    messageText ||
     json?.output?.[0]?.content?.[0]?.text ||
+    json?.choices?.[0]?.message?.content ||
     null;
 
   if (!text || typeof text !== "string") {
-    throw new Error(`Unexpected OpenAI response for ${label}`);
+    throw new Error(`Unexpected ${provider} response for ${label}`);
   }
 
-  console.log(`${LOG} ✓ ${label} 完成 (${elapsed}s) / ${text.length} chars`);
+  console.log(`${LOG} ✓ ${label} 完成 via ${provider} (${elapsed}s) / ${text.length} chars`);
   return text;
+}
+
+async function callChatCompletionsApi({
+  prompt,
+  label,
+  apiKey,
+  baseUrl,
+  model,
+  provider,
+}: {
+  prompt: string;
+  label: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  provider: string;
+}) {
+  const endpoint = `${baseUrl}/chat/completions`;
+  const startTime = Date.now();
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.2,
+    }),
+  });
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error(`${LOG} ✗ HTTP ${res.status} [${label}] via ${provider} chat (${elapsed}s)`);
+    console.error(`${LOG}   响应: ${errBody.slice(0, 500)}`);
+    throw new Error(`${provider} chat ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+  const message = json?.choices?.[0]?.message?.content;
+  const text = Array.isArray(message)
+    ? message
+        .map((part: { text?: string; type?: string }) => (typeof part?.text === "string" ? part.text : ""))
+        .filter(Boolean)
+        .join("\n")
+    : typeof message === "string"
+      ? message
+      : null;
+
+  if (!text || typeof text !== "string") {
+    throw new Error(`Unexpected ${provider} chat response for ${label}`);
+  }
+
+  console.log(`${LOG} ✓ ${label} 完成 via ${provider} chat (${elapsed}s) / ${text.length} chars`);
+  return text;
+}
+
+async function callLlm(prompt: string, label: string) {
+  const apiKey = process.env.OPENAI_API_KEY || "";
+  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const model = process.env.OPENAI_MODEL || "gpt-5.2";
+  const apiStyle = process.env.OPENAI_API_STYLE || "auto";
+  const dashscopeApiKey = process.env.DASHSCOPE_API_KEY || "";
+  const dashscopeBaseUrl =
+    process.env.DASHSCOPE_LLM_BASE_URL ||
+    "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1";
+  const dashscopeModel = process.env.DASHSCOPE_LLM_MODEL || "qwen3.5-plus";
+
+  if (apiKey) {
+    try {
+      if (apiStyle === "chat") {
+        return await callChatCompletionsApi({
+          prompt,
+          label,
+          apiKey,
+          baseUrl,
+          model,
+          provider: "OpenAI",
+        });
+      }
+
+      try {
+        return await callResponsesApi({
+          prompt,
+          label,
+          apiKey,
+          baseUrl,
+          model,
+          provider: "OpenAI",
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : "";
+        const shouldFallbackToChat =
+          apiStyle === "auto" &&
+          (message.includes("not implemented") ||
+            message.includes("convert_request_failed") ||
+            message.includes("unsupported") ||
+            message.includes("new_api_error"));
+
+        if (!shouldFallbackToChat) {
+          throw error;
+        }
+
+        console.warn(`${LOG} ⚠ OpenAI responses 不可用，自动回退 chat.completions: ${error instanceof Error ? error.message : error}`);
+        return await callChatCompletionsApi({
+          prompt,
+          label,
+          apiKey,
+          baseUrl,
+          model,
+          provider: "OpenAI",
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      const shouldFallbackToDashScope =
+        dashscopeApiKey &&
+        (message.includes("openai 429") ||
+          message.includes("quota") ||
+          message.includes("billing") ||
+          message.includes("insufficient_quota"));
+
+      if (!shouldFallbackToDashScope) {
+        throw error;
+      }
+
+      console.warn(`${LOG} ⚠ OpenAI 不可用，自动回退 DashScope: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  if (dashscopeApiKey) {
+    return callResponsesApi({
+      prompt,
+      label,
+      apiKey: dashscopeApiKey,
+      baseUrl: dashscopeBaseUrl,
+      model: dashscopeModel,
+      provider: "DashScope",
+    });
+  }
+
+  throw new Error("Missing OPENAI_API_KEY and DASHSCOPE_API_KEY");
 }
 
 function getPromptFile(kind: ArtifactKind) {
@@ -131,6 +299,9 @@ async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) 
   const sourceBlock = input.sourceContext?.trim()
     ? `\n[补充来源，仅用于名词校对或结构补强]\n${input.sourceContext.trim()}\n`
     : "";
+  const clarificationBlock = input.clarificationContext?.trim()
+    ? `\n[已确认补充信息]\n${input.clarificationContext.trim()}\n`
+    : "";
 
   if (kind === "publish_script") {
     return [
@@ -146,9 +317,16 @@ async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) 
       `嘉宾：${input.guestName || ""}`,
       `已确认术语：${input.glossaryTerms.join(", ") || "无"}`,
       `待确认术语：${input.uncertainTerms.join(", ") || "无"}`,
+      clarificationBlock,
       sourceBlock,
       "[原始转写稿]",
       input.transcriptText,
+      "",
+      "[输出格式硬约束]",
+      "1. 如果仍有信息缺失，必须先输出 [待确认项] 区块，再输出 [草案版正文] 区块。",
+      "2. [待确认项] 内每一行格式固定为：- 问题：xxx｜线索：xxx",
+      "3. [草案版正文] 内只放正文，不要解释。",
+      "4. 如果已经足够确认，也必须输出 [草案版正文] 区块；此时可以省略 [待确认项]。",
       "",
       "[输出要求]",
       "直接输出结果正文，不要解释执行过程。",
@@ -166,6 +344,7 @@ async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) 
     `标题线索：${input.title || ""}`,
     `采访者：${input.interviewerName || ""}`,
     `嘉宾：${input.guestName || ""}`,
+    clarificationBlock,
     sourceBlock,
     "[可发布对话稿]",
     upstreamScript,
@@ -182,13 +361,15 @@ export async function generateArtifactText(kind: ArtifactKind, input: ArtifactIn
         transcript_text: input.transcriptText,
         glossary_terms: input.glossaryTerms.join(", "),
         uncertain_terms: input.uncertainTerms.join(", "),
-        source_context: input.sourceContext || "",
-        title: input.title || "",
-        guest_name: input.guestName || "",
-        interviewer_name: input.interviewerName || "",
-      });
+      source_context: input.sourceContext || "",
+      clarification_context: input.clarificationContext || "",
+      title: input.title || "",
+      guest_name: input.guestName || "",
+      interviewer_name: input.interviewerName || "",
+      publish_script_text: input.publishScriptText || "",
+    });
 
-  return callOpenAI(prompt, kind);
+  return callLlm(prompt, kind);
 }
 
 export async function generateIcQa(input: ArtifactInput) {

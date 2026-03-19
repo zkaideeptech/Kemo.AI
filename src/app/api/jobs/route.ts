@@ -92,10 +92,6 @@ export async function POST(req: Request) {
 
   console.log(`${LOG} 用户: ${user.id.slice(0, 8)}... / ${user.email}`);
 
-  // 获取用户套餐
-  const plan = await getUserPlan(supabase, user.id);
-  console.log(`${LOG} 套餐: ${plan.plan} / 单文件上限: ${plan.maxFileSizeMb}MB`);
-
   const bucket = process.env.SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
   const contentType = req.headers.get("content-type") || "";
 
@@ -196,17 +192,17 @@ export async function POST(req: Request) {
   if (captureMode === "live") {
     console.log(`${LOG} 实时访谈模式：创建空 Job，音频后续实时进入 ASR`);
   } else {
+    const plan = await getUserPlan(supabase, user.id);
+    console.log(`${LOG} 套餐: ${plan.plan} / 单文件上限: ${plan.maxFileSizeMb}MB`);
     console.log(`${LOG} 文件: ${fileName} / ${fileSizeMb.toFixed(2)}MB / ${mimeType || "unknown"}`);
-  }
-
-  // 权益检查：文件大小限制
-  if (captureMode !== "live" && fileSizeMb > plan.maxFileSizeMb) {
-    console.log(`${LOG} ✗ 文件超限: ${fileSizeMb.toFixed(2)}MB > ${plan.maxFileSizeMb}MB`);
-    return jsonError(
-      "file_too_large",
-      `File exceeds ${plan.maxFileSizeMb}MB limit`,
-      { status: 400 }
-    );
+    if (fileSizeMb > plan.maxFileSizeMb) {
+      console.log(`${LOG} ✗ 文件超限: ${fileSizeMb.toFixed(2)}MB > ${plan.maxFileSizeMb}MB`);
+      return jsonError(
+        "file_too_large",
+        `File exceeds ${plan.maxFileSizeMb}MB limit`,
+        { status: 400 }
+      );
+    }
   }
 
   // 创建 Job 记录

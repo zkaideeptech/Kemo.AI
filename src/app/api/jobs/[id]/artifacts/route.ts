@@ -1,5 +1,7 @@
 import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/response";
+import { buildClarificationContext, loadJobClarifications } from "@/lib/clarifications";
+import { sanitizeTranscriptText } from "@/lib/live/transcriptCleanup";
 import { generateArtifactText } from "@/lib/providers/llmProvider";
 import { synthesizePodcastAudio } from "@/lib/providers/ttsProvider";
 import { getArtifactLabel, isArtifactKind, type ArtifactKind } from "@/lib/workspace";
@@ -68,6 +70,8 @@ export async function POST(
 
   const body = await req.json().catch(() => ({}));
   const kind = typeof body?.kind === "string" ? body.kind : "";
+  const requestedTranscriptText =
+    typeof body?.transcriptText === "string" ? sanitizeTranscriptText(body.transcriptText) : "";
 
   if (!isArtifactKind(kind)) {
     return jsonError("invalid_payload", "Unsupported artifact kind", { status: 400 });
@@ -92,9 +96,17 @@ export async function POST(
     .maybeSingle();
 
   const transcript = transcriptData as TranscriptRow | null;
+  const transcriptText = transcript?.transcript_text || requestedTranscriptText || job.live_transcript_snapshot || "";
 
-  if (!transcript?.transcript_text) {
+  if (!transcriptText) {
     return jsonError("not_ready", "Transcript is not ready yet", { status: 409 });
+  }
+
+  if (!transcript?.transcript_text && transcriptText) {
+    await admin
+      .from("jobs")
+      .update({ live_transcript_snapshot: transcriptText })
+      .eq("id", id);
   }
 
   const { data: glossary } = await supabase
@@ -112,6 +124,8 @@ export async function POST(
 
   const glossaryTerms = (glossary || []).map((term) => term.term);
   const sourceContext = buildSourceContext((sourcesData || []) as SourceRow[]);
+  const clarifications = await loadJobClarifications(supabase, id);
+  const clarificationContext = buildClarificationContext(clarifications);
   let content = "";
   let audioUrl: string | null = null;
   let publishScriptText = "";
@@ -136,20 +150,27 @@ export async function POST(
 
     if (!publishScriptText.trim()) {
       publishScriptText = await generateArtifactText("publish_script", {
-        transcriptText: transcript.transcript_text,
+        transcriptText,
         glossaryTerms,
         uncertainTerms: [],
         sourceContext,
+        clarificationContext,
         title: job.title || "",
         guestName: job.guest_name || "",
         interviewerName: job.interviewer_name || "",
       });
 
-      await admin.from("artifacts").insert({
-        user_id: user.id,
-        project_id: job.project_id,
-        job_id: job.id,
-        kind: "publish_script",
+      const { data: existingPublishDraft } = await supabase
+        .from("artifacts")
+        .select("*")
+        .eq("job_id", id)
+        .eq("kind", "publish_script")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const existingPublish = existingPublishDraft as ArtifactRow | null;
+      const publishPayload = {
         title: getArtifactLabel("publish_script"),
         content: publishScriptText,
         summary: publishScriptText.slice(0, 180),
@@ -159,16 +180,29 @@ export async function POST(
           auto_generated_as_upstream: "true",
         },
         status: "ready",
-      });
+      };
+
+      if (existingPublish) {
+        await admin.from("artifacts").update(publishPayload).eq("id", existingPublish.id);
+      } else {
+        await admin.from("artifacts").insert({
+          user_id: user.id,
+          project_id: job.project_id,
+          job_id: job.id,
+          kind: "publish_script",
+          ...publishPayload,
+        });
+      }
     }
   }
 
   if (kind === "podcast_audio") {
     const script = await generateArtifactText("podcast_script", {
-      transcriptText: transcript.transcript_text,
+      transcriptText,
       glossaryTerms,
       uncertainTerms: [],
       sourceContext,
+      clarificationContext,
       title: job.title || "",
       guestName: job.guest_name || "",
       interviewerName: job.interviewer_name || "",
@@ -187,11 +221,26 @@ export async function POST(
       metadata.tts_error = error instanceof Error ? error.message : "Unknown TTS error";
     }
   } else {
+    if (!publishScriptText && kind !== "publish_script") {
+      const { data: currentPublishArtifactData } = await supabase
+        .from("artifacts")
+        .select("*")
+        .eq("job_id", id)
+        .eq("kind", "publish_script")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const currentPublishArtifact = currentPublishArtifactData as ArtifactRow | null;
+      publishScriptText = currentPublishArtifact?.content || "";
+    }
+
     content = await generateArtifactText(kind as ArtifactKind, {
-      transcriptText: transcript.transcript_text,
+      transcriptText,
       glossaryTerms,
       uncertainTerms: [],
       sourceContext,
+      clarificationContext,
       title: job.title || "",
       guestName: job.guest_name || "",
       interviewerName: job.interviewer_name || "",
@@ -204,22 +253,43 @@ export async function POST(
     metadata.upstream_kind = "publish_script";
   }
 
-  const { data, error } = await admin
+  const { data: existingArtifactData } = await supabase
     .from("artifacts")
-    .insert({
-      user_id: user.id,
-      project_id: job.project_id,
-      job_id: job.id,
-      kind,
-      title: getArtifactLabel(kind as ArtifactKind),
-      content,
-      summary: content.slice(0, 180),
-      metadata,
-      audio_url: audioUrl,
-      status: audioUrl || kind !== "podcast_audio" ? "ready" : "draft",
-    })
     .select("*")
-    .single();
+    .eq("job_id", id)
+    .eq("kind", kind)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const existingArtifact = existingArtifactData as ArtifactRow | null;
+  const nextArtifactPayload = {
+    title: getArtifactLabel(kind as ArtifactKind),
+    content,
+    summary: content.slice(0, 180),
+    metadata,
+    audio_url: audioUrl,
+    status: audioUrl || kind !== "podcast_audio" ? "ready" : "draft",
+  };
+
+  const { data, error } = existingArtifact
+    ? await admin
+        .from("artifacts")
+        .update(nextArtifactPayload)
+        .eq("id", existingArtifact.id)
+        .select("*")
+        .single()
+    : await admin
+        .from("artifacts")
+        .insert({
+          user_id: user.id,
+          project_id: job.project_id,
+          job_id: job.id,
+          kind,
+          ...nextArtifactPayload,
+        })
+        .select("*")
+        .single();
 
   if (error || !data) {
     return jsonError("db_error", error?.message || "Artifact save failed", { status: 500 });

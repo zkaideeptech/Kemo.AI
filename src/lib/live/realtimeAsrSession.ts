@@ -1,6 +1,8 @@
 import WebSocket from "ws";
 
-type SessionSnapshot = {
+import { sanitizeTranscriptText } from "@/lib/live/transcriptCleanup";
+
+export type SessionSnapshot = {
   jobId: string;
   statusText: string;
   previewText: string;
@@ -10,11 +12,33 @@ type SessionSnapshot = {
   errorMessage: string | null;
 };
 
+export type RealtimeAsrDebugState = {
+  exists: boolean;
+  isOpen: boolean;
+  hasFinished: boolean;
+  updatedAt: number | null;
+  closeCode: number | null;
+  closeReason: string | null;
+  wsState: "missing" | "connecting" | "open" | "closing" | "closed";
+};
+
+export type RealtimeAsrTurnDetectionMode = "server_vad" | "manual";
+
+export type RealtimeAsrSessionEvent = {
+  eventType: string;
+  payload: Record<string, unknown>;
+  snapshot: SessionSnapshot;
+  debug: RealtimeAsrDebugState;
+};
+
+type SessionListener = (event: RealtimeAsrSessionEvent) => void;
+
 type LiveAsrSession = {
   jobId: string;
   ws: WebSocket;
   language: string;
   corpusText: string;
+  turnDetectionMode: RealtimeAsrTurnDetectionMode;
   readyPromise: Promise<void>;
   resolveReady: () => void;
   rejectReady: (error: Error) => void;
@@ -22,8 +46,7 @@ type LiveAsrSession = {
   resolveFinish: () => void;
   rejectFinish: (error: Error) => void;
   statusText: string;
-  partialConfirmedText: string;
-  partialStashText: string;
+  interimTranscriptText: string;
   finalSegments: string[];
   isReady: boolean;
   hasFinished: boolean;
@@ -31,12 +54,15 @@ type LiveAsrSession = {
   updatedAt: number;
   closeCode: number | null;
   closeReason: string | null;
+  listeners: Set<SessionListener>;
 };
 
 const LOG = "[LiveASR]";
 const DEFAULT_MODEL = process.env.DASHSCOPE_REALTIME_MODEL || "qwen3-asr-flash-realtime";
-const DEFAULT_VAD_THRESHOLD = Number(process.env.DASHSCOPE_REALTIME_VAD_THRESHOLD || "0.35");
-const DEFAULT_VAD_SILENCE_MS = Number(process.env.DASHSCOPE_REALTIME_VAD_SILENCE_MS || "600");
+const DEFAULT_VAD_THRESHOLD = Number(process.env.DASHSCOPE_REALTIME_VAD_THRESHOLD || "0.0");
+const DEFAULT_VAD_SILENCE_MS = Number(process.env.DASHSCOPE_REALTIME_VAD_SILENCE_MS || "800");
+const READY_TIMEOUT_MS = Number(process.env.DASHSCOPE_REALTIME_READY_TIMEOUT_MS || "10000");
+const FINISH_TIMEOUT_MS = Number(process.env.DASHSCOPE_REALTIME_FINISH_TIMEOUT_MS || "5000");
 
 declare global {
   var __kemoLiveAsrSessions: Map<string, LiveAsrSession> | undefined;
@@ -76,24 +102,65 @@ function resolveRealtimeWsUrl() {
   return "wss://dashscope.aliyuncs.com/api-ws/v1/realtime";
 }
 
-function buildSnapshot(session: LiveAsrSession): SessionSnapshot {
-  const confirmedPrefix = session.finalSegments.join("\n").trim();
-  const currentSentence = `${session.partialConfirmedText}${session.partialStashText}`.trim();
-  const previewText = [confirmedPrefix, currentSentence].filter(Boolean).join(confirmedPrefix && currentSentence ? "\n" : "");
+function buildFinalTranscriptText(session: LiveAsrSession) {
+  return sanitizeTranscriptText(session.finalSegments.join("\n"));
+}
 
+function buildPreviewText(session: LiveAsrSession) {
+  return sanitizeTranscriptText(
+    [...session.finalSegments, session.interimTranscriptText].filter(Boolean).join("\n")
+  );
+}
+
+function buildSnapshot(session: LiveAsrSession): SessionSnapshot {
   return {
     jobId: session.jobId,
     statusText: session.errorMessage || session.statusText,
-    previewText,
-    finalTranscriptText: session.finalSegments.join("\n").trim(),
+    previewText: buildPreviewText(session),
+    finalTranscriptText: buildFinalTranscriptText(session),
     isReady: session.isReady,
     hasFinished: session.hasFinished,
     errorMessage: session.errorMessage,
   };
 }
 
+export function getEmptyRealtimeAsrSnapshot(
+  jobId: string,
+  overrides?: Partial<SessionSnapshot>
+): SessionSnapshot {
+  return {
+    jobId,
+    statusText: "实时会话未启动",
+    previewText: "",
+    finalTranscriptText: "",
+    isReady: false,
+    hasFinished: false,
+    errorMessage: null,
+    ...overrides,
+  };
+}
+
 function isSessionOpen(session: LiveAsrSession) {
   return session.ws.readyState === WebSocket.OPEN && !session.hasFinished;
+}
+
+function buildDebugState(session: LiveAsrSession): RealtimeAsrDebugState {
+  return {
+    exists: true,
+    isOpen: isSessionOpen(session),
+    hasFinished: session.hasFinished,
+    updatedAt: session.updatedAt,
+    closeCode: session.closeCode,
+    closeReason: session.closeReason,
+    wsState:
+      session.ws.readyState === WebSocket.CONNECTING
+        ? "connecting"
+        : session.ws.readyState === WebSocket.OPEN
+          ? "open"
+          : session.ws.readyState === WebSocket.CLOSING
+            ? "closing"
+            : "closed",
+  };
 }
 
 function sendJson(session: LiveAsrSession, payload: Record<string, unknown>) {
@@ -104,45 +171,107 @@ function sendJson(session: LiveAsrSession, payload: Record<string, unknown>) {
   session.ws.send(JSON.stringify(payload));
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
+function getTranscriptPayloadText(payload: Record<string, unknown>) {
+  const transcript = typeof payload.transcript === "string" ? payload.transcript : "";
+  if (transcript) {
+    return sanitizeTranscriptText(transcript);
+  }
+
+  const confirmedText = typeof payload.text === "string" ? payload.text : "";
+  const stashedText = typeof payload.stash === "string" ? payload.stash : "";
+  return sanitizeTranscriptText(`${confirmedText}${stashedText}`);
+}
+
+function markReady(session: LiveAsrSession) {
+  if (session.isReady) {
+    return;
+  }
+
+  session.isReady = true;
+  session.statusText = "阿里实时 ASR 已连接";
+  session.resolveReady();
+}
+
+function appendFinalTranscript(session: LiveAsrSession, transcript: string) {
+  const cleanTranscript = sanitizeTranscriptText(transcript);
+
+  if (!cleanTranscript) {
+    return;
+  }
+
+  const previousSegment = session.finalSegments[session.finalSegments.length - 1] || "";
+  if (cleanTranscript === previousSegment || previousSegment.endsWith(cleanTranscript)) {
+    return;
+  }
+
+  session.finalSegments.push(cleanTranscript);
+}
+
+function publishSessionEvent(session: LiveAsrSession, eventType: string, payload: Record<string, unknown>) {
+  const event: RealtimeAsrSessionEvent = {
+    eventType,
+    payload,
+    snapshot: buildSnapshot(session),
+    debug: buildDebugState(session),
+  };
+
+  session.listeners.forEach((listener) => {
+    try {
+      listener(event);
+    } catch {
+      // ignore listener errors
+    }
+  });
+}
+
 function updateFromEvent(session: LiveAsrSession, payload: Record<string, unknown>) {
   const type = typeof payload.type === "string" ? payload.type : "";
   session.updatedAt = Date.now();
 
   switch (type) {
+    case "session.created":
     case "session.updated":
-      session.isReady = true;
-      session.statusText = "阿里实时 ASR 已连接";
-      session.resolveReady();
+      markReady(session);
+      break;
+    case "conversation.item.created":
+      session.interimTranscriptText = "";
       break;
     case "input_audio_buffer.speech_started":
       session.statusText = "检测到语音，正在实时转写";
       break;
     case "input_audio_buffer.speech_stopped":
-      session.statusText = "检测到一句结束，正在整理当前片段";
+      session.statusText = "检测到停顿，正在确认当前句";
+      break;
+    case "input_audio_buffer.committed":
+      session.statusText = "当前音频段已提交";
       break;
     case "conversation.item.input_audio_transcription.text":
-      session.partialConfirmedText = typeof payload.text === "string" ? payload.text : "";
-      session.partialStashText = typeof payload.stash === "string" ? payload.stash : "";
-      session.statusText = "正在生成实时转写";
+      session.interimTranscriptText = getTranscriptPayloadText(payload);
+      session.statusText = "正在识别当前句";
       break;
-    case "conversation.item.input_audio_transcription.completed": {
-      const transcript = typeof payload.transcript === "string" ? payload.transcript.trim() : "";
-      if (transcript) {
-        session.finalSegments.push(transcript);
-      }
-      session.partialConfirmedText = "";
-      session.partialStashText = "";
+    case "conversation.item.input_audio_transcription.completed":
+      appendFinalTranscript(session, getTranscriptPayloadText(payload));
+      session.interimTranscriptText = "";
       session.statusText = "当前句已确认";
       break;
-    }
     case "conversation.item.input_audio_transcription.failed":
       session.errorMessage =
         typeof payload.error === "object" && payload.error && typeof (payload.error as { message?: unknown }).message === "string"
-          ? ((payload.error as { message: string }).message)
+          ? (payload.error as { message: string }).message
           : "阿里实时转写失败";
       session.statusText = session.errorMessage;
       break;
     case "session.finished":
+      appendFinalTranscript(session, getTranscriptPayloadText(payload));
       session.hasFinished = true;
       session.statusText = session.errorMessage || "实时转写已结束";
       session.resolveFinish();
@@ -150,7 +279,7 @@ function updateFromEvent(session: LiveAsrSession, payload: Record<string, unknow
     case "error": {
       const errorMessage =
         typeof payload.error === "object" && payload.error && typeof (payload.error as { message?: unknown }).message === "string"
-          ? ((payload.error as { message: string }).message)
+          ? (payload.error as { message: string }).message
           : "阿里实时转写发生错误";
       session.errorMessage = errorMessage;
       session.statusText = errorMessage;
@@ -161,17 +290,21 @@ function updateFromEvent(session: LiveAsrSession, payload: Record<string, unknow
     default:
       break;
   }
+
+  publishSessionEvent(session, type || "unknown", payload);
 }
 
 export async function startRealtimeAsrSession({
   jobId,
   language = "zh",
   corpusText,
+  turnDetectionMode = "server_vad",
   forceRestart = false,
 }: {
   jobId: string;
   language?: string;
   corpusText?: string;
+  turnDetectionMode?: RealtimeAsrTurnDetectionMode;
   forceRestart?: boolean;
 }) {
   const apiKey = process.env.DASHSCOPE_API_KEY || "";
@@ -185,7 +318,7 @@ export async function startRealtimeAsrSession({
     return buildSnapshot(existing);
   }
 
-  const seededTranscript = existing ? buildSnapshot(existing).finalTranscriptText : "";
+  const seededTranscript = existing ? buildFinalTranscriptText(existing) : "";
   if (existing) {
     try {
       existing.ws.close();
@@ -195,12 +328,11 @@ export async function startRealtimeAsrSession({
     store.delete(jobId);
   }
 
-  const wsUrl = `${resolveRealtimeWsUrl()}?model=${encodeURIComponent(DEFAULT_MODEL)}`;
   const ready = createDeferred();
   const finish = createDeferred();
-  const ws = new WebSocket(wsUrl, {
+  const ws = new WebSocket(`${resolveRealtimeWsUrl()}?model=${encodeURIComponent(DEFAULT_MODEL)}`, {
     headers: {
-      Authorization: `bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "OpenAI-Beta": "realtime=v1",
     },
   });
@@ -210,6 +342,7 @@ export async function startRealtimeAsrSession({
     ws,
     language,
     corpusText: corpusText || "",
+    turnDetectionMode,
     readyPromise: ready.promise,
     resolveReady: ready.resolve,
     rejectReady: ready.reject,
@@ -217,8 +350,7 @@ export async function startRealtimeAsrSession({
     resolveFinish: finish.resolve,
     rejectFinish: finish.reject,
     statusText: "正在连接阿里实时 ASR",
-    partialConfirmedText: "",
-    partialStashText: "",
+    interimTranscriptText: "",
     finalSegments: seededTranscript ? [seededTranscript] : [],
     isReady: false,
     hasFinished: false,
@@ -226,6 +358,7 @@ export async function startRealtimeAsrSession({
     updatedAt: Date.now(),
     closeCode: null,
     closeReason: null,
+    listeners: new Set<SessionListener>(),
   };
 
   store.set(jobId, session);
@@ -240,19 +373,15 @@ export async function startRealtimeAsrSession({
         sample_rate: 16000,
         input_audio_transcription: {
           language,
-          ...(corpusText?.trim()
-            ? {
-                corpus: {
-                  text: corpusText.trim().slice(0, 12000),
-                },
-              }
-            : {}),
         },
-        turn_detection: {
-          type: "server_vad",
-          threshold: Number.isFinite(DEFAULT_VAD_THRESHOLD) ? DEFAULT_VAD_THRESHOLD : 0.35,
-          silence_duration_ms: Number.isFinite(DEFAULT_VAD_SILENCE_MS) ? DEFAULT_VAD_SILENCE_MS : 600,
-        },
+        turn_detection:
+          turnDetectionMode === "manual"
+            ? null
+            : {
+                type: "server_vad",
+                threshold: Number.isFinite(DEFAULT_VAD_THRESHOLD) ? DEFAULT_VAD_THRESHOLD : 0.0,
+                silence_duration_ms: Number.isFinite(DEFAULT_VAD_SILENCE_MS) ? DEFAULT_VAD_SILENCE_MS : 400,
+              },
       },
     });
   });
@@ -264,6 +393,9 @@ export async function startRealtimeAsrSession({
     } catch (error) {
       session.errorMessage = error instanceof Error ? error.message : "Failed to parse realtime ASR event";
       session.statusText = session.errorMessage;
+      publishSessionEvent(session, "parse_error", {
+        error: { message: session.errorMessage },
+      });
     }
   });
 
@@ -273,6 +405,9 @@ export async function startRealtimeAsrSession({
     session.statusText = message;
     session.rejectReady(new Error(message));
     session.rejectFinish(new Error(message));
+    publishSessionEvent(session, "socket_error", {
+      error: { message },
+    });
   });
 
   ws.on("close", (code, reasonBuffer) => {
@@ -280,17 +415,26 @@ export async function startRealtimeAsrSession({
     session.closeCode = code;
     session.closeReason = reason;
     if (!session.hasFinished && !session.errorMessage) {
-      session.statusText = `实时转写连接已关闭${code ? ` (${code}${reason ? `: ${reason}` : ""})` : ""}`;
       session.hasFinished = true;
+      session.statusText = `实时转写连接已关闭${code ? ` (${code}${reason ? `: ${reason}` : ""})` : ""}`;
       session.resolveFinish();
     }
+    publishSessionEvent(session, "socket_closed", {
+      closeCode: code,
+      closeReason: reason,
+    });
     console.log(`${LOG} closed ${jobId} code=${code} reason=${reason || "-"}`);
   });
 
   try {
-    await session.readyPromise;
+    await withTimeout(session.readyPromise, READY_TIMEOUT_MS, "Realtime ASR ready");
   } catch (error) {
     store.delete(jobId);
+    try {
+      ws.close();
+    } catch {
+      // ignore close failures
+    }
     throw error;
   }
 
@@ -303,32 +447,52 @@ export async function appendRealtimeAsrAudio({
   audioBase64,
   language = "zh",
   corpusText,
+  turnDetectionMode = "server_vad",
 }: {
   jobId: string;
   audioBase64: string;
   language?: string;
   corpusText?: string;
+  turnDetectionMode?: RealtimeAsrTurnDetectionMode;
 }) {
   const store = getSessionStore();
   let session = store.get(jobId);
+
   if (!session || !isSessionOpen(session)) {
     await startRealtimeAsrSession({
       jobId,
       language: session?.language || language,
       corpusText: session?.corpusText || corpusText,
+      turnDetectionMode: session?.turnDetectionMode || turnDetectionMode,
       forceRestart: true,
     });
     session = store.get(jobId);
   }
+
   if (!session) {
     throw new Error("Realtime ASR session not found");
   }
 
-  await session.readyPromise;
+  await withTimeout(session.readyPromise, READY_TIMEOUT_MS, "Realtime ASR ready");
   sendJson(session, {
     event_id: crypto.randomUUID(),
     type: "input_audio_buffer.append",
     audio: audioBase64,
+  });
+
+  return buildSnapshot(session);
+}
+
+export async function commitRealtimeAsrSession(jobId: string) {
+  const session = getSessionStore().get(jobId);
+  if (!session) {
+    return null;
+  }
+
+  await withTimeout(session.readyPromise, READY_TIMEOUT_MS, "Realtime ASR ready");
+  sendJson(session, {
+    event_id: crypto.randomUUID(),
+    type: "input_audio_buffer.commit",
   });
 
   return buildSnapshot(session);
@@ -348,12 +512,9 @@ export async function finishRealtimeAsrSession(jobId: string) {
     });
 
     try {
-      await Promise.race([
-        session.finishPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
-      ]);
+      await withTimeout(session.finishPromise, FINISH_TIMEOUT_MS, "Realtime ASR finish");
     } catch {
-      // Keep final snapshot even if remote finish errored.
+      // Keep final snapshot even if remote finish timed out.
     }
   }
 
@@ -368,9 +529,24 @@ export async function finishRealtimeAsrSession(jobId: string) {
   return snapshot;
 }
 
+export function subscribeRealtimeAsrSession(jobId: string, listener: SessionListener) {
+  const session = getSessionStore().get(jobId);
+  if (!session) {
+    return () => {};
+  }
+
+  session.listeners.add(listener);
+  return () => {
+    session.listeners.delete(listener);
+  };
+}
+
 export function getRealtimeAsrSnapshot(jobId: string) {
   const session = getSessionStore().get(jobId);
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
+
   return buildSnapshot(session);
 }
 
@@ -385,23 +561,8 @@ export function getRealtimeAsrDebugState(jobId: string) {
       closeCode: null,
       closeReason: null,
       wsState: "missing",
-    };
+    } satisfies RealtimeAsrDebugState;
   }
 
-  return {
-    exists: true,
-    isOpen: isSessionOpen(session),
-    hasFinished: session.hasFinished,
-    updatedAt: session.updatedAt,
-    closeCode: session.closeCode,
-    closeReason: session.closeReason,
-    wsState:
-      session.ws.readyState === WebSocket.CONNECTING
-        ? "connecting"
-        : session.ws.readyState === WebSocket.OPEN
-          ? "open"
-          : session.ws.readyState === WebSocket.CLOSING
-            ? "closing"
-            : "closed",
-  };
+  return buildDebugState(session);
 }

@@ -15,8 +15,11 @@
 /** DashScope 默认 API 基础地址（北京区域） */
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 
-/** 异步文件转写模型（Qwen3-ASR-1.7B，支持最长 12 小时音频） */
+/** 异步文件转写模型（Qwen3-ASR-Filetrans） */
 const FILETRANS_MODEL = "qwen3-asr-flash-filetrans";
+
+/** 官方支持说话人分离的文件转写模型（Paraformer v2） */
+const DIARIZATION_MODEL = "paraformer-v2";
 
 /** 日志前缀 */
 const LOG_PREFIX = "[ASR]";
@@ -36,6 +39,13 @@ export type AsrPollResult = {
   errorMessage?: string;
 };
 
+export type SpeakerSegment = {
+  speakerId: number;
+  text: string;
+  beginTime?: number;
+  endTime?: number;
+};
+
 // ============================================================
 // 公开方法
 // ============================================================
@@ -52,9 +62,15 @@ export type AsrPollResult = {
 export async function startTranscription({
   audioUrl,
   language,
+  model = FILETRANS_MODEL,
+  diarizationEnabled = false,
+  speakerCount,
 }: {
   audioUrl: string;
   language?: string;
+  model?: string;
+  diarizationEnabled?: boolean;
+  speakerCount?: number;
 }): Promise<AsrStartResult> {
   const apiKey = process.env.DASHSCOPE_API_KEY || "";
   const baseUrl = process.env.DASHSCOPE_API_BASE_URL || DEFAULT_BASE_URL;
@@ -66,20 +82,28 @@ export async function startTranscription({
   const endpoint = `${baseUrl}/services/audio/asr/transcription`;
 
   const body = {
-    model: FILETRANS_MODEL,
+    model,
     input: {
       file_url: audioUrl,
     },
     parameters: {
-      ...(language ? { language } : {}),
-      channel_id: [0],
-      enable_words: true,
+      ...(model === DIARIZATION_MODEL
+        ? {
+            ...(language ? { language_hints: [language] } : {}),
+            diarization_enabled: diarizationEnabled,
+            ...(typeof speakerCount === "number" ? { speaker_count: speakerCount } : {}),
+          }
+        : {
+            ...(language ? { language } : {}),
+            channel_id: [0],
+            enable_words: true,
+          }),
     },
   };
 
   console.log(`${LOG_PREFIX} ╔══════════════════════════════════════`);
   console.log(`${LOG_PREFIX} ║ 提交 ASR 转写任务`);
-  console.log(`${LOG_PREFIX} ║ 模型: ${FILETRANS_MODEL} (Qwen3-ASR-1.7B)`);
+  console.log(`${LOG_PREFIX} ║ 模型: ${model}`);
   console.log(`${LOG_PREFIX} ║ 端点: ${endpoint}`);
   console.log(`${LOG_PREFIX} ║ 音频: ${audioUrl.slice(0, 80)}...`);
   console.log(`${LOG_PREFIX} ╚══════════════════════════════════════`);
@@ -194,6 +218,26 @@ export async function pollResult({
   return { status: "running", raw: json };
 }
 
+export async function transcribeWithSpeakerDiarization({
+  audioUrl,
+  language,
+  speakerCount,
+}: {
+  audioUrl: string;
+  language?: string;
+  speakerCount?: number;
+}) {
+  const { vendorTaskId } = await startTranscription({
+    audioUrl,
+    language,
+    model: DIARIZATION_MODEL,
+    diarizationEnabled: true,
+    speakerCount,
+  });
+
+  return vendorTaskId;
+}
+
 // ============================================================
 // 内部方法
 // ============================================================
@@ -255,4 +299,75 @@ function extractTranscript(payload: unknown): string {
   // 兜底：序列化全部数据
   console.warn(`${LOG_PREFIX} ⚠ 无法识别转写格式，返回原始 JSON`);
   return JSON.stringify(data);
+}
+
+export function extractSpeakerSegments(payload: unknown): SpeakerSegment[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const data = payload as Record<string, unknown>;
+  const transcripts = data.transcripts as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(transcripts)) {
+    return [];
+  }
+
+  const segments: SpeakerSegment[] = [];
+  for (const transcript of transcripts) {
+    const sentences = transcript.sentences as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(sentences)) {
+      continue;
+    }
+
+    for (const sentence of sentences) {
+      const text = typeof sentence.text === "string" ? sentence.text.trim() : "";
+      const speakerId = typeof sentence.speaker_id === "number" ? sentence.speaker_id : null;
+      if (!text || speakerId === null) {
+        continue;
+      }
+
+      segments.push({
+        speakerId,
+        text,
+        beginTime: typeof sentence.begin_time === "number" ? sentence.begin_time : undefined,
+        endTime: typeof sentence.end_time === "number" ? sentence.end_time : undefined,
+      });
+    }
+  }
+
+  return segments;
+}
+
+export function formatSpeakerTranscript(segments: SpeakerSegment[]) {
+  if (!segments.length) {
+    return "";
+  }
+
+  const speakerOrder = new Map<number, string>();
+  const speakerLabel = (speakerId: number) => {
+    if (!speakerOrder.has(speakerId)) {
+      const index = speakerOrder.size;
+      const alphabet = String.fromCharCode("A".charCodeAt(0) + index);
+      speakerOrder.set(speakerId, `访谈者${alphabet}`);
+    }
+    return speakerOrder.get(speakerId)!;
+  };
+
+  const merged: Array<{ speakerId: number; text: string }> = [];
+  for (const segment of segments) {
+    const previous = merged[merged.length - 1];
+    if (previous && previous.speakerId === segment.speakerId) {
+      previous.text = `${previous.text}${segment.text}`.trim();
+      continue;
+    }
+
+    merged.push({
+      speakerId: segment.speakerId,
+      text: segment.text,
+    });
+  }
+
+  return merged
+    .map((segment) => `${speakerLabel(segment.speakerId)}：${segment.text}`)
+    .join("\n\n");
 }
