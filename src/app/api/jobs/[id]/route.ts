@@ -46,3 +46,45 @@ export async function GET(
 
   return jsonOk({ job });
 }
+
+/**
+ * 更新指定任务
+ * 当前只允许修改标题
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return jsonError("unauthorized", "Not authenticated", { status: 401 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const title = typeof body?.title === "string" ? body.title.trim() : "";
+
+  if (!title) {
+    return jsonError("invalid_payload", "Title is required", { status: 400 });
+  }
+
+  const { data: jobData, error } = await supabase
+    .from("jobs")
+    .update({ title })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("*")
+    .maybeSingle();
+
+  const job = jobData as JobRow | null;
+
+  if (error || !job) {
+    return jsonError("not_found", "Job not found", { status: 404 });
+  }
+
+  return jsonOk({ job });
+}

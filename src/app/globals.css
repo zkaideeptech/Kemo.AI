@@ -417,7 +417,7 @@ body::after {
 .workspace-shell {
   display: grid;
   min-height: calc(100vh - 7rem);
-  grid-template-columns: clamp(280px, 24vw, 330px) minmax(0, 1fr);
+  grid-template-columns: clamp(224px, 19.2vw, 264px) minmax(0, 1fr);
   gap: 1rem;
   width: 100%;
   color: #111827;
@@ -601,6 +601,54 @@ body::after {
   min-width: 0;
 }
 
+.workspace-center-board-title > .workspace-heading,
+.workspace-center-section-copy > .workspace-heading,
+.workspace-card-header > .workspace-heading,
+.workspace-studio-group-head > .workspace-heading {
+  margin-top: 0;
+}
+
+.workspace-editable-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.workspace-editable-title-row .workspace-heading {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.workspace-title-edit-trigger {
+  flex-shrink: 0;
+}
+
+.workspace-title-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.workspace-title-input {
+  height: 2.8rem;
+  max-width: min(100%, 34rem);
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  padding-inline: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #111827;
+  box-shadow: none;
+}
+
+.workspace-title-input::placeholder {
+  color: #64748b;
+}
+
 .workspace-center-board-actions {
   display: flex;
   align-items: center;
@@ -751,10 +799,72 @@ body::after {
   gap: 0.75rem;
 }
 
+.workspace-live-header-condensed {
+  align-items: flex-start;
+}
+
+.workspace-live-summary {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.workspace-live-summary-top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.workspace-live-summary-bottom {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.workspace-live-mode-pill,
+.workspace-live-scene-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.28rem 0.62rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.workspace-live-mode-pill {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+
+.workspace-live-scene-pill {
+  background: rgba(148, 163, 184, 0.12);
+  color: #64748b;
+}
+
+.workspace-live-status-line {
+  margin: 0;
+  font-size: 0.94rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #e5e7eb;
+}
+
+.workspace-live-detail-line,
+.workspace-live-inline-copy {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #94a3b8;
+}
+
 .workspace-live-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .workspace-live-button {
@@ -767,6 +877,20 @@ body::after {
   justify-content: space-between;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.workspace-live-inline-meta,
+.workspace-live-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.workspace-live-mini-button {
+  padding-inline: 0.78rem;
+  min-height: 2.2rem;
+  font-size: 0.8rem;
 }
 
 .workspace-live-toggle-grid {
@@ -795,12 +919,44 @@ body::after {
 }
 
 .workspace-live-transcript-shell-compact {
-  padding: 0.85rem;
+  gap: 0.6rem;
+  padding: 0.72rem;
+  border-radius: 22px;
+}
+
+.workspace-live-transcript-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.workspace-live-transcript-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-size: 0.84rem;
+  color: #94a3b8;
+}
+
+.workspace-live-transcript-detail {
+  border-radius: 14px;
+  background: rgba(148, 163, 184, 0.08);
+  padding: 0.48rem 0.75rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.workspace-live-transcript-close {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
 }
 
 .workspace-live-transcript-box {
-  min-height: 120px;
-  max-height: min(42vh, 420px);
+  min-height: 96px;
+  max-height: min(34vh, 280px);
   overflow: auto;
   border-radius: 20px;
   background: rgba(249, 244, 236, 0.88);
@@ -812,15 +968,25 @@ body::after {
 }
 
 .workspace-live-compact .workspace-live-transcript-box {
-  min-height: 92px;
+  min-height: 62px;
+  max-height: 132px;
+  padding: 0.82rem 0.9rem;
+  font-size: 0.88rem;
+  line-height: 1.65;
 }
 
 .workspace-live-compact .workspace-toggle {
-  padding-block: 0.75rem;
+  padding-block: 0.68rem;
 }
 
 .workspace-live-compact .workspace-live-button {
-  min-width: 6rem;
+  min-width: 5.7rem;
+  min-height: 2.7rem;
+}
+
+.workspace-live-compact {
+  gap: 0.55rem;
+  padding: 0.45rem 0 0.1rem;
 }
 
 .workspace-main {
@@ -917,6 +1083,276 @@ body::after {
   align-items: stretch;
   flex-direction: column;
   background: rgba(248, 243, 235, 0.82);
+}
+
+.workspace-spotlight-board,
+.workspace-task-groups,
+.workspace-task-group,
+.workspace-studio-priority,
+.workspace-primary-progress-list,
+.workspace-primary-chip-list,
+.workspace-preview-shell {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.workspace-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.workspace-priority-cell {
+  min-width: 0;
+}
+
+.workspace-priority-cell-wide {
+  grid-column: 1 / -1;
+}
+
+.workspace-task-group-head,
+.workspace-spotlight-card-head,
+.workspace-spotlight-footer,
+.workspace-primary-progress-card-head,
+.workspace-primary-progress-chip-head,
+.workspace-artifact-footer,
+.workspace-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.workspace-spotlight-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.95fr);
+  gap: 0.8rem;
+}
+
+.workspace-spotlight-card {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  border-radius: 24px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 246, 0.94), rgba(246, 239, 230, 0.8)),
+    rgba(255, 255, 255, 0.68);
+  padding: 1rem;
+}
+
+.workspace-spotlight-card-featured {
+  grid-row: span 2;
+}
+
+.workspace-spotlight-preview {
+  min-height: 6.4rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.workspace-progress-block {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.workspace-progress-block-compact {
+  gap: 0.32rem;
+}
+
+.workspace-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.workspace-progress-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.workspace-progress-step {
+  display: block;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  transition: background 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.workspace-progress-step-current {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 18px rgba(15, 23, 42, 0.12);
+}
+
+.workspace-progress-step-draft {
+  background: linear-gradient(90deg, rgba(192, 132, 252, 0.72), rgba(139, 92, 246, 0.96));
+}
+
+.workspace-progress-step-queued {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.58), rgba(251, 191, 36, 0.92));
+}
+
+.workspace-progress-step-running {
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.72), rgba(59, 130, 246, 0.96));
+}
+
+.workspace-progress-step-ready {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.72), rgba(13, 148, 136, 0.98));
+}
+
+.workspace-task-card-ghost {
+  border-style: dashed;
+}
+
+.workspace-artifact-footer {
+  align-items: center;
+}
+
+.workspace-studio-priority {
+  padding-block: 0.15rem;
+}
+
+.workspace-primary-progress-list {
+  gap: 0.65rem;
+}
+
+.workspace-primary-chip-list {
+  gap: 0.55rem;
+}
+
+.workspace-primary-progress-card {
+  display: grid;
+  gap: 0.7rem;
+  width: 100%;
+  min-width: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(248, 243, 236, 0.82);
+  padding: 0.85rem 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.workspace-primary-progress-card:hover,
+.workspace-primary-progress-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(252, 248, 241, 0.92);
+}
+
+.workspace-primary-progress-card-active {
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
+.workspace-primary-progress-chip {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(248, 243, 236, 0.74);
+  padding: 0.78rem 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.workspace-primary-progress-chip:hover,
+.workspace-primary-progress-chip:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(252, 248, 241, 0.9);
+}
+
+.workspace-primary-progress-chip-active {
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
+.workspace-primary-progress-chip-head {
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.workspace-primary-progress-chip-label {
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.workspace-primary-progress-chip-state {
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 0.2rem 0.48rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.workspace-list-item-meta {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.76rem;
+  color: #64748b;
+}
+
+.workspace-preview-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.22), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(148, 163, 184, 0.12), transparent 28%);
+  padding: 1.1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 24px 80px rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+}
+
+.workspace-preview-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), transparent 38%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.18), transparent 16%);
+  pointer-events: none;
+}
+
+.workspace-preview-title {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.workspace-preview-scroll {
+  max-height: min(64vh, 680px);
+  position: relative;
+  z-index: 1;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(7, 12, 24, 0.12), rgba(7, 12, 24, 0.04)),
+    rgba(255, 255, 255, 0.08);
+  padding: 1.1rem 1.15rem;
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 .workspace-clarification-card {
@@ -1173,7 +1609,7 @@ body::after {
 
 .workspace-studio-group-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
@@ -1742,6 +2178,31 @@ body::after {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .workspace-live-header-condensed {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-live-actions {
+    justify-content: flex-start;
+  }
+
+  .workspace-spotlight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-spotlight-card-featured {
+    grid-row: auto;
+  }
+
+  .workspace-priority-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-priority-cell-wide {
+    grid-column: auto;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1764,6 +2225,14 @@ body::after {
 
   .workspace-studio-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .workspace-preview-header,
+  .workspace-artifact-footer,
+  .workspace-spotlight-footer,
+  .workspace-primary-progress-card-head,
+  .workspace-primary-progress-chip-head {
+    flex-direction: column;
   }
 
   .workspace-sidebar,
@@ -1790,6 +2259,10 @@ body::after {
   .workspace-studio-grid,
   .workspace-panel > .grid {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-spotlight-preview {
+    min-height: auto;
   }
 
   .workspace-sidebar,
@@ -2135,10 +2608,99 @@ body::after {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+:root[data-workspace-theme="dark"] .workspace-live-mode-pill {
+  background: rgba(99, 102, 241, 0.16);
+  color: #c7d2fe;
+}
+
+:root[data-workspace-theme="dark"] .workspace-live-scene-pill {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+}
+
+:root[data-workspace-theme="dark"] .workspace-live-status-line {
+  color: #f8fafc;
+}
+
+:root[data-workspace-theme="dark"] .workspace-live-detail-line,
+:root[data-workspace-theme="dark"] .workspace-live-inline-copy,
+:root[data-workspace-theme="dark"] .workspace-live-transcript-status,
+:root[data-workspace-theme="dark"] .workspace-live-transcript-detail {
+  color: #94a3b8;
+}
+
+:root[data-workspace-theme="dark"] .workspace-live-transcript-detail {
+  background: rgba(148, 163, 184, 0.08);
+}
+
 :root[data-workspace-theme="dark"] .workspace-live-transcript-box {
   background: rgba(5, 8, 18, 0.9);
   color: #e2e8f0;
   border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+:root[data-workspace-theme="dark"] .workspace-spotlight-card,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-card,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip,
+:root[data-workspace-theme="dark"] .workspace-preview-shell {
+  border-color: rgba(148, 163, 184, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(13, 19, 32, 0.76);
+  color: #f8fafc;
+}
+
+:root[data-workspace-theme="dark"] .workspace-spotlight-preview {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(5, 8, 18, 0.9);
+  color: #e2e8f0;
+}
+
+:root[data-workspace-theme="dark"] .workspace-preview-scroll {
+  background:
+    linear-gradient(180deg, rgba(2, 6, 23, 0.52), rgba(2, 6, 23, 0.24)),
+    rgba(255, 255, 255, 0.03);
+}
+
+:root[data-workspace-theme="dark"] .workspace-progress-meta,
+:root[data-workspace-theme="dark"] .workspace-list-item-meta {
+  color: #94a3b8;
+}
+
+:root[data-workspace-theme="dark"] .workspace-progress-track {
+  background: rgba(148, 163, 184, 0.2);
+}
+
+:root[data-workspace-theme="dark"] .workspace-primary-progress-card:hover,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-card:focus-visible,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip:hover,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip:focus-visible {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(18, 26, 43, 0.96);
+}
+
+:root[data-workspace-theme="dark"] .workspace-primary-progress-card-active,
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip-active {
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip-label {
+  color: #f8fafc;
+}
+
+:root[data-workspace-theme="dark"] .workspace-primary-progress-chip-state {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+}
+
+:root[data-workspace-theme="dark"] .workspace-title-input {
+  border-color: rgba(148, 163, 184, 0.12);
+  background: rgba(13, 19, 32, 0.92);
+  color: #f8fafc;
+}
+
+:root[data-workspace-theme="dark"] .workspace-title-input::placeholder {
+  color: #94a3b8;
 }
 
 :root[data-workspace-theme="dark"] .workspace-task-card,
@@ -2438,10 +3000,81 @@ body::after {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
 }
 
+:root[data-workspace-theme="light"] .workspace-live-mode-pill {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+
+:root[data-workspace-theme="light"] .workspace-live-scene-pill {
+  background: rgba(15, 23, 42, 0.06);
+  color: #64748b;
+}
+
+:root[data-workspace-theme="light"] .workspace-live-status-line {
+  color: #0f172a;
+}
+
+:root[data-workspace-theme="light"] .workspace-live-detail-line,
+:root[data-workspace-theme="light"] .workspace-live-inline-copy,
+:root[data-workspace-theme="light"] .workspace-live-transcript-status,
+:root[data-workspace-theme="light"] .workspace-live-transcript-detail {
+  color: #64748b;
+}
+
+:root[data-workspace-theme="light"] .workspace-live-transcript-detail {
+  background: rgba(15, 23, 42, 0.05);
+}
+
 :root[data-workspace-theme="light"] .workspace-live-transcript-box {
   background: rgba(249, 244, 236, 0.88);
   color: #334155;
   border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+:root[data-workspace-theme="light"] .workspace-spotlight-card,
+:root[data-workspace-theme="light"] .workspace-primary-progress-card,
+:root[data-workspace-theme="light"] .workspace-primary-progress-chip,
+:root[data-workspace-theme="light"] .workspace-preview-shell {
+  border-color: rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.12)),
+    rgba(247, 240, 232, 0.72);
+  color: #111827;
+}
+
+:root[data-workspace-theme="light"] .workspace-spotlight-preview {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  color: #334155;
+}
+
+:root[data-workspace-theme="light"] .workspace-preview-scroll {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.2)),
+    rgba(255, 255, 255, 0.28);
+}
+
+:root[data-workspace-theme="light"] .workspace-progress-track {
+  background: rgba(148, 163, 184, 0.18);
+}
+
+:root[data-workspace-theme="light"] .workspace-primary-progress-chip-label {
+  color: #111827;
+}
+
+:root[data-workspace-theme="light"] .workspace-primary-progress-chip-state {
+  background: rgba(15, 23, 42, 0.06);
+  color: #64748b;
+}
+
+:root[data-workspace-theme="light"] .workspace-title-input {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 252, 247, 0.86);
+  color: #111827;
+}
+
+:root[data-workspace-theme="light"] .workspace-title-input::placeholder {
+  color: #64748b;
 }
 
 :root[data-workspace-theme="light"] .workspace-task-card,

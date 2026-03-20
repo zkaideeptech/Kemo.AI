@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, Radio, ScreenShare, Square, Waves } from "lucide-react";
+import { ChevronDown, ChevronUp, Mic, Radio, ScreenShare, Square, Waves } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -220,6 +220,8 @@ export function LiveInterviewPanel({
   onTranscriptChange,
   onStatusChange,
   onEnsureJob,
+  onFinalizeStarted,
+  onFinalizeSettled,
   onFinalized,
   disabled = false,
   disabledReason = "请先创建项目",
@@ -228,6 +230,8 @@ export function LiveInterviewPanel({
   onTranscriptChange?: (value: string) => void;
   onStatusChange?: (value: string) => void;
   onEnsureJob?: () => Promise<StartLiveResult>;
+  onFinalizeStarted?: (payload: { jobId: string | null; transcriptText: string; statusText: string }) => void;
+  onFinalizeSettled?: (payload: { success: boolean; statusText: string }) => void;
   onFinalized?: (payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) => void;
   disabled?: boolean;
   disabledReason?: string;
@@ -240,6 +244,7 @@ export function LiveInterviewPanel({
   const [isRunning, setIsRunning] = useState(false);
   const [pendingAction, setPendingAction] = useState<"starting" | "stopping" | null>(null);
   const [showSourceControls, setShowSourceControls] = useState(false);
+  const [transcriptExpanded, setTranscriptExpanded] = useState(!compact);
 
   const activeJobIdRef = useRef<string | null>(null);
   const liveTextRef = useRef("");
@@ -293,6 +298,12 @@ export function LiveInterviewPanel({
 
     window.localStorage.setItem("kemo-live-capture-mode", captureMode);
   }, [captureMode]);
+
+  useEffect(() => {
+    if (!compact) {
+      setTranscriptExpanded(true);
+    }
+  }, [compact]);
 
   useEffect(() => {
     if (typeof window === "undefined" || disabled) {
@@ -542,12 +553,26 @@ export function LiveInterviewPanel({
         } else {
           setStatus("实时访谈已停止，转写已保存");
         }
+        onFinalizeSettled?.({
+          success: true,
+          statusText: "实时访谈已停止，最终文稿已保存",
+        });
       } else {
-        setStatus(finalizeJson?.error?.message || "实时访谈已停止，但最终保存失败");
+        const failureStatus = finalizeJson?.error?.message || "实时访谈已停止，但最终保存失败";
+        setStatus(failureStatus);
+        onFinalizeSettled?.({
+          success: false,
+          statusText: failureStatus,
+        });
       }
     })()
       .catch((error) => {
-        setStatus(error instanceof Error ? error.message : "最终文稿保存失败");
+        const failureStatus = error instanceof Error ? error.message : "最终文稿保存失败";
+        setStatus(failureStatus);
+        onFinalizeSettled?.({
+          success: false,
+          statusText: failureStatus,
+        });
       })
       .finally(() => {
         finalizePromiseRef.current = null;
@@ -979,6 +1004,11 @@ export function LiveInterviewPanel({
       }
 
       if (jobId) {
+        onFinalizeStarted?.({
+          jobId,
+          transcriptText: finalSnapshotFallback,
+          statusText: "实时访谈已停止，正在整理最终文稿",
+        });
         finishFallbackTimerRef.current = window.setTimeout(() => {
           scheduleFinalize(jobId, finalSnapshotFallback, "实时访谈已停止，正在整理最终文稿");
           closeGatewaySocket();
@@ -1008,13 +1038,23 @@ export function LiveInterviewPanel({
   const isStopping = pendingAction === "stopping";
   const startButtonDisabled = disabled || isStarting || isStopping;
   const stopButtonDisabled = isStopping;
+  const sourceSummary = getSourceSummary({ captureMode });
+  const transcriptToggleLabel = transcriptExpanded ? "收起转写" : "查看转写";
 
   return (
     <section className={`workspace-panel workspace-live-panel ${compact ? "workspace-live-compact" : ""} ${disabled ? "workspace-panel-disabled" : ""}`}>
-      <div className={`workspace-live-header ${compact ? "workspace-live-header-compact" : ""}`}>
-        <div>
-          <p className="workspace-kicker">{compact ? "实时访谈" : "Live Transcript"}</p>
-          <h2 className="workspace-heading">{compact ? "实时采集" : "实时访谈工作台"}</h2>
+      <div className={`workspace-live-header ${compact ? "workspace-live-header-compact workspace-live-header-condensed" : ""}`}>
+        <div className="workspace-live-summary">
+          <div className="workspace-live-summary-top">
+            <span className="workspace-live-mode-pill">实时访谈</span>
+            <span className="workspace-live-scene-pill">{sourceSummary}</span>
+          </div>
+          <div className="workspace-live-summary-bottom">
+            <p className="workspace-live-status-line">{disabled ? disabledReason : status}</p>
+            {!compact ? (
+              <p className="workspace-live-detail-line">{disabled ? disabledReason : captureDetails}</p>
+            ) : null}
+          </div>
         </div>
         <div className="workspace-live-actions">
           {!isRunning ? (
@@ -1037,22 +1077,41 @@ export function LiveInterviewPanel({
               {isStopping ? "停止中…" : "停止"}
             </Button>
           )}
+          {compact ? (
+            <button
+              type="button"
+              onClick={() => setTranscriptExpanded((value) => !value)}
+              className="workspace-chip-button workspace-live-mini-button"
+              disabled={disabled}
+            >
+              {transcriptExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              {transcriptToggleLabel}
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="workspace-live-source-row">
-        <p className={`workspace-muted-copy ${compact ? "workspace-live-note-compact" : ""}`}>
-          {getSourceSummary({ captureMode })}
-        </p>
-        <button
-          type="button"
-          onClick={() => setShowSourceControls((value) => !value)}
-          disabled={disabled || isRunning || isStarting || isStopping}
-          className="workspace-chip-button"
-          title={disabled ? disabledReason : undefined}
-        >
-          {showSourceControls ? "收起采集设置" : "调整采集源"}
-        </button>
+        <div className="workspace-live-inline-meta">
+          {compact ? (
+            <span className="workspace-live-inline-copy">{disabled ? disabledReason : captureDetails}</span>
+          ) : (
+            <p className={`workspace-muted-copy ${compact ? "workspace-live-note-compact" : ""}`}>
+              {sourceSummary}
+            </p>
+          )}
+        </div>
+        <div className="workspace-live-inline-actions">
+          <button
+            type="button"
+            onClick={() => setShowSourceControls((value) => !value)}
+            disabled={disabled || isRunning || isStarting || isStopping}
+            className="workspace-chip-button workspace-live-mini-button"
+            title={disabled ? disabledReason : undefined}
+          >
+            {showSourceControls ? "收起设置" : "调整采集源"}
+          </button>
+        </div>
       </div>
 
       {showSourceControls ? (
@@ -1080,24 +1139,39 @@ export function LiveInterviewPanel({
         </div>
       ) : null}
 
-      <p className={`workspace-muted-copy ${compact ? "workspace-live-note-compact" : ""}`}>
-        {compact
-          ? "开始前选择一个场景：面对面访谈或标签页会议。"
-          : "开始前只保留一个采集场景：面对面访谈走麦克风，标签页会议走浏览器标签页音频。浏览器出于安全限制，必须由你点击“开始”后再授权；若是网页会议，请在系统弹窗里勾选“分享音频”。"}
-      </p>
+      {!compact ? (
+        <p className="workspace-muted-copy">
+          开始前只保留一个采集场景：面对面访谈走麦克风，标签页会议走浏览器标签页音频。浏览器出于安全限制，必须由你点击“开始”后再授权；若是网页会议，请在系统弹窗里勾选“分享音频”。
+        </p>
+      ) : null}
 
-      <div className={`workspace-live-transcript-shell ${compact ? "workspace-live-transcript-shell-compact" : ""}`}>
-        <div className="mb-3 flex items-center gap-2 text-sm text-slate-500">
-          <Waves className="h-4 w-4" />
-          {disabled ? disabledReason : status}
+      {(!compact || transcriptExpanded) ? (
+        <div className={`workspace-live-transcript-shell ${compact ? "workspace-live-transcript-shell-compact" : ""}`}>
+          <div className="workspace-live-transcript-head">
+            <div className="workspace-live-transcript-status">
+              <Waves className="h-4 w-4" />
+              <span>{disabled ? disabledReason : status}</span>
+            </div>
+            {compact ? (
+              <button
+                type="button"
+                onClick={() => setTranscriptExpanded(false)}
+                className="workspace-flat-icon-button workspace-live-transcript-close"
+                aria-label="收起转写"
+                title="收起转写"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
+          <div className="workspace-live-transcript-detail">
+            {disabled ? disabledReason : captureDetails}
+          </div>
+          <div className="workspace-live-transcript-box">
+            {disabled ? disabledReason : liveText || "开始后显示转写。"}
+          </div>
         </div>
-        <div className="mb-3 rounded-[16px] bg-slate-100/70 px-3 py-2 text-xs text-slate-500">
-          {disabled ? disabledReason : captureDetails}
-        </div>
-        <div className="workspace-live-transcript-box">
-          {disabled ? disabledReason : liveText || "开始后显示转写。"}
-        </div>
-      </div>
+      ) : null}
     </section>
   );
 }

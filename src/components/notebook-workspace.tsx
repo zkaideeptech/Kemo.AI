@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   AudioLines,
   Bot,
-  BrainCircuit,
+  Check,
   ChevronDown,
   ClipboardList,
   Download,
@@ -15,23 +15,22 @@ import {
   Lightbulb,
   Link2,
   Loader2,
-  Mic,
   MessagesSquare,
-  Newspaper,
   NotebookText,
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Presentation,
-  Quote,
+  Pencil,
   ScrollText,
   Search,
   Settings,
+  Share2,
   Sparkles,
   Star,
   Trash2,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -84,6 +83,28 @@ type ClarificationQuestion = {
 type ParsedArtifactContent = {
   body: string;
   clarificationItems: ClarificationQuestion[];
+};
+
+const PRIMARY_ARTIFACT_KINDS = ["publish_script", "quick_summary", "inspiration_questions"] as const;
+const PRIMARY_ARTIFACT_DISPLAY_ORDER = ["inspiration_questions", "quick_summary", "publish_script"] as const;
+
+type PrimaryArtifactKind = (typeof PRIMARY_ARTIFACT_KINDS)[number];
+
+type PrimaryArtifactProgressRun = {
+  mode: "manual" | "finalizing";
+  stepIndex: number;
+};
+
+type PrimaryArtifactProgressSnapshot = {
+  label: string;
+  tone: "idle" | "draft" | "queued" | "running" | "ready";
+  stage: 0 | 1 | 2 | 3;
+  stageLabel: string;
+};
+
+type ResolvedFavoriteArtifact = {
+  favorite: FavoriteRow;
+  artifact: WorkspaceArtifact | null;
 };
 
 const TASK_ARTIFACT_ORDER: ArtifactKind[] = [
@@ -186,46 +207,57 @@ function parseArtifactContent(content: string): ParsedArtifactContent {
   };
 }
 
+const PRIMARY_ARTIFACT_CONFIG: Record<
+  PrimaryArtifactKind,
+  {
+    icon: LucideIcon;
+    eyebrow: string;
+    spotlight: string;
+    placeholder: string;
+  }
+> = {
+  publish_script: {
+    icon: NotebookText,
+    eyebrow: "主稿",
+    spotlight: "把原始访谈整理成可直接定稿的发布稿草稿。",
+    placeholder: "停止后先生成发布稿草稿，这里会优先出现正文预览。",
+  },
+  quick_summary: {
+    icon: Sparkles,
+    eyebrow: "摘要",
+    spotlight: "一屏看完这轮访谈的主结论、判断与重点句。",
+    placeholder: "停止后会先补齐总结摘要，方便快速回看和对外同步。",
+  },
+  inspiration_questions: {
+    icon: MessagesSquare,
+    eyebrow: "追问",
+    spotlight: "自动提炼下一轮采访该追问什么，避免灵感断掉。",
+    placeholder: "定稿时会同步生成灵感提问，后续追访直接从这里接续。",
+  },
+};
+
+function isPrimaryArtifactKind(kind: string): kind is PrimaryArtifactKind {
+  return PRIMARY_ARTIFACT_KINDS.includes(kind as PrimaryArtifactKind);
+}
+
 const STUDIO_SECTIONS: StudioSection[] = [
   {
-    title: "上游整理",
-    note: "先把可发布骨架立住",
+    title: "沉淀整理",
+    note: "把这轮访谈补成可归档、可复用的正式版本",
     items: [
-      { kind: "publish_script", icon: NotebookText, hint: "可发布对话稿", accent: true },
       { kind: "roadshow_transcript", icon: ScrollText, hint: "导出 DOCX" },
       { kind: "meeting_minutes", icon: ClipboardList, hint: "导出 DOCX" },
     ],
   },
   {
-    title: "洞察发散",
-    note: "快速提炼信号",
+    title: "延展加工",
+    note: "需要深挖或转成其他载体时，再从这里继续扩展",
     items: [
-      { kind: "quick_summary", icon: Sparkles, hint: "一屏摘要" },
       { kind: "key_insights", icon: Lightbulb, hint: "信号提炼" },
-      { kind: "inspiration_questions", icon: MessagesSquare, hint: "继续追问" },
-    ],
-  },
-  {
-    title: "结构表达",
-    note: "一键转成结构",
-    items: [
-      { kind: "mind_map", icon: BrainCircuit, hint: "主线分支" },
-      { kind: "ppt_outline", icon: Presentation, hint: "Deck 大纲" },
-      { kind: "podcast_script", icon: Mic, hint: "双人脚本" },
       { kind: "podcast_audio", icon: AudioLines, hint: "脚本 → 音频", accent: true },
     ],
   },
-  {
-    title: "传播研究",
-    note: "面向外发与研究",
-    items: [
-      { kind: "ic_qa", icon: Quote, hint: "投研 Q&A" },
-      { kind: "wechat_article", icon: Newspaper, hint: "传播长文" },
-    ],
-  },
 ];
-
-const STUDIO_ITEM_COUNT = STUDIO_SECTIONS.reduce((count, section) => count + section.items.length, 0);
 
 export function NotebookWorkspace({
   locale,
@@ -256,7 +288,7 @@ export function NotebookWorkspace({
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [studioCollapsed, setStudioCollapsed] = useState(false);
-  const [centerSection, setCenterSection] = useState<"interview" | "tasks" | "sources">("interview");
+  const [centerSection, setCenterSection] = useState<"interview" | "tasks" | "sources">("tasks");
   const [centerCollapsed, setCenterCollapsed] = useState(false);
   const [search, setSearch] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -289,7 +321,13 @@ export function NotebookWorkspace({
   const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({});
   const [isLoadingClarifications, setIsLoadingClarifications] = useState(false);
   const [isSavingClarifications, setIsSavingClarifications] = useState(false);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
+  const [primaryProgressRuns, setPrimaryProgressRuns] = useState<Partial<Record<PrimaryArtifactKind, PrimaryArtifactProgressRun>>>({});
+  const [isEditingJobTitle, setIsEditingJobTitle] = useState(false);
+  const [jobTitleDraft, setJobTitleDraft] = useState("");
+  const [isSavingJobTitle, setIsSavingJobTitle] = useState(false);
   const sidebarSearchInputRef = useRef<HTMLInputElement>(null);
+  const jobTitleInputRef = useRef<HTMLInputElement>(null);
   const liveDraftSyncRef = useRef<{
     inFlight: boolean;
     lastLength: number;
@@ -348,6 +386,18 @@ export function NotebookWorkspace({
   const selectedPublishArtifact =
     selectedArtifacts.find((artifact) => artifact.kind === "publish_script") || null;
   const selectedTaskArtifacts = selectedArtifacts;
+  const primaryArtifactsByKind = useMemo(
+    () =>
+      PRIMARY_ARTIFACT_KINDS.reduce((collection, kind) => {
+        collection[kind] = selectedTaskArtifacts.find((artifact) => artifact.kind === kind) || null;
+        return collection;
+      }, {} as Record<PrimaryArtifactKind, WorkspaceArtifact | null>),
+    [selectedTaskArtifacts]
+  );
+  const secondaryTaskArtifacts = useMemo(
+    () => selectedTaskArtifacts.filter((artifact) => !isPrimaryArtifactKind(artifact.kind)),
+    [selectedTaskArtifacts]
+  );
   const parsedPublishArtifact = useMemo(
     () => (selectedPublishArtifact ? parseArtifactContent(selectedPublishArtifact.content || "") : null),
     [selectedPublishArtifact]
@@ -357,32 +407,150 @@ export function NotebookWorkspace({
   const favoriteArtifactIds = new Set(
     favoriteState.map((favorite) => favorite.artifact_id).filter(Boolean) as string[]
   );
+  const scopedFavorites = useMemo(() => {
+    const inProject = selectedProjectId
+      ? favoriteState.filter((favorite) => favorite.project_id === selectedProjectId)
+      : favoriteState;
+    const sourceFavorites = inProject.length ? inProject : favoriteState;
+
+    return sourceFavorites.map((favorite) => ({
+      favorite,
+      artifact: favorite.artifact_id
+        ? artifactState.find((artifact) => artifact.id === favorite.artifact_id) || null
+        : null,
+    })) as ResolvedFavoriteArtifact[];
+  }, [artifactState, favoriteState, selectedProjectId]);
+  const recentOutputArtifacts = useMemo(
+    () => selectedArtifacts.filter((artifact) => artifact.status !== "draft").slice(0, 4),
+    [selectedArtifacts]
+  );
+  const previewArtifact = previewArtifactId
+    ? artifactState.find((artifact) => artifact.id === previewArtifactId) || null
+    : null;
+  const parsedPreviewArtifact = useMemo(
+    () => (previewArtifact?.kind === "publish_script" ? parseArtifactContent(previewArtifact.content || "") : null),
+    [previewArtifact]
+  );
   const transcriptContent =
     transcript?.transcript_text ||
     selectedJob?.live_transcript_snapshot ||
     liveTranscriptSnapshot ||
     "";
-  const interviewWorkspaceFallback = !transcriptContent
-    ? "转写会显示在这里"
-    : selectedJob?.capture_mode === "live" || liveTranscriptSnapshot
-      ? liveCaptureStatus
-      : transcriptContent;
   const hasSelectedProject = Boolean(selectedProjectId);
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "请先创建项目";
   const liveAutoCreateHint = "开始后会自动新建。";
-  const selectedProjectJobs = selectedProjectId ? jobsByProject.get(selectedProjectId) || [] : [];
   const pendingTaskKinds = pendingArtifactKinds.filter((kind) => !selectedTaskArtifacts.some((artifact) => artifact.kind === kind));
   const pendingArtifactKindSet = new Set(pendingArtifactKinds);
+  const pendingSecondaryKinds = pendingTaskKinds.filter((kind) => !isPrimaryArtifactKind(kind));
   const canSubmitClarifications = Boolean(
     selectedJob &&
       parsedPublishArtifact?.clarificationItems.length &&
       parsedPublishArtifact.clarificationItems.every((item) => (clarificationAnswers[item.question] || "").trim())
   );
 
+  const startPrimaryProgress = useCallback((kinds: PrimaryArtifactKind[], mode: PrimaryArtifactProgressRun["mode"]) => {
+    setPrimaryProgressRuns((prev) => {
+      const next = { ...prev };
+      kinds.forEach((kind, index) => {
+        next[kind] = {
+          mode,
+          stepIndex: mode === "finalizing" ? index : 0,
+        };
+      });
+      return next;
+    });
+  }, []);
+
+  const clearPrimaryProgress = useCallback((kinds?: PrimaryArtifactKind[]) => {
+    setPrimaryProgressRuns((prev) => {
+      if (!kinds) {
+        return {};
+      }
+
+      const next = { ...prev };
+      kinds.forEach((kind) => {
+        delete next[kind];
+      });
+      return next;
+    });
+  }, []);
+
+  const primaryProgressByKind = useMemo(() => {
+    const snapshots = {} as Record<PrimaryArtifactKind, PrimaryArtifactProgressSnapshot>;
+
+    PRIMARY_ARTIFACT_KINDS.forEach((kind) => {
+      const artifact = primaryArtifactsByKind[kind];
+      const run = primaryProgressRuns[kind];
+
+      if (run) {
+        if (run.mode === "manual") {
+          snapshots[kind] = {
+            label: artifact ? "更新中" : "生成中",
+            tone: "running",
+            stage: 2,
+            stageLabel: "处理中",
+          };
+          return;
+        }
+
+        if (run.stepIndex > 0) {
+          snapshots[kind] = {
+            label: "排队中",
+            tone: "queued",
+            stage: 1,
+            stageLabel: "待处理",
+          };
+          return;
+        }
+
+        snapshots[kind] = {
+          label: "生成中",
+          tone: "running",
+          stage: 2,
+          stageLabel: "处理中",
+        };
+        return;
+      }
+
+      if (!artifact) {
+        snapshots[kind] = {
+          label: "待生成",
+          tone: "idle",
+          stage: 0,
+          stageLabel: "未开始",
+        };
+        return;
+      }
+
+      if (artifact.status === "draft") {
+        snapshots[kind] = {
+          label: "实时草稿",
+          tone: "draft",
+          stage: 1,
+          stageLabel: "草稿",
+        };
+        return;
+      }
+
+      snapshots[kind] = {
+        label: "已定稿",
+        tone: "ready",
+        stage: 3,
+        stageLabel: "已完成",
+      };
+    });
+
+    return snapshots;
+  }, [primaryArtifactsByKind, primaryProgressRuns]);
+
   const requestArtifact = useCallback(async (kind: ArtifactKind, transcriptOverride?: string) => {
     if (!selectedJob) {
       return null;
+    }
+
+    if (isPrimaryArtifactKind(kind)) {
+      startPrimaryProgress([kind], "manual");
     }
 
     const transcriptText = transcriptOverride ?? liveTranscriptSnapshot ?? transcriptContent ?? "";
@@ -416,8 +584,11 @@ export function NotebookWorkspace({
       return null;
     } finally {
       setPendingArtifactKinds((prev) => prev.filter((item) => item !== kind));
+      if (isPrimaryArtifactKind(kind)) {
+        clearPrimaryProgress([kind]);
+      }
     }
-  }, [liveTranscriptSnapshot, selectedJob, transcriptContent]);
+  }, [clearPrimaryProgress, liveTranscriptSnapshot, selectedJob, startPrimaryProgress, transcriptContent]);
 
   useEffect(() => {
     if (!projectState.length) {
@@ -528,6 +699,23 @@ export function NotebookWorkspace({
   }, [selectedJobId, selectedProjectId]);
 
   useEffect(() => {
+    setIsEditingJobTitle(false);
+    setIsSavingJobTitle(false);
+    setJobTitleDraft(selectedJob?.title || "");
+  }, [selectedJob?.id, selectedJob?.title]);
+
+  useEffect(() => {
+    if (!isEditingJobTitle) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      jobTitleInputRef.current?.focus();
+      jobTitleInputRef.current?.select();
+    });
+  }, [isEditingJobTitle]);
+
+  useEffect(() => {
     liveDraftSyncRef.current.lastLength = 0;
     liveDraftSyncRef.current.inFlight = false;
     if (liveDraftSyncRef.current.timer !== null) {
@@ -541,7 +729,9 @@ export function NotebookWorkspace({
       inspirationRefreshRef.current.timer = null;
     }
     setPendingArtifactKinds([]);
-  }, [selectedJobId]);
+    clearPrimaryProgress();
+    setPreviewArtifactId(null);
+  }, [clearPrimaryProgress, selectedJobId]);
 
   useEffect(() => {
     const syncState = liveDraftSyncRef.current;
@@ -596,6 +786,10 @@ export function NotebookWorkspace({
 
   useEffect(() => {
     if (selectedJob?.capture_mode !== "live" || selectedJob.status === "completed") {
+      return;
+    }
+
+    if (liveCaptureStatus.includes("正在整理最终文稿")) {
       return;
     }
 
@@ -658,6 +852,10 @@ export function NotebookWorkspace({
       return;
     }
 
+    if (liveCaptureStatus.includes("正在整理最终文稿")) {
+      return;
+    }
+
     const transcriptText = liveTranscriptSnapshot.trim();
     if (transcriptText.length < 120) {
       return;
@@ -700,7 +898,7 @@ export function NotebookWorkspace({
         inspirationState.timer = null;
       }
     };
-  }, [liveTranscriptSnapshot, requestArtifact, selectedJob?.capture_mode, selectedJob?.id, selectedJob?.status, selectedTaskArtifacts]);
+  }, [liveCaptureStatus, liveTranscriptSnapshot, requestArtifact, selectedJob?.capture_mode, selectedJob?.id, selectedJob?.status, selectedTaskArtifacts]);
 
   useEffect(() => {
     const projectJobs = jobState.filter((job) => job.project_id === selectedProjectId);
@@ -767,7 +965,7 @@ export function NotebookWorkspace({
     setSelectedProjectId(json.data.project.id);
     setSelectedJobId(null);
     setSelectedSourceId(null);
-    setCenterSection("interview");
+    setCenterSection("tasks");
     setNewProjectTitle("");
     setNewProjectDescription("");
     setNewProjectOpen(false);
@@ -805,7 +1003,7 @@ export function NotebookWorkspace({
       setSelectedProjectId(nextProjectId);
       setSelectedJobId(null);
       setSelectedSourceId(null);
-      setCenterSection("interview");
+      setCenterSection("tasks");
       setLiveTranscriptSnapshot("");
       setLiveCaptureStatus("准备开始实时访谈");
       setSidebarSearchOpen(false);
@@ -953,7 +1151,7 @@ export function NotebookWorkspace({
     }
     if (result.job_id) {
       setSelectedJobId(result.job_id);
-      setCenterSection("interview");
+      setCenterSection("tasks");
     }
   }
 
@@ -961,7 +1159,7 @@ export function NotebookWorkspace({
     setJobState((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
     setSelectedProjectId(job.project_id);
     setSelectedJobId(job.id);
-    setCenterSection("interview");
+    setCenterSection("tasks");
     setLiveTranscriptSnapshot("");
     setLiveCaptureStatus("准备开始实时访谈");
     setNewInterviewOpen(false);
@@ -977,21 +1175,40 @@ export function NotebookWorkspace({
       const job = payload.job as JobRow;
       setJobState((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
       setSelectedJobId(job.id);
-      setCenterSection("interview");
     }
 
     if (Array.isArray(payload.draftArtifacts) && payload.draftArtifacts.length) {
       const nextArtifacts = payload.draftArtifacts as WorkspaceArtifact[];
       mergeArtifactsIntoState(nextArtifacts);
-      setPendingArtifactKinds((prev) =>
-        prev.filter((kind) => !nextArtifacts.some((artifact) => artifact.kind === kind))
-      );
       setCenterSection("tasks");
-      setStudioFeedback("实时草稿已更新");
+      setStudioFeedback("主结果已定稿");
     }
 
+    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind)));
+    clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
     setLiveTranscriptSnapshot(payload.transcriptText);
     setLiveCaptureStatus(payload.statusText);
+  }
+
+  function handleLiveFinalizeStarted(payload: { jobId: string | null; transcriptText: string; statusText: string }) {
+    if (!payload.jobId) {
+      return;
+    }
+
+    setPendingArtifactKinds((prev) => Array.from(new Set([...prev, ...PRIMARY_ARTIFACT_KINDS])));
+    startPrimaryProgress([...PRIMARY_ARTIFACT_KINDS], "finalizing");
+    setCenterSection("tasks");
+    setStudioFeedback("正在定稿发布稿、摘要与灵感提问");
+  }
+
+  function handleLiveFinalizeSettled(payload: { success: boolean; statusText: string }) {
+    if (payload.success) {
+      return;
+    }
+
+    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind)));
+    clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
+    setStudioFeedback(payload.statusText);
   }
 
   async function ensureLiveJob() {
@@ -1051,7 +1268,7 @@ export function NotebookWorkspace({
     setSelectedProjectId(projectId);
     setSelectedJobId(null);
     setSelectedSourceId(null);
-    setCenterSection("interview");
+    setCenterSection("tasks");
     setLiveTranscriptSnapshot("");
     setLiveCaptureStatus("准备开始实时访谈");
     setSidebarSearchOpen(false);
@@ -1063,7 +1280,7 @@ export function NotebookWorkspace({
     setSelectedProjectId(projectId);
     setSelectedJobId(jobId);
     setSelectedSourceId(null);
-    setCenterSection("interview");
+    setCenterSection("tasks");
     setLiveTranscriptSnapshot("");
     setLiveCaptureStatus("准备开始实时访谈");
     setSidebarSearchOpen(false);
@@ -1121,12 +1338,12 @@ export function NotebookWorkspace({
     const summary = normalized ? `${normalized.slice(0, 28)}${normalized.length > 28 ? "…" : ""}` : null;
     const title = (job.title || "").trim();
 
-    if (summary) {
-      return summary;
-    }
-
     if (title) {
       return title;
+    }
+
+    if (summary) {
+      return summary;
     }
 
     return "未命名访谈";
@@ -1142,166 +1359,405 @@ export function NotebookWorkspace({
     return null;
   }
 
-  const activeSource = selectedSource || projectSources[0] || null;
+  function openArtifactPreview(artifact: WorkspaceArtifact | null) {
+    if (!artifact) {
+      return;
+    }
 
-  const centerSectionContent =
-    centerSection === "tasks" ? (
-      <div className="workspace-center-section-body">
-        <div className="workspace-center-section-head">
-          <div className="workspace-center-section-copy">
-            <p className="workspace-kicker">任务</p>
-            <h3 className="workspace-heading">{selectedJob?.title || "输出"}</h3>
-            <p className="workspace-muted-copy">
-              {selectedTaskArtifacts.length ? `${selectedTaskArtifacts.length} 个输出` : hasSelectedJob ? "还没有生成输出。" : "先选一条访谈。"}
-            </p>
+    setPreviewArtifactId(artifact.id);
+  }
+
+  function getArtifactBody(artifact: WorkspaceArtifact | null) {
+    if (!artifact) {
+      return "";
+    }
+
+    return artifact.kind === "publish_script"
+      ? parseArtifactContent(artifact.content || "").body
+      : artifact.content || "";
+  }
+
+  function getArtifactHeadline(artifact: WorkspaceArtifact | null) {
+    if (!artifact) {
+      return "";
+    }
+
+    const candidates = [artifact.summary || "", getArtifactBody(artifact)]
+      .flatMap((text) => text.split("\n"))
+      .map((line) =>
+        line
+          .replace(/^#+\s*/, "")
+          .replace(/^[-*]\s*/, "")
+          .replace(/^\d+[.、]\s*/, "")
+          .replace(/\*\*/g, "")
+          .replace(/\s+/g, " ")
+          .trim()
+      )
+      .filter(Boolean)
+      .filter((line) => !["总览：", "重点：", "待确认项", "草案版正文"].includes(line));
+
+    const headline = candidates.find((line) => line.length >= 8) || candidates[0] || artifact.title;
+    return headline.length > 48 ? `${headline.slice(0, 48)}…` : headline;
+  }
+
+  function getArtifactPreviewText(artifact: WorkspaceArtifact | null) {
+    const body = getArtifactBody(artifact);
+    if (!body) {
+      return "";
+    }
+
+    const snippetLimit = artifact?.kind === "publish_script" ? 5 : artifact?.kind === "inspiration_questions" ? 3 : 4;
+    const lines = body
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const snippet = lines.slice(0, snippetLimit).join("\n");
+
+    return snippet.length > 240 ? `${snippet.slice(0, 240)}…` : snippet;
+  }
+
+  function getArtifactUpdatedLabel(artifact: WorkspaceArtifact | null) {
+    if (!artifact) {
+      return "等待本轮生成";
+    }
+
+    return new Date(artifact.updated_at || artifact.created_at).toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function shareArtifact(artifact: WorkspaceArtifact) {
+    const title = getArtifactHeadline(artifact);
+    const body = getArtifactBody(artifact).trim();
+    const text = [title, body].filter(Boolean).join("\n\n");
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({
+          title,
+          text,
+        });
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setStudioFeedback(`已复制「${title}」内容，可直接转发`);
+        return;
+      }
+    } catch {
+      // clipboard fallback continues below
+    }
+
+    setStudioFeedback("当前环境不支持直接转发");
+  }
+
+  async function saveJobTitle() {
+    if (!selectedJob) {
+      return;
+    }
+
+    const nextTitle = jobTitleDraft.trim();
+    const currentTitle = (selectedJob.title || "").trim();
+
+    if (!nextTitle) {
+      setStudioFeedback("标题不能为空");
+      return;
+    }
+
+    if (nextTitle === currentTitle) {
+      setIsEditingJobTitle(false);
+      return;
+    }
+
+    setIsSavingJobTitle(true);
+
+    try {
+      const res = await fetch(`/api/jobs/${selectedJob.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        setStudioFeedback(json?.error?.message || "标题更新失败");
+        return;
+      }
+
+      const updatedJob = json.data.job as JobRow;
+      setJobState((prev) => prev.map((job) => (job.id === updatedJob.id ? updatedJob : job)));
+      setStudioFeedback("标题已更新");
+      setIsEditingJobTitle(false);
+    } catch {
+      setStudioFeedback("标题更新失败");
+    } finally {
+      setIsSavingJobTitle(false);
+    }
+  }
+
+  function renderPrimaryProgress(kind: PrimaryArtifactKind, compact = false) {
+    const progress = primaryProgressByKind[kind];
+
+    return (
+      <div className={`workspace-progress-block ${compact ? "workspace-progress-block-compact" : ""}`}>
+        {!compact ? (
+          <div className="workspace-progress-meta">
+            <span>{progress.label}</span>
+            <span>{progress.stageLabel}</span>
           </div>
-          <div className="workspace-status-pill">{selectedTaskArtifacts.length}</div>
-        </div>
-
-        <div className="workspace-card-stack">
-          {selectedTaskArtifacts.length || pendingTaskKinds.length ? (
-            <>
-              {pendingTaskKinds.map((kind) => (
-                <section key={`pending-${kind}`} className="workspace-task-card">
-                  <header className="workspace-task-card-head">
-                    <div className="workspace-card-title-row">
-                      <Loader2 className="workspace-card-title-icon animate-spin" />
-                      <div className="min-w-0">
-                        <h4 className="workspace-heading text-[1rem]">{getArtifactLabel(kind)}</h4>
-                        <p className="workspace-muted-copy">生成中</p>
-                      </div>
-                    </div>
-                  </header>
-                  <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-                    正在基于当前转写生成内容…
-                  </div>
-                </section>
-              ))}
-              {selectedTaskArtifacts.map((artifact) => (
-                (() => {
-                  const parsedArtifact = artifact.kind === "publish_script"
-                    ? parseArtifactContent(artifact.content || "")
-                    : null;
-                  const isRefreshing = pendingArtifactKindSet.has(artifact.kind as ArtifactKind);
-
-                  return (
-                    <section key={artifact.id} className="workspace-task-card">
-                      <header className="workspace-task-card-head">
-                        <div className="workspace-card-title-row">
-                          {isRefreshing ? (
-                            <Loader2 className="workspace-card-title-icon animate-spin" />
-                          ) : (
-                            <Bot className="workspace-card-title-icon" />
-                          )}
-                          <div className="min-w-0">
-                            <h4 className="workspace-heading text-[1rem]">{artifact.title}</h4>
-                            <p className="workspace-muted-copy">
-                              {isRefreshing ? "更新中" : artifact.status || artifact.kind}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFavorite(artifact)}
-                          className="workspace-inline-action"
-                        >
-                          <Star
-                            className={`h-4 w-4 ${favoriteArtifactIds.has(artifact.id) ? "fill-amber-400 text-amber-500" : ""}`}
-                          />
-                        </button>
-                      </header>
-
-                      {artifact.kind === "publish_script" && parsedArtifact?.clarificationItems.length ? (
-                        <section className="workspace-clarification-card">
-                          <div className="workspace-clarification-head">
-                            <div>
-                              <p className="workspace-kicker">待确认</p>
-                              <h5 className="workspace-heading text-[0.96rem]">先在这里确认，再重生成正文</h5>
-                            </div>
-                            <span className="workspace-status-pill">{parsedArtifact.clarificationItems.length} 项</span>
-                          </div>
-                          <div className="workspace-clarification-grid">
-                            {parsedArtifact.clarificationItems.map((item, index) => (
-                              <label key={item.question} className="workspace-clarification-field">
-                                <span className="workspace-clarification-label">{index + 1}. {item.question}</span>
-                                {item.context ? (
-                                  <span className="workspace-clarification-context">{item.context}</span>
-                                ) : null}
-                                <Textarea
-                                  value={clarificationAnswers[item.question] || ""}
-                                  onChange={(event) =>
-                                    setClarificationAnswers((prev) => ({
-                                      ...prev,
-                                      [item.question]: event.target.value,
-                                    }))
-                                  }
-                                  className="workspace-clarification-input"
-                                  placeholder="在这里补充姓名、称呼或关系判断"
-                                  rows={2}
-                                />
-                              </label>
-                            ))}
-                          </div>
-                          <div className="workspace-clarification-actions">
-                            <Button
-                              type="button"
-                              onClick={() => void submitClarifications()}
-                              disabled={!canSubmitClarifications || isSavingClarifications}
-                              className="workspace-primary-button"
-                            >
-                              {isSavingClarifications ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                              确认并重生成
-                            </Button>
-                            <p className="workspace-muted-copy">
-                              {isLoadingClarifications ? "正在读取历史确认…" : "答案会保存在当前录音下，后续生成会自动带入。"}
-                            </p>
-                          </div>
-                        </section>
-                      ) : null}
-
-                      <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-                        {(artifact.kind === "publish_script" ? parsedArtifact?.body : artifact.content) || "生成中"}
-                      </div>
-                      {getArtifactDownloadPath(artifact) ? (
-                        <div className="flex justify-end">
-                          <a href={getArtifactDownloadPath(artifact) || undefined} className="workspace-chip-button">
-                            <Download className="h-3.5 w-3.5" />
-                            导出 docx
-                          </a>
-                        </div>
-                      ) : null}
-                      {artifact.audio_url ? (
-                        <audio controls className="mt-2 w-full">
-                          <source src={artifact.audio_url} />
-                        </audio>
-                      ) : null}
-                    </section>
-                  );
-                })()
-              ))}
-            </>
-          ) : (
-            <div className="workspace-empty-card">
-              <Bot className="h-5 w-5" />
-              <div className="grid gap-3">
-                <p className="workspace-muted-copy">选一条访谈后，这里会出现输出。</p>
-                {!hasSelectedProject ? (
-                  <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
-                    <FolderPlus className="h-3.5 w-3.5" />
-                    创建项目
-                  </button>
-                ) : !hasSelectedJob ? (
-                  <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
-                    <Plus className="h-3.5 w-3.5" />
-                    新建访谈
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          )}
+        ) : null}
+        <div className="workspace-progress-track workspace-progress-track-steps" aria-hidden="true">
+          {[1, 2, 3].map((step) => (
+            <span
+              key={`${kind}-${step}`}
+              className={[
+                "workspace-progress-step",
+                progress.stage >= step ? `workspace-progress-step-${progress.tone}` : "",
+                progress.stage === step && progress.tone !== "ready" ? "workspace-progress-step-current" : "",
+              ].filter(Boolean).join(" ")}
+            />
+          ))}
         </div>
       </div>
-    ) : centerSection === "sources" ? (
+    );
+  }
+
+  function renderArtifactCard(artifact: WorkspaceArtifact) {
+    const parsedArtifact = artifact.kind === "publish_script"
+      ? parseArtifactContent(artifact.content || "")
+      : null;
+    const isRefreshing = pendingArtifactKindSet.has(artifact.kind as ArtifactKind);
+    const primaryKind = isPrimaryArtifactKind(artifact.kind) ? artifact.kind : null;
+
+    return (
+      <section key={artifact.id} className="workspace-task-card">
+        <header className="workspace-task-card-head">
+          <div className="workspace-card-title-row">
+            {isRefreshing ? (
+              <Loader2 className="workspace-card-title-icon animate-spin" />
+            ) : (
+              <Bot className="workspace-card-title-icon" />
+            )}
+            <div className="min-w-0">
+              <h4 className="workspace-heading text-[1rem]">{artifact.title}</h4>
+              <p className="workspace-muted-copy">
+                {isRefreshing ? "更新中" : artifact.status === "draft" ? "实时草稿" : artifact.status || artifact.kind}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void shareArtifact(artifact)}
+              className="workspace-inline-action"
+              aria-label={`转发${artifact.title}`}
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFavorite(artifact)}
+              className="workspace-inline-action"
+              aria-label={favoriteArtifactIds.has(artifact.id) ? `取消收藏${artifact.title}` : `收藏${artifact.title}`}
+            >
+              <Star
+                className={`h-4 w-4 ${favoriteArtifactIds.has(artifact.id) ? "fill-amber-400 text-amber-500" : ""}`}
+              />
+            </button>
+          </div>
+        </header>
+
+        {primaryKind ? renderPrimaryProgress(primaryKind) : null}
+
+        {artifact.kind === "publish_script" && parsedArtifact?.clarificationItems.length ? (
+          <section className="workspace-clarification-card">
+            <div className="workspace-clarification-head">
+              <div>
+                <p className="workspace-kicker">待确认</p>
+                <h5 className="workspace-heading text-[0.96rem]">先在这里确认，再重生成正文</h5>
+              </div>
+              <span className="workspace-status-pill">{parsedArtifact.clarificationItems.length} 项</span>
+            </div>
+            <div className="workspace-clarification-grid">
+              {parsedArtifact.clarificationItems.map((item, index) => (
+                <label key={item.question} className="workspace-clarification-field">
+                  <span className="workspace-clarification-label">{index + 1}. {item.question}</span>
+                  {item.context ? (
+                    <span className="workspace-clarification-context">{item.context}</span>
+                  ) : null}
+                  <Textarea
+                    value={clarificationAnswers[item.question] || ""}
+                    onChange={(event) =>
+                      setClarificationAnswers((prev) => ({
+                        ...prev,
+                        [item.question]: event.target.value,
+                      }))
+                    }
+                    className="workspace-clarification-input"
+                    placeholder="在这里补充姓名、称呼或关系判断"
+                    rows={2}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="workspace-clarification-actions">
+              <Button
+                type="button"
+                onClick={() => void submitClarifications()}
+                disabled={!canSubmitClarifications || isSavingClarifications}
+                className="workspace-primary-button"
+              >
+                {isSavingClarifications ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                确认并重生成
+              </Button>
+              <p className="workspace-muted-copy">
+                {isLoadingClarifications ? "正在读取历史确认…" : "答案会保存在当前录音下，后续生成会自动带入。"}
+              </p>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
+          {(artifact.kind === "publish_script" ? parsedArtifact?.body : artifact.content) || "生成中"}
+        </div>
+        <div className="workspace-artifact-footer">
+          <span className="workspace-muted-copy">{getArtifactUpdatedLabel(artifact)}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" className="workspace-chip-button" onClick={() => openArtifactPreview(artifact)}>
+              <ExternalLink className="h-3.5 w-3.5" />
+              展开卡片
+            </button>
+            {getArtifactDownloadPath(artifact) ? (
+              <a href={getArtifactDownloadPath(artifact) || undefined} className="workspace-chip-button">
+                <Download className="h-3.5 w-3.5" />
+                导出 docx
+              </a>
+            ) : null}
+          </div>
+        </div>
+        {artifact.audio_url ? (
+          <audio controls className="mt-2 w-full">
+            <source src={artifact.audio_url} />
+          </audio>
+        ) : null}
+      </section>
+    );
+  }
+
+  const activeSource = selectedSource || projectSources[0] || null;
+  const displayCenterSection = centerSection === "sources" ? "sources" : "tasks";
+
+  const centerSectionContent =
+    displayCenterSection === "tasks" ? (
+      <div className="workspace-center-section-body">
+        {hasSelectedJob ? (
+          <div className="workspace-task-groups">
+            <section className="workspace-task-group">
+              <div className="workspace-priority-grid">
+                {PRIMARY_ARTIFACT_DISPLAY_ORDER.map((kind) => {
+                  const artifact = primaryArtifactsByKind[kind];
+                  const config = PRIMARY_ARTIFACT_CONFIG[kind];
+                  const Icon = config.icon;
+
+                  if (artifact) {
+                    return (
+                      <div
+                        key={artifact.id}
+                        className={kind === "inspiration_questions" ? "workspace-priority-cell workspace-priority-cell-wide" : "workspace-priority-cell"}
+                      >
+                        {renderArtifactCard(artifact)}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={`primary-empty-${kind}`}
+                      className={kind === "inspiration_questions" ? "workspace-priority-cell workspace-priority-cell-wide" : "workspace-priority-cell"}
+                    >
+                      <section className="workspace-task-card workspace-task-card-ghost">
+                        <header className="workspace-task-card-head">
+                          <div className="workspace-card-title-row">
+                            <Icon className="workspace-card-title-icon" />
+                            <div className="min-w-0">
+                              <h4 className="workspace-heading text-[1rem]">{getArtifactLabel(kind)}</h4>
+                              <p className="workspace-muted-copy">{primaryProgressByKind[kind].label}</p>
+                            </div>
+                          </div>
+                        </header>
+                        {renderPrimaryProgress(kind)}
+                        <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
+                          {config.placeholder}
+                        </div>
+                      </section>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {secondaryTaskArtifacts.length || pendingSecondaryKinds.length ? (
+              <section className="workspace-task-group">
+                <div className="workspace-task-group-head">
+                  <div>
+                    <p className="workspace-kicker">延展输出</p>
+                    <h4 className="workspace-heading text-[1rem]">其余补充结果</h4>
+                  </div>
+                  <span className="workspace-status-pill">{secondaryTaskArtifacts.length + pendingSecondaryKinds.length} 项</span>
+                </div>
+                <div className="workspace-card-stack">
+                  {pendingSecondaryKinds.map((kind) => (
+                    <section key={`pending-${kind}`} className="workspace-task-card workspace-task-card-ghost">
+                      <header className="workspace-task-card-head">
+                        <div className="workspace-card-title-row">
+                          <Loader2 className="workspace-card-title-icon animate-spin" />
+                          <div className="min-w-0">
+                            <h4 className="workspace-heading text-[1rem]">{getArtifactLabel(kind)}</h4>
+                            <p className="workspace-muted-copy">生成中</p>
+                          </div>
+                        </div>
+                      </header>
+                      <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
+                        正在基于当前转写生成内容…
+                      </div>
+                    </section>
+                  ))}
+                  {secondaryTaskArtifacts.map((artifact) => renderArtifactCard(artifact))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : (
+          <div className="workspace-empty-card">
+            <Bot className="h-5 w-5" />
+            <div className="grid gap-3">
+              <p className="workspace-muted-copy">选一条访谈后，这里会出现输出。</p>
+              {!hasSelectedProject ? (
+                <button type="button" className="workspace-chip-button" onClick={() => setNewProjectOpen(true)}>
+                  <FolderPlus className="h-3.5 w-3.5" />
+                  创建项目
+                </button>
+              ) : (
+                <button type="button" className="workspace-chip-button" onClick={() => setNewInterviewOpen(true)}>
+                  <Plus className="h-3.5 w-3.5" />
+                  新建访谈
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    ) : (
       <div className="workspace-center-section-body">
         <div className="workspace-center-section-head">
           <div className="workspace-center-section-copy">
@@ -1347,34 +1803,6 @@ export function NotebookWorkspace({
             </div>
           </div>
         )}
-      </div>
-    ) : (
-      <div className="workspace-center-section-body">
-        <div className="workspace-center-section-head">
-          <div className="workspace-center-section-copy">
-            <p className="workspace-kicker">访谈</p>
-            <h3 className="workspace-heading">{selectedJob?.title || "待选访谈"}</h3>
-            <p className="workspace-muted-copy">
-              {!hasSelectedProject
-                ? projectLockedReason
-                : selectedJob
-                  ? `${selectedJob.interviewer_name || "主持人"} × ${selectedJob.guest_name || "受访者"}`
-                  : liveTranscriptSnapshot
-                    ? liveCaptureStatus
-                    : selectedProjectJobs.length
-                      ? "选择一条访谈。"
-                      : "开始后会自动新建。"}
-            </p>
-          </div>
-          <div className="workspace-status-pill">
-            {!hasSelectedProject ? "待建项目" : selectedPublishArtifact?.status || selectedJob?.status || (liveTranscriptSnapshot ? "实时中" : "待机")}
-          </div>
-        </div>
-        <div className="workspace-scroll-content whitespace-pre-wrap">
-          {!hasSelectedProject
-            ? "先创建项目"
-            : interviewWorkspaceFallback}
-        </div>
       </div>
     );
 
@@ -1631,6 +2059,8 @@ export function NotebookWorkspace({
                 onTranscriptChange={setLiveTranscriptSnapshot}
                 onStatusChange={setLiveCaptureStatus}
                 onEnsureJob={ensureLiveJob}
+                onFinalizeStarted={handleLiveFinalizeStarted}
+                onFinalizeSettled={handleLiveFinalizeSettled}
                 onFinalized={handleLiveFinalized}
                 disabled={!hasSelectedProject}
                 disabledReason={projectLockedReason}
@@ -1641,58 +2071,88 @@ export function NotebookWorkspace({
               <article className="workspace-panel workspace-center-board">
                 <div className="workspace-center-board-head">
                   <div className="workspace-center-board-title">
-                    <p className="workspace-kicker">内容</p>
-                    <h2 className="workspace-heading">
-                      {centerSection === "interview" ? "访谈" : centerSection === "tasks" ? "任务" : "来源"}
-                    </h2>
-                  </div>
+                    {displayCenterSection === "sources" ? (
+                      <>
+                        <h2 className="workspace-heading">{activeSource?.title || activeSource?.url || "来源"}</h2>
+                        <p className="workspace-muted-copy">{activeSource?.status || "当前项目来源内容"}</p>
+                      </>
+                    ) : hasSelectedJob ? (
+                      isEditingJobTitle ? (
+                        <div className="workspace-editable-title-row">
+                          <Input
+                            ref={jobTitleInputRef}
+                            value={jobTitleDraft}
+                            onChange={(event) => setJobTitleDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void saveJobTitle();
+                              }
 
-                  <div className="workspace-center-board-actions">
-                    <div className="workspace-center-tabs" role="tablist" aria-label="中心内容切换">
-                      <button
-                        type="button"
-                        className={`workspace-center-tab ${centerSection === "interview" ? "workspace-center-tab-active" : ""}`}
-                        onClick={() => setCenterSection("interview")}
-                        aria-pressed={centerSection === "interview"}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        <span>访谈</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`workspace-center-tab ${centerSection === "tasks" ? "workspace-center-tab-active" : ""}`}
-                        onClick={() => setCenterSection("tasks")}
-                        aria-pressed={centerSection === "tasks"}
-                      >
-                        <Bot className="h-3.5 w-3.5" />
-                        <span>任务</span>
-                        {selectedTaskArtifacts.length ? (
-                          <span className="workspace-tab-badge">{selectedTaskArtifacts.length}</span>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        className={`workspace-center-tab ${centerSection === "sources" ? "workspace-center-tab-active" : ""}`}
-                        onClick={() => setCenterSection("sources")}
-                        aria-pressed={centerSection === "sources"}
-                      >
-                        <Link2 className="h-3.5 w-3.5" />
-                        <span>来源</span>
-                        {projectSources.length ? (
-                          <span className="workspace-tab-badge">{projectSources.length}</span>
-                        ) : null}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCenterCollapsed((value) => !value)}
-                      className="workspace-flat-icon-button workspace-center-collapse-button"
-                      aria-label={centerCollapsed ? "展开中间内容" : "收起中间内容"}
-                      title={centerCollapsed ? "展开中间内容" : "收起中间内容"}
-                    >
-                      <ChevronDown className={`h-4 w-4 transition-transform ${centerCollapsed ? "rotate-180" : ""}`} />
-                    </button>
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                setJobTitleDraft(selectedJob?.title || "");
+                                setIsEditingJobTitle(false);
+                              }
+                            }}
+                            className="workspace-title-input"
+                            placeholder="输入访谈标题"
+                            disabled={isSavingJobTitle}
+                          />
+                          <div className="workspace-title-edit-actions">
+                            <button
+                              type="button"
+                              onClick={() => void saveJobTitle()}
+                              className="workspace-inline-action"
+                              aria-label="保存访谈标题"
+                              disabled={isSavingJobTitle}
+                            >
+                              {isSavingJobTitle ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setJobTitleDraft(selectedJob?.title || "");
+                                setIsEditingJobTitle(false);
+                              }}
+                              className="workspace-inline-action"
+                              aria-label="取消编辑访谈标题"
+                              disabled={isSavingJobTitle}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="workspace-editable-title-row">
+                          <h2 className="workspace-heading">{selectedJob?.title || "未命名访谈"}</h2>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setJobTitleDraft(selectedJob?.title || "");
+                              setIsEditingJobTitle(true);
+                            }}
+                            className="workspace-inline-action workspace-title-edit-trigger"
+                            aria-label="编辑访谈标题"
+                            title="编辑访谈标题"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <h2 className="workspace-heading">选择一条访谈</h2>
+                    )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setCenterCollapsed((value) => !value)}
+                    className="workspace-flat-icon-button workspace-center-collapse-button"
+                    aria-label={centerCollapsed ? "展开中间内容" : "收起中间内容"}
+                    title={centerCollapsed ? "展开中间内容" : "收起中间内容"}
+                  >
+                    <ChevronDown className={`h-4 w-4 transition-transform ${centerCollapsed ? "rotate-180" : ""}`} />
+                  </button>
                 </div>
 
                 {!centerCollapsed ? centerSectionContent : null}
@@ -1707,8 +2167,8 @@ export function NotebookWorkspace({
                     type="button"
                     onClick={() => setStudioCollapsed(false)}
                     className="workspace-flat-icon-button workspace-studio-toggle"
-                    aria-label="展开灵感区域"
-                    title="展开灵感区域"
+                    aria-label="展开右栏"
+                    title="展开右栏"
                   >
                     <PanelRightOpen className="h-4 w-4" />
                   </button>
@@ -1716,35 +2176,51 @@ export function NotebookWorkspace({
               ) : (
                 <>
                   <div className="workspace-card-header">
-                    <div className="workspace-card-title-row">
-                      <Sparkles className="workspace-card-title-icon" />
-                      <h2 className="workspace-heading">灵感区域</h2>
-                      <span className="workspace-status-pill">{STUDIO_ITEM_COUNT} 项</span>
-                    </div>
+                    <h2 className="workspace-heading">补充输出</h2>
                     <button
                       type="button"
                       onClick={() => setStudioCollapsed(true)}
                       className="workspace-flat-icon-button workspace-studio-toggle"
-                      aria-label="收起灵感区域"
-                      title="收起灵感区域"
+                      aria-label="收起右栏"
+                      title="收起右栏"
                     >
                       <PanelRightClose className="h-4 w-4" />
                     </button>
                   </div>
 
-                  {studioFeedback ? (
-                    <p className="workspace-muted-copy">{studioFeedback}</p>
-                  ) : null}
+                  {studioFeedback ? <span className="sr-only" aria-live="polite">{studioFeedback}</span> : null}
+
+                  <section className="workspace-studio-priority">
+                    <div className="workspace-studio-group-head">
+                      <h3 className="workspace-heading text-[0.98rem]">重点进度</h3>
+                    </div>
+                    <div className="workspace-primary-chip-list">
+                      {PRIMARY_ARTIFACT_DISPLAY_ORDER.map((kind) => {
+                        const artifact = primaryArtifactsByKind[kind];
+
+                        return (
+                          <button
+                            key={kind}
+                            type="button"
+                            className={`workspace-primary-progress-chip ${artifact ? "workspace-primary-progress-chip-active" : ""}`}
+                            onClick={() => (artifact ? openArtifactPreview(artifact) : setCenterSection("tasks"))}
+                          >
+                            <div className="workspace-primary-progress-chip-head">
+                              <span className="workspace-primary-progress-chip-label">{getArtifactLabel(kind)}</span>
+                              <span className="workspace-primary-progress-chip-state">{primaryProgressByKind[kind].label}</span>
+                            </div>
+                            {renderPrimaryProgress(kind, true)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
 
                   <div className="workspace-studio-stack">
                     {STUDIO_SECTIONS.map((section) => (
                       <section key={section.title} className="workspace-studio-group">
                         <div className="workspace-studio-group-head">
-                          <div className="workspace-studio-group-copy">
-                            <p className="workspace-kicker">{section.title}</p>
-                            <p className="workspace-muted-copy">{section.note}</p>
-                          </div>
-                          <span className="workspace-status-pill">{section.items.length} 项</span>
+                          <h3 className="workspace-heading text-[0.98rem]">{section.title}</h3>
                         </div>
                         <div className="workspace-studio-grid">
                           {section.items.map((item) => {
@@ -1783,28 +2259,57 @@ export function NotebookWorkspace({
                       <p className="workspace-muted-copy">
                         {!hasSelectedProject
                           ? "先创建或选择一个项目。"
-                          : "先选一条访谈，Studio 才能用。"}
+                          : "先选一条访谈，右栏结果才会激活。"}
                       </p>
                     </div>
                   ) : null}
 
                   <div className="workspace-recent-list">
                     <p className="workspace-section-title"><span>最近输出</span></p>
-                    {selectedArtifacts.length ? selectedArtifacts.slice(0, 4).map((artifact) => (
+                    {recentOutputArtifacts.length ? recentOutputArtifacts.map((artifact) => (
                       <button
                         key={artifact.id}
                         type="button"
                         className="workspace-list-item"
+                        onClick={() => openArtifactPreview(artifact)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate">{getArtifactHeadline(artifact)}</span>
+                          <span className="workspace-list-item-meta">{getArtifactUpdatedLabel(artifact)}</span>
+                        </span>
+                        <ExternalLink className="h-4 w-4 shrink-0 text-slate-400" />
+                      </button>
+                    )) : <p className="workspace-muted-copy">{hasSelectedJob ? "定稿后会显示在这里，可直接点开卡片预览。" : liveAutoCreateHint}</p>}
+                  </div>
+
+                  <div className="workspace-recent-list">
+                    <p className="workspace-section-title"><span>收藏夹</span></p>
+                    {scopedFavorites.length ? scopedFavorites.slice(0, 4).map(({ favorite, artifact }) => (
+                      <button
+                        key={favorite.id}
+                        type="button"
+                        className="workspace-list-item"
                         onClick={() => {
+                          if (!artifact) {
+                            return;
+                          }
+
                           setSelectedProjectId(artifact.project_id);
                           setSelectedJobId(artifact.job_id);
                           setCenterSection("tasks");
+                          openArtifactPreview(artifact);
                         }}
+                        disabled={!artifact}
                       >
-                        <span className="min-w-0 truncate">{artifact.title}</span>
-                        <span className="shrink-0 text-xs uppercase text-slate-400">{artifact.kind}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{artifact ? getArtifactHeadline(artifact) : favorite.label || "已收藏输出"}</span>
+                          <span className="workspace-list-item-meta">
+                            {artifact ? getArtifactUpdatedLabel(artifact) : favorite.excerpt || "源内容已不可用"}
+                          </span>
+                        </span>
+                        <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-500" />
                       </button>
-                    )) : <p className="workspace-muted-copy">{hasSelectedJob ? "当前访谈还没有输出。" : liveAutoCreateHint}</p>}
+                    )) : <p className="workspace-muted-copy">右上角点过星标的卡片，会集中出现在这里。</p>}
                   </div>
                 </>
               )}
@@ -1812,6 +2317,33 @@ export function NotebookWorkspace({
           </aside>
         </main>
       </div>
+
+      <Dialog open={Boolean(previewArtifact)} onOpenChange={(open) => {
+        if (!open) {
+          setPreviewArtifactId(null);
+        }
+      }}>
+        <DialogContent className="max-w-5xl border-0 bg-transparent p-0 shadow-none">
+          {previewArtifact ? (
+            <div className="workspace-preview-shell">
+              <DialogHeader className="workspace-preview-header">
+                <div className="workspace-preview-title">
+                  <DialogTitle className="workspace-heading text-[1.4rem]">{getArtifactHeadline(previewArtifact)}</DialogTitle>
+                  <DialogDescription className="workspace-muted-copy">{getArtifactUpdatedLabel(previewArtifact)}</DialogDescription>
+                </div>
+              </DialogHeader>
+              <div className="workspace-scroll-content workspace-preview-scroll whitespace-pre-wrap text-sm text-slate-700">
+                {(previewArtifact.kind === "publish_script" ? parsedPreviewArtifact?.body : previewArtifact.content) || "暂无内容"}
+              </div>
+              {previewArtifact.audio_url ? (
+                <audio controls className="w-full">
+                  <source src={previewArtifact.audio_url} />
+                </audio>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={newInterviewOpen} onOpenChange={(open) => {
         if (open && !hasSelectedProject) {
