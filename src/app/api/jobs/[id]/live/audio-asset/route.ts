@@ -13,6 +13,14 @@ function sanitizeFileName(name: string) {
     .replace(/_+/g, "_");
 }
 
+function normalizeDurationSeconds(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.ceil(value));
+}
+
 async function loadAuthorizedJob(id: string) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -75,10 +83,7 @@ export async function POST(
     safeFileName = sanitizeFileName(typeof body?.fileName === "string" ? body.fileName : "live_capture.wav");
     fileSize = typeof body?.fileSize === "number" ? body.fileSize : 0;
     mimeType = typeof body?.mimeType === "string" && body.mimeType ? body.mimeType : "audio/wav";
-    durationSeconds =
-      typeof body?.durationSeconds === "number" && Number.isFinite(body.durationSeconds)
-        ? body.durationSeconds
-        : null;
+    durationSeconds = normalizeDurationSeconds(body?.durationSeconds);
   } else {
     const bucket = process.env.SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
     const formData = await req.formData().catch(() => null);
@@ -89,10 +94,9 @@ export async function POST(
       return jsonError("invalid_payload", "Missing live audio file", { status: 400 });
     }
 
-    durationSeconds =
-      typeof durationSecondsRaw === "string" && Number.isFinite(Number(durationSecondsRaw))
-        ? Number(durationSecondsRaw)
-        : null;
+    durationSeconds = normalizeDurationSeconds(
+      typeof durationSecondsRaw === "string" ? Number(durationSecondsRaw) : null
+    );
     safeFileName = sanitizeFileName(file.name || "live_capture.wav");
     storagePath = `${auth.userId}/${id}/${safeFileName}`;
     fileSize = file.size;

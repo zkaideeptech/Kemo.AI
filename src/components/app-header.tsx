@@ -91,7 +91,7 @@ export function AppHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-dark border-b border-white/5">
+    <header className="sticky top-0 z-40 w-full bg-card/40 backdrop-blur-2xl border-b border-border shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <div className="flex items-center gap-8">
           <Link href={`/${locale}`} className="text-xl font-bold tracking-tight hover:text-primary transition-colors duration-300">
@@ -101,13 +101,13 @@ export function AppHeader() {
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
               <Link
                 href={`/${locale}/app/jobs?new=1`}
-                className="transition-colors hover:text-foreground hover:drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]"
+                className="transition-colors hover:text-foreground"
               >
                 {t("nav.newJob")}
               </Link>
               <Link
                 href={`/${locale}/app/jobs`}
-                className="transition-colors hover:text-foreground hover:drop-shadow-[0_0_8px_rgba(57,255,20,0.5)]"
+                className="transition-colors hover:text-foreground"
               >
                 {t("nav.jobs")}
               </Link>
@@ -151,7 +151,7 @@ export function AppHeader() {
               <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <Link href={`/${locale}/login`}>{t("nav.login")}</Link>
               </Button>
-              <Button asChild size="sm" className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all duration-300 font-semibold">
+              <Button asChild size="sm" className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 font-semibold">
                 <Link href={`/${locale}/register`}>{t("login.signUp")}</Link>
               </Button>
             </div>

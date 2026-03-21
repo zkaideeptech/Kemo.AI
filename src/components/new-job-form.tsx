@@ -1,9 +1,6 @@
 /**
  * @file new-job-form.tsx
- * @description 新建任务表单组件，上传音频后在三段式工作台内继续处理
- * @author KEMO
- * @created 2026-02-05
- * @modified 2026-02-06
+ * @description 上传文件 / 导入 URL 的统一入口
  */
 
 "use client";
@@ -11,7 +8,15 @@
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, XCircle, Upload, Loader2 } from "lucide-react";
+import {
+  AudioLines,
+  CheckCircle2,
+  FileText,
+  Link2,
+  Loader2,
+  Upload,
+  XCircle,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,11 +30,39 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { PlanTier } from "@/lib/billing/plan";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { JobRow } from "@/lib/workspace";
+import type { JobRow, SourceRow } from "@/lib/workspace";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
+type SuccessKind = "job" | "source" | null;
 
 const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
+const TEXT_PREVIEW_LIMIT = 16000;
+const MEDIA_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".aac",
+  ".flac",
+  ".ogg",
+  ".mp4",
+  ".mov",
+  ".mkv",
+  ".avi",
+  ".webm",
+  ".mpg",
+  ".mpeg",
+]);
+const TEXT_EXTENSIONS = new Set([
+  ".txt",
+  ".md",
+  ".markdown",
+  ".csv",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".srt",
+  ".vtt",
+]);
 
 function sanitizeFileName(name: string) {
   return name
@@ -37,61 +70,141 @@ function sanitizeFileName(name: string) {
     .replace(/_+/g, "_");
 }
 
-/**
- * 新建任务表单
- * 流程：选择文件 → 上传 → 显示成功/失败 → 成功后回到三段式工作台
- * @param plan - 用户当前套餐信息
- */
+function getFileExtension(name: string) {
+  const dotIndex = name.lastIndexOf(".");
+  return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : "";
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+function isMediaFile(file: File) {
+  if (file.type.startsWith("audio/") || file.type.startsWith("video/")) {
+    return true;
+  }
+
+  return MEDIA_EXTENSIONS.has(getFileExtension(file.name));
+}
+
+function isTextLikeFile(file: File) {
+  if (file.type.startsWith("text/")) {
+    return true;
+  }
+
+  if (
+    file.type.includes("json") ||
+    file.type.includes("xml") ||
+    file.type.includes("yaml")
+  ) {
+    return true;
+  }
+
+  return TEXT_EXTENSIONS.has(getFileExtension(file.name));
+}
+
+async function buildDocumentSourceText(file: File) {
+  const fileSummary = [
+    `文件名：${file.name}`,
+    `格式：${file.type || getFileExtension(file.name) || "未知"}`,
+    `大小：${formatFileSize(file.size)}`,
+  ].join("\n");
+
+  if (!isTextLikeFile(file)) {
+    return `${fileSummary}\n\n文件已归档到项目来源，当前版本暂不做正文提取。`;
+  }
+
+  const text = (await file.text().catch(() => "")).replace(/\u0000/g, "").trim();
+  if (!text) {
+    return `${fileSummary}\n\n文件已归档，但正文为空或暂不可读。`;
+  }
+
+  return `${fileSummary}\n\n${text.slice(0, TEXT_PREVIEW_LIMIT)}`;
+}
+
 export function NewJobForm({
   plan,
   projectId,
   embedded = false,
   onCreated,
+  onImportedSource,
 }: {
   plan: { plan: PlanTier; maxFileSizeMb: number };
   projectId?: string | null;
   embedded?: boolean;
   onCreated?: (job: JobRow) => void;
+  onImportedSource?: (source: SourceRow) => void;
 }) {
   const t = useTranslations();
   const router = useRouter();
   const locale = useLocale();
+
   const [title, setTitle] = useState("");
   const [guestName, setGuestName] = useState("");
   const [interviewerName, setInterviewerName] = useState("");
+  const [inputType, setInputType] = useState<"file" | "url">("file");
+  const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [redirectId, setRedirectId] = useState<string | null>(null);
+  const [successKind, setSuccessKind] = useState<SuccessKind>(null);
 
-  // 上传成功后 2 秒自动回到三段式工作台
   useEffect(() => {
-    if (uploadState === "success" && jobId && !onCreated) {
-      const timer = setTimeout(() => {
-        router.push(`/${locale}/app/jobs?job=${jobId}`);
-      }, 2000);
-      return () => clearTimeout(timer);
+    if (uploadState !== "success" || onCreated || onImportedSource) {
+      return;
     }
-  }, [uploadState, jobId, locale, onCreated, router]);
 
-  /**
-   * 提交表单，上传音频并创建任务
-   */
-  const submit = async () => {
+    const timer = window.setTimeout(() => {
+      if (successKind === "job" && redirectId) {
+        router.push(`/${locale}/app/jobs?job=${redirectId}`);
+        return;
+      }
+
+      router.push(`/${locale}/app/jobs`);
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [locale, onCreated, onImportedSource, redirectId, router, successKind, uploadState]);
+
+  async function submit() {
     if (!projectId) {
       setError("请先创建并选中一个项目");
       return;
     }
 
-    if (!file) {
-      setError(t("new.missingFile") || "Missing audio file");
+    if (inputType === "url") {
+      if (!url.trim()) {
+        setError("请输入链接 / Missing URL");
+        return;
+      }
+
+      try {
+        new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`);
+      } catch {
+        setError("请输入有效的 URL 地址 / Invalid URL");
+        return;
+      }
+    } else if (!file) {
+      setError(t("new.missingFile") || "Missing file");
       return;
     }
 
-    const fileSizeMb = file.size / (1024 * 1024);
-    if (fileSizeMb > plan.maxFileSizeMb) {
-      setError(`File exceeds ${plan.maxFileSizeMb}MB limit`);
-      return;
+    if (file) {
+      const fileSizeMb = file.size / (1024 * 1024);
+      if (fileSizeMb > plan.maxFileSizeMb) {
+        setError(`File exceeds ${plan.maxFileSizeMb}MB limit`);
+        return;
+      }
     }
 
     setUploadState("uploading");
@@ -104,122 +217,177 @@ export function NewJobForm({
       } = await supabase.auth.getUser();
 
       if (!user) {
-        setError("Not authenticated");
-        setUploadState("error");
+        throw new Error("Not authenticated");
+      }
+
+      if (inputType === "url") {
+        const res = await fetch(`/api/projects/${projectId}/sources`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim() || null,
+            url: url.trim(),
+            sourceType: "url_import",
+          }),
+        });
+
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error?.message || "导入链接失败");
+        }
+
+        const source = json.data.source as SourceRow;
+        setSuccessKind("source");
+        setRedirectId(source.id);
+        setUploadState("success");
+        onImportedSource?.(source);
         return;
       }
 
-      const safeFileName = sanitizeFileName(file.name);
+      const currentFile = file as File;
+      const safeFileName = sanitizeFileName(currentFile.name);
       const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
+      const mimeType = currentFile.type || "application/octet-stream";
+      const mediaFile = isMediaFile(currentFile);
 
       const { error: storageError } = await supabase.storage
         .from(AUDIO_BUCKET)
-        .upload(storagePath, file, {
-          contentType: file.type || "audio/mpeg",
+        .upload(storagePath, currentFile, {
+          contentType: mimeType,
           upsert: false,
         });
 
       if (storageError) {
-        setError(storageError.message || t("new.uploadFailed") || "Upload failed");
-        setUploadState("error");
+        throw new Error(storageError.message || "Upload failed");
+      }
+
+      if (mediaFile) {
+        const sourceType = mimeType.startsWith("video/") ? "video_upload" : "audio_upload";
+        const res = await fetch(`/api/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            projectId,
+            guestName,
+            interviewerName,
+            sourceType,
+            captureMode: "upload",
+            storagePath,
+            fileName: currentFile.name,
+            fileSize: currentFile.size,
+            mimeType,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok || !json?.ok) {
+          await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {
+            // ignore cleanup failure
+          });
+          throw new Error(json?.error?.message || "Upload failed");
+        }
+
+        const newJobId = json.data.jobId as string;
+        const createdJob = json.data.job as JobRow | undefined;
+        setSuccessKind("job");
+        setRedirectId(newJobId);
+        setUploadState("success");
+
+        if (createdJob) {
+          onCreated?.(createdJob);
+        }
+
+        fetch(`/api/jobs/${newJobId}/run`, { method: "POST" }).catch(() => {
+          // ignore pipeline trigger failures here; the workspace will surface actual state
+        });
         return;
       }
 
-      const res = await fetch(`/api/jobs`, {
+      const documentText = await buildDocumentSourceText(currentFile);
+      const res = await fetch(`/api/projects/${projectId}/sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          projectId,
-          guestName,
-          interviewerName,
-          sourceType: "audio_upload",
-          captureMode: "upload",
-          storagePath,
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type || null,
+          title: title.trim() || currentFile.name,
+          sourceType: "file_upload",
+          rawText: documentText,
+          extractedText: documentText,
+          metadata: {
+            storage_path: storagePath,
+            file_name: currentFile.name,
+            file_size: currentFile.size,
+            mime_type: mimeType,
+          },
         }),
       });
+      const json = await res.json().catch(() => null);
 
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        // 元数据写入失败时尝试回滚已上传文件
+      if (!res.ok || !json?.ok) {
         await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {
           // ignore cleanup failure
         });
-        setError(json?.error?.message || t("new.uploadFailed") || "Upload failed");
-        setUploadState("error");
-        return;
+        throw new Error(json?.error?.message || "文件导入失败");
       }
 
-      const newJobId = json.data.jobId;
-      const createdJob = json.data.job as JobRow | undefined;
-      setJobId(newJobId);
+      const source = json.data.source as SourceRow;
+      setSuccessKind("source");
+      setRedirectId(source.id);
       setUploadState("success");
-      if (createdJob) {
-        onCreated?.(createdJob);
-      }
-
-      // 触发任务执行管道
-      fetch(`/api/jobs/${newJobId}/run`, { method: "POST" }).catch(() => {
-        // 静默处理，任务详情页会显示实际状态
-      });
-    } catch {
-      setError(t("new.uploadFailed") || "Upload failed");
+      onImportedSource?.(source);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : (t("new.uploadFailed") || "Upload failed"));
       setUploadState("error");
     }
-  };
+  }
 
-  // 上传成功界面
+  const selectedFileKind = file ? (isMediaFile(file) ? "media" : "document") : null;
+  const successTitle = successKind === "job" ? "素材已进入转写" : "来源已导入项目";
+  const successDescription =
+    successKind === "job"
+      ? "系统已开始处理音频/视频，稍后会在工作区生成摘要与主稿。"
+      : "链接或文档已经归档到当前项目，可直接在工作区里查看和引用。";
+
   if (uploadState === "success") {
     return (
-      <Card className="glass border-white/10 shadow-2xl">
+      <Card className="bg-card border-border shadow-sm">
         <CardContent className="flex flex-col items-center gap-6 py-12">
           <div className="relative">
             <div className="absolute inset-0 blur-2xl bg-green-500/20 rounded-full animate-pulse" />
             <CheckCircle2 className="relative h-20 w-20 text-primary" />
           </div>
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight">
-              {t("new.uploadSuccess") || "上传成功"}
-            </h2>
-            <p className="text-muted-foreground">
-              {t("new.autoRedirect") || "正在自动返回工作台..."}
-            </p>
+            <h2 className="text-2xl font-bold tracking-tight">{successTitle}</h2>
+            <p className="text-muted-foreground">{successDescription}</p>
           </div>
           <Loader2 className="h-6 w-6 animate-spin text-primary/50" />
           <Button
             variant="secondary"
-            className="w-full sm:w-auto border-white/10 hover:bg-white/5"
-            onClick={() => router.push(`/${locale}/app/jobs?job=${jobId}`)}
+            className="w-full sm:w-auto border-border hover:bg-background"
+            onClick={() => router.push(successKind === "job" && redirectId ? `/${locale}/app/jobs?job=${redirectId}` : `/${locale}/app/jobs`)}
           >
-            {t("new.goToJob") || "立即查看"}
+            立即查看
           </Button>
         </CardContent>
       </Card>
     );
   }
 
-  // 上传失败界面
   if (uploadState === "error") {
     return (
-      <Card className="glass border-destructive/20 shadow-2xl">
+      <Card className="bg-card border-destructive/20 shadow-sm">
         <CardContent className="flex flex-col items-center gap-6 py-12">
           <div className="relative">
-            <div className="absolute inset-0 blur-2xl bg-destructive/20 rounded-full" />
+            <div className="absolute inset-0 blur-2xl bg-destructive/10 rounded-full" />
             <XCircle className="relative h-20 w-20 text-destructive" />
           </div>
           <div className="text-center space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight">
-              {t("new.uploadFailed") || "上传失败"}
-            </h2>
+            <h2 className="text-2xl font-bold tracking-tight">{t("new.uploadFailed") || "上传失败"}</h2>
             <p className="text-sm text-destructive font-medium">{error}</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
             <Button
-              className="neon-button"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => {
                 setUploadState("idle");
                 setError(null);
@@ -229,10 +397,10 @@ export function NewJobForm({
             </Button>
             <Button
               variant="secondary"
-              className="border-white/10 hover:bg-white/5"
+              className="border-border hover:bg-background"
               onClick={() => router.push(`/${locale}/app/jobs`)}
             >
-              {t("new.backToJobs") || "返回任务列表"}
+              返回工作台
             </Button>
           </div>
         </CardContent>
@@ -240,101 +408,189 @@ export function NewJobForm({
     );
   }
 
-  // 默认表单界面
   return (
-    <Card className={`glass border-white/5 shadow-2xl hover:shadow-primary/5 transition-all duration-700 ${embedded ? "" : "animate-in fade-in slide-in-from-bottom-8 duration-1000"}`}>
-      <CardHeader className="text-center">
-        <CardTitle className={`${embedded ? "text-2xl" : "text-3xl"} font-black tracking-tighter bg-gradient-to-r from-primary to-emerald-400 bg-clip-text text-transparent`}>
-          {t("new.title")}
-        </CardTitle>
-        <CardDescription className="text-muted-foreground font-medium italic">
-          {t("new.subtitle")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-8 p-8">
-        <div className="grid gap-4">
-          <Label htmlFor="title" className="text-sm font-bold tracking-widest uppercase text-muted-foreground flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary/60"></span>
-            {t("new.titleLabel")}
-          </Label>
-          <Input
-            id="title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Interview with ..."
-            className="glass border-white/5 bg-white/5 focus-visible:ring-primary focus-visible:border-primary/50 transition-all duration-500 h-12 text-lg"
-          />
+    <Card className={`bg-card border-border shadow-sm transition-all duration-700 ${embedded ? "" : "animate-in fade-in slide-in-from-bottom-8 duration-1000"}`}>
+      <CardHeader className="text-center space-y-4">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground self-center">
+          上传文件
         </div>
+        <div className="space-y-2">
+          <CardTitle className={`${embedded ? "text-2xl" : "text-3xl"} font-black tracking-tighter bg-gradient-to-r from-primary via-emerald-400 to-cyan-400 bg-clip-text text-transparent`}>
+            音频转写 / 文档归档 / URL 导入
+          </CardTitle>
+          <CardDescription className="text-muted-foreground">
+            音频和视频会创建转写任务；文档与网页会进入当前项目的来源库。
+          </CardDescription>
+        </div>
+      </CardHeader>
+
+      <CardContent className="grid gap-6 p-8">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setInputType("file")}
+            className={`rounded-2xl border p-4 text-left transition-all ${inputType === "file" ? "border-primary bg-primary/10 shadow-[0_12px_40px_rgba(16,185,129,0.12)]" : "border-border bg-background/60 hover:border-primary/40"}`}
+          >
+            <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Upload className="h-5 w-5" />
+            </span>
+            <div className="space-y-1">
+              <p className="text-sm font-bold">上传文件</p>
+              <p className="text-xs text-muted-foreground">支持音频、视频、TXT、Markdown、PDF、DOC、DOCX。</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInputType("url")}
+            className={`rounded-2xl border p-4 text-left transition-all ${inputType === "url" ? "border-primary bg-primary/10 shadow-[0_12px_40px_rgba(16,185,129,0.12)]" : "border-border bg-background/60 hover:border-primary/40"}`}
+          >
+            <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Link2 className="h-5 w-5" />
+            </span>
+            <div className="space-y-1">
+              <p className="text-sm font-bold">导入 URL</p>
+              <p className="text-xs text-muted-foreground">适合文章、YouTube、播客链接或其他网页来源。</p>
+            </div>
+          </button>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid gap-3">
-            <Label htmlFor="guestName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
-              Guest
+            <Label htmlFor="title" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+              标题
             </Label>
             <Input
-              id="guestName"
-              value={guestName}
-              onChange={(event) => setGuestName(event.target.value)}
-              placeholder="Guest name"
-              className="glass border-white/5 bg-white/5 h-12"
+              id="title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="给这次上传起个名字"
+              className="bg-card border-border bg-background h-12"
             />
           </div>
           <div className="grid gap-3">
-            <Label htmlFor="interviewerName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
-              Interviewer
+            <Label className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+              项目上限
+            </Label>
+            <div className="flex h-12 items-center rounded-lg border border-border bg-background px-4 text-sm text-muted-foreground">
+              当前套餐 {t(`plan.${plan.plan}`)}，单文件上限 {plan.maxFileSizeMb}MB
+            </div>
+          </div>
+        </div>
+
+        {inputType === "file" ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-3">
+                <Label htmlFor="guestName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+                  Guest
+                </Label>
+                <Input
+                  id="guestName"
+                  value={guestName}
+                  onChange={(event) => setGuestName(event.target.value)}
+                  placeholder="受访者 / 会议对象"
+                  className="bg-card border-border bg-background h-12"
+                />
+              </div>
+              <div className="grid gap-3">
+                <Label htmlFor="interviewerName" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+                  Interviewer
+                </Label>
+                <Input
+                  id="interviewerName"
+                  value={interviewerName}
+                  onChange={(event) => setInterviewerName(event.target.value)}
+                  placeholder="采访者 / 记录者"
+                  className="bg-card border-border bg-background h-12"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <Label htmlFor="file" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+                选择文件
+              </Label>
+              <Input
+                id="file"
+                type="file"
+                accept="audio/*,video/*,.txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                className="relative bg-card border-border bg-background file:bg-primary file:text-primary-foreground file:border-0 file:rounded-md file:mr-4 file:px-4 file:h-full file:font-bold transition-all duration-500 h-14 py-2 focus-visible:ring-primary"
+              />
+            </div>
+
+            <div className="grid gap-3 rounded-3xl border border-border bg-background/70 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    {selectedFileKind === "media" ? <AudioLines className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">{file ? file.name : "尚未选择文件"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {file
+                        ? `${formatFileSize(file.size)} · ${selectedFileKind === "media" ? "进入转写流程" : "导入来源库"}`
+                        : "媒体文件会创建任务，文档会归档为来源。"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border bg-card/70 p-3">
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">音频 / 视频</p>
+                  <p className="mt-2 text-sm font-medium">创建 Job，自动进入转写与生成。</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/70 p-3">
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">文本文档</p>
+                  <p className="mt-2 text-sm font-medium">提取文本预览，归档为项目来源。</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/70 p-3">
+                  <p className="text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground">PDF / DOCX</p>
+                  <p className="mt-2 text-sm font-medium">先归档文件，后续可以继续补正文提取。</p>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="grid gap-4">
+            <Label htmlFor="url" className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
+              URL
             </Label>
             <Input
-              id="interviewerName"
-              value={interviewerName}
-              onChange={(event) => setInterviewerName(event.target.value)}
-              placeholder="Interviewer name"
-              className="glass border-white/5 bg-white/5 h-12"
+              id="url"
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://... / YouTube / 播客 / 网页文章"
+              className="bg-card border-border bg-background h-14 text-sm"
             />
+            <div className="rounded-3xl border border-border bg-background/70 p-5">
+              <p className="text-sm font-semibold">链接会直接进入当前项目 Sources</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                适合网页文章、YouTube、播客页、研究报告链接。导入后可在中间区域直接查看和引用。
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="grid gap-4">
-          <Label htmlFor="file" className="text-sm font-bold tracking-widest uppercase text-muted-foreground flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary/60"></span>
-            {t("new.uploadLabel")}
-          </Label>
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-transparent rounded-lg blur opacity-0 group-hover:opacity-100 transition duration-1000"></div>
-            <Input
-              id="file"
-              type="file"
-              accept="audio/*"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
-              className="relative glass border-white/5 bg-white/5 file:bg-primary file:text-primary-foreground file:border-0 file:rounded-md file:mr-4 file:px-4 file:h-full file:font-bold hover:file:shadow-[0_0_15px_rgba(57,255,20,0.4)] transition-all duration-500 h-14 py-2 focus-visible:ring-primary"
-            />
-          </div>
-        </div>
-        <div className="rounded-2xl glass-dark border border-white/5 p-6 text-sm text-muted-foreground space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-xs uppercase tracking-widest">{t("new.plan")}</span>
-            <strong className="text-primary font-bold neon-glow">{t(`plan.${plan.plan}`)}</strong>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-xs uppercase tracking-widest">{t("new.limit")}</span>
-            <strong className="text-foreground font-bold">{plan.maxFileSizeMb}MB</strong>
-          </div>
-          <p className="mt-4 text-xs opacity-50 leading-relaxed border-t border-white/5 pt-4 text-center">
-            Supabase Storage is project-level. We enforce Free/Pro limits.
-          </p>
-        </div>
-        {error ? <p className="text-sm font-bold text-destructive animate-bounce text-center">{error}</p> : null}
+        )}
+
+        {error ? <p className="text-sm font-bold text-destructive text-center">{error}</p> : null}
+
         <Button
           onClick={submit}
           disabled={uploadState === "uploading"}
-          className="h-14 w-full neon-button text-lg font-black tracking-widest uppercase transition-all duration-500 rounded-xl"
+          className="h-14 w-full bg-primary text-primary-foreground hover:bg-primary/90 text-lg font-black tracking-widest uppercase transition-all duration-500 rounded-xl"
         >
           {uploadState === "uploading" ? (
             <span className="flex items-center gap-3">
               <Loader2 className="h-6 w-6 animate-spin" />
-              {t("new.uploading")}
+              {inputType === "url" ? "导入中" : t("new.uploading")}
             </span>
           ) : (
             <span className="flex items-center gap-3">
-              <Upload className="h-6 w-6" />
-              {t("new.submit")}
+              {inputType === "url" ? <Link2 className="h-6 w-6" /> : <Upload className="h-6 w-6" />}
+              {inputType === "url" ? "导入来源" : t("new.submit")}
             </span>
           )}
         </Button>

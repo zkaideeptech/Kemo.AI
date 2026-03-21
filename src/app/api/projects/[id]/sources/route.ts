@@ -78,57 +78,77 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const rawUrl = typeof body?.url === "string" ? body.url : "";
   const rawTitle = typeof body?.title === "string" ? body.title.trim() : "";
+  const rawText = typeof body?.rawText === "string" ? body.rawText.trim() : "";
+  const extractedTextFromBody = typeof body?.extractedText === "string" ? body.extractedText.trim() : "";
   const jobId = typeof body?.jobId === "string" ? body.jobId : null;
   const sourceType = typeof body?.sourceType === "string" ? body.sourceType : "url";
+  const metadataFromBody =
+    body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+      ? (body.metadata as Record<string, unknown>)
+      : null;
 
-  if (!rawUrl.trim()) {
-    return jsonError("invalid_payload", "Missing url", { status: 400 });
+  const hasUrl = Boolean(rawUrl.trim());
+  const hasInlineContent = Boolean(rawText || extractedTextFromBody || rawTitle);
+
+  if (!hasUrl && !hasInlineContent) {
+    return jsonError("invalid_payload", "Missing source payload", { status: 400 });
   }
 
   let normalizedUrl = "";
 
-  try {
-    normalizedUrl = normalizeUrl(rawUrl);
-    new URL(normalizedUrl);
-  } catch {
-    return jsonError("invalid_payload", "Invalid url", { status: 400 });
+  if (hasUrl) {
+    try {
+      normalizedUrl = normalizeUrl(rawUrl);
+      new URL(normalizedUrl);
+    } catch {
+      return jsonError("invalid_payload", "Invalid url", { status: 400 });
+    }
+
+    const { data: existing } = await supabase
+      .from("sources")
+      .select("*")
+      .eq("project_id", id)
+      .eq("url", normalizedUrl)
+      .maybeSingle();
+
+    if (existing) {
+      return jsonOk({ source: existing });
+    }
   }
 
-  const { data: existing } = await supabase
-    .from("sources")
-    .select("*")
-    .eq("project_id", id)
-    .eq("url", normalizedUrl)
-    .maybeSingle();
-
-  if (existing) {
-    return jsonOk({ source: existing });
-  }
-
-  let extractedText: string | null = null;
-  let rawText: string | null = null;
+  let extractedText: string | null = extractedTextFromBody || rawText || null;
+  let sourceRawText: string | null = rawText || extractedTextFromBody || null;
   let title = rawTitle || null;
   let domain: string | null = null;
   let status = "ready";
-  let metadata: Json = {};
+  let metadata: Json = (metadataFromBody || {}) as Json;
 
-  try {
-    const extracted = await extractSourceFromUrl(normalizedUrl);
-    extractedText = extracted.extractedText || null;
-    rawText = extracted.rawText || null;
-    title = title || extracted.title || new URL(normalizedUrl).hostname;
-    domain = extracted.domain || new URL(normalizedUrl).hostname;
+  if (hasUrl) {
+    try {
+      const extracted = await extractSourceFromUrl(normalizedUrl);
+      extractedText = extracted.extractedText || null;
+      sourceRawText = extracted.rawText || null;
+      title = title || extracted.title || new URL(normalizedUrl).hostname;
+      domain = extracted.domain || new URL(normalizedUrl).hostname;
+      metadata = {
+        ...(typeof extracted.metadata === "object" && extracted.metadata ? extracted.metadata : {}),
+        ...(metadataFromBody || {}),
+        provider: extracted.provider,
+        imported_at: new Date().toISOString(),
+      } as Json;
+    } catch (error) {
+      title = title || new URL(normalizedUrl).hostname;
+      domain = new URL(normalizedUrl).hostname.replace(/^www\./, "");
+      status = "failed";
+      metadata = {
+        ...(metadataFromBody || {}),
+        error: error instanceof Error ? error.message : "Unknown extraction error",
+        imported_at: new Date().toISOString(),
+      } as Json;
+    }
+  } else {
     metadata = {
-      ...(typeof extracted.metadata === "object" && extracted.metadata ? extracted.metadata : {}),
-      provider: extracted.provider,
-      imported_at: new Date().toISOString(),
-    } as Json;
-  } catch (error) {
-    title = title || new URL(normalizedUrl).hostname;
-    domain = new URL(normalizedUrl).hostname.replace(/^www\./, "");
-    status = "failed";
-    metadata = {
-      error: error instanceof Error ? error.message : "Unknown extraction error",
+      ...(metadataFromBody || {}),
       imported_at: new Date().toISOString(),
     } as Json;
   }
@@ -141,9 +161,9 @@ export async function POST(
       job_id: jobId,
       source_type: sourceType,
       title,
-      url: normalizedUrl,
+      url: normalizedUrl || null,
       domain,
-      raw_text: rawText,
+      raw_text: sourceRawText,
       extracted_text: extractedText,
       status,
       metadata,

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Mic, Radio, ScreenShare, Square, Waves } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, Mic, Radio, ScreenShare, Square, Upload, Waves } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -32,7 +32,35 @@ type StartLiveResult = {
   statusText?: string;
 };
 
-type CaptureMode = "mic" | "tab";
+type CaptureMode = "mic" | "system" | "tab";
+
+const CAPTURE_MODE_OPTIONS: Array<{
+  mode: CaptureMode;
+  label: string;
+  description: string;
+  icon: typeof Mic;
+}> = [
+  {
+    mode: "mic",
+    label: "面对面",
+    description: "使用本机麦克风，适合线下面谈和单人记录。",
+    icon: Mic,
+  },
+  {
+    mode: "system",
+    label: "会议 App",
+    description: "捕获会议软件或电脑系统声音，适合飞书、Meet、Zoom。",
+    icon: ScreenShare,
+  },
+  {
+    mode: "tab",
+    label: "浏览器页面",
+    description: "选择任意已打开标签页，例如 YouTube、播客或网页直播。",
+    icon: Radio,
+  },
+];
+
+const RECORDER_BAR_LEVELS = [0.9, 0.72, 0.56, 0.78, 0.38, 0.34, 0.66, 0.82, 0.61, 0.44, 0.5, 0.7, 0.3, 0.36, 0.42, 0.58, 0.74, 0.28];
 
 function mergeChunks(chunks: Uint8Array[]) {
   const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
@@ -130,7 +158,39 @@ function getSourceSummary({
 }: {
   captureMode: CaptureMode;
 }) {
-  return captureMode === "tab" ? "当前场景：标签页会议" : "当前场景：面对面访谈";
+  if (captureMode === "tab") return "当前场景：浏览器页面";
+  if (captureMode === "system") return "当前场景：会议App音频";
+  return "当前场景：面对面访谈";
+}
+
+function getCaptureModeLabel(captureMode: CaptureMode) {
+  if (captureMode === "tab") return "浏览器页面";
+  if (captureMode === "system") return "会议 App";
+  return "面对面访谈";
+}
+
+function getCapturePermissionStatus(captureMode: CaptureMode) {
+  if (captureMode === "tab") {
+    return "请选择要监听的浏览器标签页，并勾选“分享音频”";
+  }
+
+  if (captureMode === "system") {
+    return "请选择会议窗口或整个屏幕，并确保勾选系统音频";
+  }
+
+  return "正在请求麦克风权限";
+}
+
+function formatElapsedTime(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return [hours, minutes, seconds].map((value) => value.toString().padStart(2, "0")).join(":");
+  }
+
+  return [minutes, seconds].map((value) => value.toString().padStart(2, "0")).join(":");
 }
 
 type AudioSnapshot = {
@@ -182,7 +242,7 @@ function createCaptureAudioContext() {
   }
 }
 
-async function requestTabCaptureStream() {
+async function requestTabCaptureStream(mode: "tab" | "system") {
   const attempts: ExtendedDisplayMediaStreamOptions[] = [
     {
       video: {
@@ -194,12 +254,18 @@ async function requestTabCaptureStream() {
         noiseSuppression: false,
         autoGainControl: false,
       },
-      systemAudio: "include",
+      systemAudio: mode === "system" ? "include" : "exclude",
+      preferCurrentTab: false,
+      selfBrowserSurface: "include",
+      surfaceSwitching: "include",
     },
     {
       video: true,
       audio: true,
-      systemAudio: "include",
+      systemAudio: mode === "system" ? "include" : "exclude",
+      preferCurrentTab: false,
+      selfBrowserSurface: "include",
+      surfaceSwitching: "include",
     },
   ];
 
@@ -213,7 +279,7 @@ async function requestTabCaptureStream() {
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("标签页音频未接入");
+  throw lastError instanceof Error ? lastError : new Error(mode === "tab" ? "浏览器页面音频未接入" : "会议音频未接入");
 }
 
 export function LiveInterviewPanel({
@@ -223,6 +289,8 @@ export function LiveInterviewPanel({
   onFinalizeStarted,
   onFinalizeSettled,
   onFinalized,
+  afterRecorderSlot,
+  onRequestUpload,
   disabled = false,
   disabledReason = "请先创建项目",
   compact = false,
@@ -233,6 +301,8 @@ export function LiveInterviewPanel({
   onFinalizeStarted?: (payload: { jobId: string | null; transcriptText: string; statusText: string }) => void;
   onFinalizeSettled?: (payload: { success: boolean; statusText: string }) => void;
   onFinalized?: (payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) => void;
+  afterRecorderSlot?: ReactNode;
+  onRequestUpload?: () => void;
   disabled?: boolean;
   disabledReason?: string;
   compact?: boolean;
@@ -242,12 +312,14 @@ export function LiveInterviewPanel({
   const [status, setStatus] = useState("准备开始");
   const [captureDetails, setCaptureDetails] = useState("未开始");
   const [isRunning, setIsRunning] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pendingAction, setPendingAction] = useState<"starting" | "stopping" | null>(null);
-  const [showSourceControls, setShowSourceControls] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(!compact);
 
   const activeJobIdRef = useRef<string | null>(null);
   const liveTextRef = useRef("");
+  const liveStartedAtRef = useRef<number | null>(null);
+  const elapsedTimerRef = useRef<number | null>(null);
   const tracksRef = useRef<MediaStreamTrack[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodesRef = useRef<MediaStreamAudioSourceNode[]>([]);
@@ -277,6 +349,7 @@ export function LiveInterviewPanel({
       stopFlushLoop();
       closeGatewaySocket();
       clearFinishFallbackTimer();
+      stopElapsedTimer();
     };
   }, []);
 
@@ -286,7 +359,7 @@ export function LiveInterviewPanel({
     }
 
     const savedMode = window.localStorage.getItem("kemo-live-capture-mode");
-    if (savedMode === "mic" || savedMode === "tab") {
+    if (savedMode === "mic" || savedMode === "system" || savedMode === "tab") {
       setCaptureMode(savedMode);
     }
   }, []);
@@ -446,6 +519,26 @@ export function LiveInterviewPanel({
 
     window.clearTimeout(finishFallbackTimerRef.current);
     finishFallbackTimerRef.current = null;
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedTimerRef.current !== null) {
+      window.clearInterval(elapsedTimerRef.current);
+      elapsedTimerRef.current = null;
+    }
+  }
+
+  function startElapsedTimer() {
+    stopElapsedTimer();
+    setElapsedSeconds(0);
+    liveStartedAtRef.current = Date.now();
+    elapsedTimerRef.current = window.setInterval(() => {
+      if (!liveStartedAtRef.current) {
+        return;
+      }
+
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - liveStartedAtRef.current) / 1000)));
+    }, 1000);
   }
 
   function startFlushLoop() {
@@ -744,7 +837,7 @@ export function LiveInterviewPanel({
     const wavFile = encodePcm16Wav(recordedChunks, TARGET_SAMPLE_RATE);
     const safeFileName = sanitizeFileName(wavFile.name || LIVE_WAV_FILE_NAME);
     const storagePath = `${user.id}/${jobId}/${crypto.randomUUID()}-${safeFileName}`;
-    const durationSeconds = Number((Math.max(0, wavFile.size - 44) / (TARGET_SAMPLE_RATE * 2)).toFixed(2));
+    const durationSeconds = Math.max(0, (wavFile.size - 44) / (TARGET_SAMPLE_RATE * 2));
     const { error: storageError } = await supabase.storage
       .from(AUDIO_BUCKET)
       .upload(storagePath, wavFile, {
@@ -792,6 +885,7 @@ export function LiveInterviewPanel({
     recordedPcmChunksRef.current = [];
     audioUploadPromiseRef.current = null;
     setLiveText("");
+    setElapsedSeconds(0);
     setStatus("正在启动实时访谈");
     setCaptureDetails("正在请求浏览器权限");
     clearFinishFallbackTimer();
@@ -801,10 +895,10 @@ export function LiveInterviewPanel({
     const cleanupTracks: MediaStreamTrack[] = [];
     const audioTracks: MediaStreamTrack[] = [];
     const usingMic = captureMode === "mic";
-    const usingTabAudio = captureMode === "tab";
+    const usingDisplayAudio = captureMode === "tab" || captureMode === "system";
 
     try {
-      setStatus(usingMic ? "正在请求麦克风权限" : "正在请求标签页音频权限");
+      setStatus(getCapturePermissionStatus(captureMode));
 
       const ensurePromise = onEnsureJob?.() || Promise.resolve({ jobId: null, statusText: "无法创建实时访谈" });
       const micPromise = usingMic
@@ -819,8 +913,8 @@ export function LiveInterviewPanel({
             },
           })
         : Promise.resolve(null);
-      const displayPromise = usingTabAudio
-        ? requestTabCaptureStream()
+      const displayPromise = (captureMode === "tab" || captureMode === "system")
+        ? requestTabCaptureStream(captureMode)
         : Promise.resolve(null);
 
       const [ensuredResult, micResult, displayResult] = await Promise.allSettled([
@@ -862,7 +956,9 @@ export function LiveInterviewPanel({
 
       const detailText = usingMic
         ? (micAudioTracks.length ? `麦克风 ${micAudioTracks.length} 轨` : "麦克风未接入")
-        : (displayAudioTracks.length ? `标签页音频 ${displayAudioTracks.length} 轨` : "标签页音频未接入");
+        : captureMode === "system"
+          ? (displayAudioTracks.length ? `会议/系统音频 ${displayAudioTracks.length} 轨` : "会议音频未接入")
+          : (displayAudioTracks.length ? `浏览器页面音频 ${displayAudioTracks.length} 轨` : "浏览器页面音频未接入");
       const activeTrackSettings = usingMic
         ? describeTrackSettings(micAudioTracks[0])
         : describeTrackSettings(displayAudioTracks[0]);
@@ -883,8 +979,8 @@ export function LiveInterviewPanel({
         );
       });
 
-      if (usingTabAudio && !displayAudioTracks.length) {
-        setStatus("没有捕获到标签页音频。请重新选择“浏览器标签页”并勾选“分享音频”。");
+      if (usingDisplayAudio && !displayAudioTracks.length) {
+        setStatus("没有捕获到音频。请重新选择捕获源并务必勾选“分享音频”。");
       } else {
         setStatus("权限已获取，正在连接阿里实时 ASR");
       }
@@ -926,17 +1022,18 @@ export function LiveInterviewPanel({
       tracksRef.current = cleanupTracks;
       runningRef.current = true;
       setIsRunning(true);
+      startElapsedTimer();
       startFlushLoop();
       setPendingAction(null);
 
       if (usingMic && micError) {
         setStatus("麦克风未接入，请检查系统权限后重试。");
-      } else if (usingTabAudio && displayError) {
-        setStatus("标签页音频未接入，请重新选择标签页并勾选“分享音频”。");
-      } else if (usingTabAudio && !displayAudioTracks.length) {
-        setStatus("实时采集中，但当前没有标签页音轨。");
+      } else if (usingDisplayAudio && displayError) {
+        setStatus("系统/标签页音频未接入，请重新选择并勾选“分享音频”。");
+      } else if (usingDisplayAudio && !displayAudioTracks.length) {
+        setStatus("实时采集中，但当前没有捕获到系统/标签页音轨。");
       } else {
-        setStatus(`已开始本地采集：${detailText}，正在连接阿里 ASR`);
+        setStatus(`已开始采集 ${getCaptureModeLabel(captureMode)}，正在连接阿里 ASR`);
       }
 
       const gatewaySession = await gatewaySessionPromise;
@@ -950,6 +1047,8 @@ export function LiveInterviewPanel({
       runningRef.current = false;
       setIsRunning(false);
       stopFlushLoop();
+      stopElapsedTimer();
+      liveStartedAtRef.current = null;
       teardownAudioGraph();
       cleanupTracks.forEach((track) => track.stop());
       tracksRef.current = [];
@@ -977,6 +1076,7 @@ export function LiveInterviewPanel({
     recordedPcmChunksRef.current = [];
     runningRef.current = false;
     stopFlushLoop();
+    stopElapsedTimer();
     tracksRef.current.forEach((track) => track.stop());
     tracksRef.current = [];
     teardownAudioGraph();
@@ -1026,6 +1126,7 @@ export function LiveInterviewPanel({
       setIsRunning(false);
       setCaptureDetails("未开始采集");
       setPendingAction(null);
+      liveStartedAtRef.current = null;
       if (!jobId) {
         activeJobIdRef.current = null;
       } else {
@@ -1039,7 +1140,13 @@ export function LiveInterviewPanel({
   const startButtonDisabled = disabled || isStarting || isStopping;
   const stopButtonDisabled = isStopping;
   const sourceSummary = getSourceSummary({ captureMode });
+  const captureModeLabel = getCaptureModeLabel(captureMode);
   const transcriptToggleLabel = transcriptExpanded ? "收起转写" : "查看转写";
+  const recorderTimeLabel = formatElapsedTime(elapsedSeconds);
+  const recorderPrimaryLine = isRunning ? `${recorderTimeLabel} Recording meeting` : "准备开始实时录音";
+  const recorderSecondaryLine = isRunning
+    ? `当前来源 · ${captureModeLabel}`
+    : "选择来源后开始，本轮会自动创建实时访谈并同步转写。";
 
   return (
     <section className={`workspace-panel workspace-live-panel ${compact ? "workspace-live-compact" : ""} ${disabled ? "workspace-panel-disabled" : ""}`}>
@@ -1057,26 +1164,6 @@ export function LiveInterviewPanel({
           </div>
         </div>
         <div className="workspace-live-actions">
-          {!isRunning ? (
-            <Button
-              onClick={startLive}
-              className="workspace-primary-button workspace-live-button"
-              disabled={startButtonDisabled}
-            >
-              <Radio className="h-4 w-4" />
-              {isStarting ? "连接中…" : compact ? "开始" : "开始实时访谈"}
-            </Button>
-          ) : (
-            <Button
-              onClick={stopLive}
-              variant="secondary"
-              className="workspace-live-button"
-              disabled={stopButtonDisabled}
-            >
-              <Square className="h-4 w-4" />
-              {isStopping ? "停止中…" : "停止"}
-            </Button>
-          )}
           {compact ? (
             <button
               type="button"
@@ -1091,59 +1178,105 @@ export function LiveInterviewPanel({
         </div>
       </div>
 
-      <div className="workspace-live-source-row">
-        <div className="workspace-live-inline-meta">
-          {compact ? (
-            <span className="workspace-live-inline-copy">{disabled ? disabledReason : captureDetails}</span>
-          ) : (
-            <p className={`workspace-muted-copy ${compact ? "workspace-live-note-compact" : ""}`}>
-              {sourceSummary}
-            </p>
-          )}
-        </div>
-        <div className="workspace-live-inline-actions">
-          <button
-            type="button"
-            onClick={() => setShowSourceControls((value) => !value)}
-            disabled={disabled || isRunning || isStarting || isStopping}
-            className="workspace-chip-button workspace-live-mini-button"
-            title={disabled ? disabledReason : undefined}
-          >
-            {showSourceControls ? "收起设置" : "调整采集源"}
-          </button>
+      <div className={`workspace-live-toggle-grid ${compact ? "workspace-live-toggle-grid-compact" : ""}`}>
+        {CAPTURE_MODE_OPTIONS.map((option) => {
+          const Icon = option.icon;
+
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              onClick={() => setCaptureMode(option.mode)}
+              disabled={disabled || isRunning || isStarting || isStopping}
+              title={disabled ? disabledReason : option.description}
+              className={`workspace-toggle workspace-live-source-card ${compact ? "workspace-live-source-card-compact" : ""} ${captureMode === option.mode ? "workspace-toggle-active workspace-live-source-card-active" : ""}`}
+            >
+              <span className="workspace-live-source-card-icon">
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className={`workspace-live-source-card-copy ${compact ? "workspace-live-source-card-copy-compact" : ""}`}>
+                <strong>{option.label}</strong>
+                {!compact ? <span>{option.description}</span> : null}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onRequestUpload}
+          disabled={disabled || isRunning || isStarting || isStopping || !onRequestUpload}
+          title={disabled ? disabledReason : "上传文件、音频或 URL"}
+          className={`workspace-toggle workspace-live-source-card ${compact ? "workspace-live-source-card-compact" : ""} workspace-live-source-card-upload`}
+        >
+          <span className="workspace-live-source-card-icon">
+            <Upload className="h-4 w-4" />
+          </span>
+          <span className={`workspace-live-source-card-copy ${compact ? "workspace-live-source-card-copy-compact" : ""}`}>
+            <strong>上传文件</strong>
+          </span>
+        </button>
+      </div>
+
+      <div className={`workspace-live-recorder-stage ${isRunning ? "workspace-live-recorder-stage-active" : ""}`}>
+        <div className={`workspace-live-recorder-bar ${isRunning ? "workspace-live-recorder-bar-active" : ""}`}>
+          <div className="workspace-live-recorder-bar-head">
+            <div className="workspace-live-recorder-copy">
+              <span className="workspace-live-recorder-line">{recorderPrimaryLine}</span>
+              <span className="workspace-live-recorder-subline">{disabled ? disabledReason : recorderSecondaryLine}</span>
+            </div>
+            {!isRunning ? (
+              <Button
+                onClick={startLive}
+                className="workspace-primary-button workspace-live-button workspace-live-recorder-button"
+                disabled={startButtonDisabled}
+              >
+                <Radio className="h-4 w-4" />
+                {isStarting ? "连接中…" : "开始"}
+              </Button>
+            ) : (
+              <Button
+                onClick={stopLive}
+                variant="secondary"
+                className="workspace-live-button workspace-live-recorder-button"
+                disabled={stopButtonDisabled}
+              >
+                <Square className="h-4 w-4" />
+                {isStopping ? "停止中…" : "停止"}
+              </Button>
+            )}
+          </div>
+
+          <div className="workspace-live-waveform" aria-hidden="true">
+            {RECORDER_BAR_LEVELS.map((level, index) => (
+              <span
+                key={`wave-bar-${index}`}
+                className={`workspace-live-wave-bar ${isRunning ? "workspace-live-wave-bar-active" : ""}`}
+                style={{
+                  height: `${14 + level * 28}px`,
+                  animationDelay: `${index * 80}ms`,
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
-      {showSourceControls ? (
-        <div className={`workspace-live-toggle-grid ${compact ? "workspace-live-toggle-grid-compact" : ""}`}>
-          <button
-            type="button"
-            onClick={() => setCaptureMode("mic")}
-            disabled={disabled || isRunning || isStarting || isStopping}
-            title={disabled ? disabledReason : undefined}
-            className={`workspace-toggle ${captureMode === "mic" ? "workspace-toggle-active" : ""}`}
-          >
-            <Mic className="h-4 w-4" />
-            面对面访谈
-          </button>
-          <button
-            type="button"
-            onClick={() => setCaptureMode("tab")}
-            disabled={disabled || isRunning || isStarting || isStopping}
-            title={disabled ? disabledReason : undefined}
-            className={`workspace-toggle ${captureMode === "tab" ? "workspace-toggle-active" : ""}`}
-          >
-            <ScreenShare className="h-4 w-4" />
-            标签页会议
-          </button>
+      {afterRecorderSlot ? (
+        <div className="workspace-live-after-recorder">
+          {afterRecorderSlot}
         </div>
       ) : null}
 
-      {!compact ? (
-        <p className="workspace-muted-copy">
-          开始前只保留一个采集场景：面对面访谈走麦克风，标签页会议走浏览器标签页音频。浏览器出于安全限制，必须由你点击“开始”后再授权；若是网页会议，请在系统弹窗里勾选“分享音频”。
-        </p>
-      ) : null}
+      <div className="workspace-live-source-row">
+        <div className="workspace-live-inline-meta">
+          <span className="workspace-live-inline-copy">{disabled ? disabledReason : captureDetails}</span>
+        </div>
+        <div className="workspace-live-inline-actions">
+          <span className="workspace-live-inline-hint">
+            浏览器页面模式会列出其他已打开标签页；选择目标页后记得勾选“分享音频”。
+          </span>
+        </div>
+      </div>
 
       {(!compact || transcriptExpanded) ? (
         <div className={`workspace-live-transcript-shell ${compact ? "workspace-live-transcript-shell-compact" : ""}`}>
