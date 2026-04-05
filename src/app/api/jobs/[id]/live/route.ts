@@ -282,6 +282,7 @@ export async function POST(
       capture_mode: "live",
       source_type: ensuredJob.capture_mode === "live" ? ensuredJob.source_type : "live_capture",
       started_at: ensuredJob.started_at || new Date().toISOString(),
+      ...(finalize ? { status: "completed" } : {}),
     })
     .eq("id", id)
     .select("*")
