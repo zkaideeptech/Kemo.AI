@@ -1,0 +1,14 @@
+[dotenv@17.2.4] injecting env (26) from .env.local -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[smoke] using http://127.0.0.1:4000
+[smoke] registered kemo-smoke-1774623262121@test.local
+[smoke] synced auth cookies
+[smoke] created project 167c267b-9d3e-4648-a7fa-e7c4b56b14b4
+[smoke] created inline source context
+[smoke] created file job b39b16ec-1ad1-4d39-91ad-def011910650
+[smoke] artifact publish_script ok (1375 chars)
+[smoke] artifact quick_summary ok (694 chars)
+[smoke] artifact inspiration_questions ok (202 chars)
+[smoke] artifact meeting_minutes ok (1271 chars)
+[smoke] created live job a77dcedc-e7f5-47b9-90f5-309bdb150b9c
+[smoke] live draft ok (publish_script, quick_summary, inspiration_questions)
+[smoke] failed: fetch failed

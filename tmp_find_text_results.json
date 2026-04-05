@@ -1,0 +1,77 @@
+[
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2180,
+    "t": "<h3 className={`mt-2 truncate text-lg font-bold ${workspaceStrongTextClass}`} title={title}>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2227,
+    "t": "<h1 className={`truncate text-lg font-bold ${workspaceStrongTextClass}`}>{title}</h1>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2229,
+    "t": "<span className={`truncate text-xs uppercase tracking-[0.18em] ${workspaceMutedCopyClass}`}>{detail}</span>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2260,
+    "t": "<p className=\"mt-1 truncate text-sm font-semibold\">{getJobDisplayTitle(processAnchorJob)}</p>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2889,
+    "t": "<span className=\"truncate\">{result.title}</span>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2929,
+    "t": "<p className=\"truncate text-sm font-bold\" title={project.title}>{project.title}</p>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2930,
+    "t": "<p className={`mt-1 truncate text-xs ${mutedClass}`}>{projectJobs.length} {ui.sessions}</p>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 2965,
+    "t": "<span className=\"truncate\">{getJobDisplayTitle(job)}</span>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 3427,
+    "t": "{/* 技能卡 - 默认展开（带进度条） */}"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 3730,
+    "t": "<p className={`truncate text-sm font-semibold ${workspaceStrongTextClass}`}>{getJobDisplayTitle(job)}</p>"
+  },
+  {
+    "file": "kemo-workspace.tsx",
+    "n": 3759,
+    "t": "// 聚焦模态的 skill 进程数据"
+  },
+  {
+    "file": "notebook-workspace.tsx",
+    "n": 1958,
+    "t": "<span className={`text-[0.8rem] font-medium block w-full truncate ${isSelected ? \"text-[#006b5c]\" : \"text-slate-700\"}`}>"
+  },
+  {
+    "file": "notebook-workspace.tsx",
+    "n": 2386,
+    "t": "<span className=\"min-w-0 flex-1 truncate\">{result.title}</span>"
+  },
+  {
+    "file": "notebook-workspace.tsx",
+    "n": 2457,
+    "t": "<span className=\"truncate\">{project.title}</span>"
+  },
+  {
+    "file": "notebook-workspace.tsx",
+    "n": 2509,
+    "t": "<span className=\"truncate\">{getJobDisplayTitle(job)}</span>"
+  }
+]

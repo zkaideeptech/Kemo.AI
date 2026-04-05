@@ -1,0 +1,47 @@
+▲ Next.js 16.1.6
+- Local:         http://localhost:4000
+- Network:       http://192.168.1.4:4000
+
+✓ Starting...
+✓ Ready in 441ms
+[API /jobs] POST 创建任务
+[API /jobs] 用户: f6208161... / kemo-smoke-1774622992566@test.local
+[API /jobs] 套餐: free / 单文件上限: 50MB
+[API /jobs] 文件: smoke.mp3 / 0.00MB / audio/mpeg
+[API /jobs] 创建 Job 记录...
+[API /jobs] ✓ Job 已创建: 467b405c-b86b-4e44-b95a-f8a2f2b5c506
+[API /jobs] 原始文件名: smoke.mp3 → 安全文件名: smoke.mp3
+[API /jobs] 上传音频: audio/f6208161-50df-4f25-98d4-ab1dc07b77ab/467b405c-b86b-4e44-b95a-f8a2f2b5c506/smoke.mp3 (0.00MB)
+[API /jobs] ✓ 音频上传成功
+[API /jobs] ✓ 任务创建完成: jobId=467b405c-b86b-4e44-b95a-f8a2f2b5c506
+[LLM] ✓ publish_script 完成 via OpenAI chat (6.4s) / 1375 chars
+[LLM] ✓ quick_summary 完成 via OpenAI chat (5.3s) / 628 chars
+[LLM] ✓ inspiration_questions 完成 via OpenAI chat (4.5s) / 202 chars
+[LLM] ✓ meeting_minutes 完成 via OpenAI chat (7.5s) / 1271 chars
+[API /jobs] POST 创建任务
+[API /jobs] 用户: f6208161... / kemo-smoke-1774622992566@test.local
+[API /jobs] 实时访谈模式：创建空 Job，音频后续实时进入 ASR
+[API /jobs] 创建 Job 记录...
+[API /jobs] ✓ Job 已创建: c86cd00a-03e6-41ee-b9cd-94bf3008d72d
+[API /jobs] POST 创建任务
+[API /jobs] 用户: 08c0c355... / kemo-smoke-1774623262121@test.local
+[API /jobs] 套餐: free / 单文件上限: 50MB
+[API /jobs] 文件: smoke.mp3 / 0.00MB / audio/mpeg
+[API /jobs] 创建 Job 记录...
+[API /jobs] ✓ Job 已创建: b39b16ec-1ad1-4d39-91ad-def011910650
+[API /jobs] 原始文件名: smoke.mp3 → 安全文件名: smoke.mp3
+[API /jobs] 上传音频: audio/08c0c355-55a1-49fd-8f64-c6453dacc9f1/b39b16ec-1ad1-4d39-91ad-def011910650/smoke.mp3 (0.00MB)
+[API /jobs] ✓ 音频上传成功
+[API /jobs] ✓ 任务创建完成: jobId=b39b16ec-1ad1-4d39-91ad-def011910650
+[LLM] ✓ publish_script 完成 via OpenAI chat (35.2s) / 1375 chars
+[LLM] ✓ quick_summary 完成 via OpenAI chat (6.4s) / 694 chars
+[LLM] ✓ inspiration_questions 完成 via OpenAI chat (7.5s) / 202 chars
+[LLM] ✓ meeting_minutes 完成 via OpenAI chat (6.4s) / 1271 chars
+[API /jobs] POST 创建任务
+[API /jobs] 用户: 08c0c355... / kemo-smoke-1774623262121@test.local
+[API /jobs] 实时访谈模式：创建空 Job，音频后续实时进入 ASR
+[API /jobs] 创建 Job 记录...
+[API /jobs] ✓ Job 已创建: a77dcedc-e7f5-47b9-90f5-309bdb150b9c
+[LLM] ✓ publish_script 完成 via OpenAI chat (10.8s) / 1519 chars
+[LLM] ✓ quick_summary 完成 via OpenAI chat (7.1s) / 816 chars
+[LLM] ✓ inspiration_questions 完成 via OpenAI chat (6.2s) / 910 chars

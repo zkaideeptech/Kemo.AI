@@ -1,0 +1,102 @@
+{
+  "appName": "Kemo",
+  "appDescription": "Turn recordings, files, and web sources into transcripts, minutes, and publishable drafts.",
+  "home": {
+    "getStarted": "Get Started",
+    "description": "Choose an entry point to begin your workflow."
+  },
+  "nav": {
+    "newJob": "New Job",
+    "jobs": "Workspace",
+    "login": "Login",
+    "logout": "Logout",
+    "settings": "Settings",
+    "workspace": "Workspace",
+    "capture": "Capture",
+    "process": "Process",
+    "library": "Library"
+  },
+  "login": {
+    "title": "Welcome back",
+    "subtitle": "Sign in to manage your interviews and source material",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signingIn": "Signing in...",
+    "error": "Unable to sign in"
+  },
+  "register": {
+    "title": "Sign up",
+    "subtitle": "Create an account to get started",
+    "confirmPassword": "Confirm password"
+  },
+  "new": {
+    "title": "Create a job",
+    "subtitle": "Upload audio and start processing",
+    "uploadLabel": "Audio file",
+    "titleLabel": "Job title",
+    "submit": "Create job",
+    "plan": "Current plan",
+    "limit": "Single file limit",
+    "limitNote": "The free plan supports files up to 50MB. Compress, split, or upgrade to Pro if needed.",
+    "uploading": "Uploading...",
+    "missingFile": "Please select an audio file",
+    "uploadSuccess": "Upload successful",
+    "uploadFailed": "Upload failed",
+    "autoRedirect": "Redirecting to the job details...",
+    "goToJob": "View now",
+    "retry": "Retry",
+    "backToJobs": "Back to workspace"
+  },
+  "jobs": {
+    "title": "Workspace",
+    "emptyTitle": "No jobs yet",
+    "emptyBody": "Upload your first recording or import your first source to get started.",
+    "createCta": "Create job"
+  },
+  "job": {
+    "status": "Status",
+    "transcript": "Transcript",
+    "icMemo": "IC Memo",
+    "wechat": "WeChat Article",
+    "termsReview": "Terms Review",
+    "output": "Output",
+    "noTranscript": "Transcript is not ready yet.",
+    "noMemo": "Memo is not ready yet.",
+    "noTerms": "No terms are awaiting review.",
+    "memoReady": "Generated. Click to view.",
+    "viewIcMemo": "View IC Memo",
+    "viewWechat": "View WeChat Article",
+    "icDialogDesc": "AI generated IC Q&A memo",
+    "wechatDialogDesc": "AI generated long-form WeChat article"
+  },
+  "terms": {
+    "title": "Review terms",
+    "confirm": "Confirm terms",
+    "pending": "Pending",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "confirmed": "Terms confirmed.",
+    "fuzzyTitle": "Low-confidence terms",
+    "fuzzyDesc": "These terms have low confidence. Please review their spelling and meaning carefully.",
+    "confidentTitle": "High-confidence terms",
+    "needsReview": "Needs review",
+    "undoReject": "Undo",
+    "editPlaceholder": "Edit term spelling...",
+    "contextLabel": "Context"
+  },
+  "plan": {
+    "free": "Free",
+    "pro": "Pro"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading",
+    "error": "Error",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close"
+  }
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "路演整理稿"
+  short_description: "将发布稿整理为结构化路演 docx"
+  default_prompt: "Use $roadshow-transcript to convert this finalized dialogue script into a structured roadshow document and export it as docx."
+policy:
+  allow_implicit_invocation: true

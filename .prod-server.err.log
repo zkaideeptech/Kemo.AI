@@ -1,0 +1,4 @@
+⨯ Error: insert or update on table "artifacts" violates foreign key constraint "artifacts_user_id_fkey"
+    at ignore-listed frames
+⨯ Error: insert or update on table "artifacts" violates foreign key constraint "artifacts_user_id_fkey"
+    at ignore-listed frames

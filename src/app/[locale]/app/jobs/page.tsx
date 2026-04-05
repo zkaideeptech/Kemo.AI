@@ -1,0 +1,32 @@
+import { KemoWorkspace } from "@/components/kemo-workspace";
+import { loadWorkspacePageData } from "@/lib/server/workspace-page-data";
+
+export default async function JobsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ locale: string }>;
+  searchParams: Promise<{ job?: string; new?: string }>;
+}) {
+  const { locale } = await params;
+  const query = await searchParams;
+  const workspace = await loadWorkspacePageData(locale);
+  const requestedJobId =
+    typeof query.job === "string" && workspace.jobs.some((job) => job.id === query.job) ? query.job : null;
+
+  return (
+    <KemoWorkspace
+      locale={locale}
+      landing="workspace"
+      plan={workspace.plan}
+      projects={workspace.projects}
+      jobs={workspace.jobs}
+      transcripts={workspace.transcripts}
+      artifacts={workspace.workspaceArtifacts}
+      favorites={workspace.favorites}
+      sources={workspace.sources}
+      initialJobId={requestedJobId}
+      initialNewInterviewOpen={query.new === "1"}
+    />
+  );
+}
