@@ -215,6 +215,53 @@ async function buildLiveSpeakerTranscript({
 
 export const runtime = "nodejs";
 
+// ---------------------------------------------------------------------------
+// Streaming helpers
+// ---------------------------------------------------------------------------
+
+type StreamEvent =
+  | { type: "progress"; step: number; totalSteps: number; statusText: string }
+  | { type: "artifact"; kind: string; artifact: ArtifactRow }
+  | { type: "complete"; result: Record<string, unknown> }
+  | { type: "error"; message: string };
+
+function encodeStreamEvent(event: StreamEvent): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(event) + "\n");
+}
+
+// ---------------------------------------------------------------------------
+// Shared finalization context (used by both streaming and non-streaming paths)
+// ---------------------------------------------------------------------------
+
+async function buildFinalizeContext(
+  req: { id: string; userId: string; transcriptText: string; statusText: string },
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  ensuredJob: JobRow,
+) {
+  const { userId } = req;
+
+  const { data: glossary } = await supabase
+    .from("glossary_terms")
+    .select("term")
+    .eq("user_id", userId);
+
+  const { data: sourcesData } = await supabase
+    .from("sources")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("project_id", ensuredJob.project_id || "")
+    .order("created_at", { ascending: false })
+    .limit(6);
+
+  const glossaryTerms = (glossary || []).map((term) => term.term);
+  const sourceContext = buildSourceContext((sourcesData || []) as SourceRow[]);
+  const clarifications = await loadJobClarifications(supabase, req.id);
+  const clarificationContext = buildClarificationContext(clarifications);
+
+  return { glossaryTerms, sourceContext, clarificationContext };
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -235,6 +282,7 @@ export async function POST(
   const transcriptText = typeof body?.transcriptText === "string" ? sanitizeTranscriptText(body.transcriptText) : "";
   const statusText = typeof body?.statusText === "string" ? body.statusText.trim() : "";
   const finalize = Boolean(body?.finalize);
+  const streaming = Boolean(body?.streaming);
   const includeInspiration = finalize || Boolean(body?.includeInspiration);
 
   if (!transcriptText) {
@@ -252,6 +300,321 @@ export async function POST(
   if (!job || job.user_id !== userId) {
     return jsonError("not_found", "Job not found", { status: 404 });
   }
+
+  // ── Streaming finalize path ──────────────────────────────────────────
+  if (finalize && streaming) {
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        const ensuredJob = job;
+        let finalTranscriptText = transcriptText;
+        let diarizationRaw: unknown = null;
+        let speakerTranscriptText = "";
+
+        const totalSteps = includeInspiration && transcriptText.length >= 60 ? 6 : 5;
+        let currentStep = 0;
+
+        const emit = (event: StreamEvent) => {
+          try {
+            controller.enqueue(encodeStreamEvent(event));
+          } catch {
+            // stream may have been closed by client
+          }
+        };
+
+        const progress = (statusText: string) => {
+          currentStep += 1;
+          emit({ type: "progress", step: currentStep, totalSteps, statusText });
+        };
+
+        try {
+          // Step 1: Speaker diarization
+          progress("正在进行说话人分离与转写优化...");
+          try {
+            const diarizationResult = await buildLiveSpeakerTranscript({ admin, job: ensuredJob });
+            if (diarizationResult.transcriptText) {
+              finalTranscriptText = sanitizeTranscriptText(diarizationResult.transcriptText);
+              speakerTranscriptText = diarizationResult.speakerTranscriptText;
+              diarizationRaw = diarizationResult.diarizationRaw;
+            }
+          } catch {
+            // keep the realtime snapshot transcript as fallback
+          }
+
+          // Update job to completed status
+          const { data: updatedJobData } = await admin
+            .from("jobs")
+            .update({
+              live_transcript_snapshot: finalTranscriptText,
+              capture_mode: "live",
+              source_type: ensuredJob.capture_mode === "live" ? ensuredJob.source_type : "live_capture",
+              started_at: ensuredJob.started_at || new Date().toISOString(),
+              status: "completed",
+            })
+            .eq("id", id)
+            .select("*")
+            .single();
+
+          // Build context for generation
+          const ctx = await buildFinalizeContext(
+            { id, userId, transcriptText: finalTranscriptText, statusText },
+            supabase,
+            admin,
+            ensuredJob,
+          );
+
+          // Helper to upsert draft artifacts (same logic as non-streaming)
+          async function upsertDraft(
+            kind: "publish_script" | "quick_summary" | "inspiration_questions",
+            content: string,
+          ) {
+            const { data: existingDraftData } = await supabase
+              .from("artifacts")
+              .select("*")
+              .eq("job_id", id)
+              .eq("kind", kind)
+              .eq("status", "draft")
+              .order("updated_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const existingDraft = existingDraftData as ArtifactRow | null;
+            const nextMetadata = {
+              generated_at: new Date().toISOString(),
+              live_draft: "true",
+              status_text: statusText,
+            };
+
+            if (existingDraft) {
+              const { data: updatedDraftData } = await admin
+                .from("artifacts")
+                .update({
+                  title: `${getArtifactLabel(kind)}（实时草稿）`,
+                  content,
+                  summary: content.slice(0, 180),
+                  metadata: nextMetadata,
+                })
+                .eq("id", existingDraft.id)
+                .select("*")
+                .single();
+              return (updatedDraftData || existingDraft) as ArtifactRow;
+            }
+
+            const { data: createdDraftData } = await admin
+              .from("artifacts")
+              .insert({
+                user_id: userId,
+                project_id: ensuredJob.project_id,
+                job_id: ensuredJob.id,
+                kind,
+                title: `${getArtifactLabel(kind)}（实时草稿）`,
+                content,
+                summary: content.slice(0, 180),
+                metadata: nextMetadata,
+                status: "draft",
+              })
+              .select("*")
+              .single();
+            return createdDraftData as ArtifactRow;
+          }
+
+          const draftArtifacts: ArtifactRow[] = [];
+
+          // Step 2: Generate publish script
+          progress("正在生成发布稿整理...");
+          let draftText: string;
+          try {
+            draftText = await generateArtifactText("publish_script", {
+              transcriptText: finalTranscriptText,
+              glossaryTerms: ctx.glossaryTerms,
+              uncertainTerms: [],
+              sourceContext: ctx.sourceContext,
+              clarificationContext: ctx.clarificationContext,
+              title: ensuredJob.title || "",
+              guestName: ensuredJob.guest_name || "",
+              interviewerName: ensuredJob.interviewer_name || "",
+              isLiveDraft: true,
+            });
+          } catch {
+            draftText = buildFallbackPublishDraft({
+              title: ensuredJob.title || "",
+              interviewerName: ensuredJob.interviewer_name || "",
+              guestName: ensuredJob.guest_name || "",
+              transcriptText: finalTranscriptText,
+            });
+          }
+          const publishArtifact = await upsertDraft("publish_script", draftText);
+          draftArtifacts.push(publishArtifact);
+          emit({ type: "artifact", kind: "publish_script", artifact: publishArtifact });
+
+          // Step 3: Generate quick summary
+          progress("发布稿已完成，正在生成快速摘要...");
+          let summaryText: string;
+          try {
+            summaryText = await generateArtifactText("quick_summary", {
+              transcriptText: finalTranscriptText,
+              glossaryTerms: ctx.glossaryTerms,
+              uncertainTerms: [],
+              sourceContext: ctx.sourceContext,
+              clarificationContext: ctx.clarificationContext,
+              title: ensuredJob.title || "",
+              guestName: ensuredJob.guest_name || "",
+              interviewerName: ensuredJob.interviewer_name || "",
+              publishScriptText: draftText,
+              isLiveDraft: true,
+            });
+          } catch {
+            summaryText = buildFallbackQuickSummary({
+              title: ensuredJob.title || "",
+              transcriptText: finalTranscriptText,
+            });
+          }
+          const summaryArtifact = await upsertDraft("quick_summary", summaryText);
+          draftArtifacts.push(summaryArtifact);
+          emit({ type: "artifact", kind: "quick_summary", artifact: summaryArtifact });
+
+          // Step 4: Generate inspiration questions (conditional)
+          if (includeInspiration && finalTranscriptText.length >= 60) {
+            progress("摘要已完成，正在生成灵感追问...");
+            let inspirationText: string;
+            try {
+              inspirationText = await generateArtifactText("inspiration_questions", {
+                transcriptText: finalTranscriptText,
+                glossaryTerms: ctx.glossaryTerms,
+                uncertainTerms: [],
+                sourceContext: ctx.sourceContext,
+                clarificationContext: ctx.clarificationContext,
+                title: ensuredJob.title || "",
+                guestName: ensuredJob.guest_name || "",
+                interviewerName: ensuredJob.interviewer_name || "",
+                publishScriptText: draftText,
+                isLiveDraft: true,
+              });
+            } catch {
+              inspirationText = buildFallbackInspirationDraft(finalTranscriptText);
+            }
+            const inspirationArtifact = await upsertDraft("inspiration_questions", inspirationText);
+            draftArtifacts.push(inspirationArtifact);
+            emit({ type: "artifact", kind: "inspiration_questions", artifact: inspirationArtifact });
+          }
+
+          // Step 5: Save transcript
+          progress("正在保存最终转写文稿...");
+          let transcriptRow: TranscriptRow | null = null;
+          const { data: existingTranscriptData } = await supabase
+            .from("transcripts")
+            .select("*")
+            .eq("job_id", id)
+            .maybeSingle();
+
+          const existingTranscript = existingTranscriptData as TranscriptRow | null;
+          const transcriptRaw = ({
+            source: "live_capture",
+            finalized_at: new Date().toISOString(),
+            status_text: statusText,
+            realtime_snapshot_text: transcriptText,
+            diarization: diarizationRaw,
+            speaker_transcript_text: speakerTranscriptText || null,
+          } satisfies Record<string, unknown>) as Json;
+
+          if (existingTranscript) {
+            const { data: updatedTranscriptData } = await admin
+              .from("transcripts")
+              .update({ transcript_text: finalTranscriptText, raw: transcriptRaw })
+              .eq("id", existingTranscript.id)
+              .select("*")
+              .single();
+            transcriptRow = (updatedTranscriptData || existingTranscript) as TranscriptRow;
+          } else {
+            const { data: createdTranscriptData } = await admin
+              .from("transcripts")
+              .insert({ user_id: userId, job_id: id, transcript_text: finalTranscriptText, raw: transcriptRaw })
+              .select("*")
+              .single();
+            transcriptRow = createdTranscriptData as TranscriptRow;
+          }
+
+          // Update job with transcript_id
+          await admin
+            .from("jobs")
+            .update({
+              transcript_id: transcriptRow?.id ?? null,
+              status: JOB_STATUS.completed,
+              ended_at: new Date().toISOString(),
+              live_transcript_snapshot: finalTranscriptText,
+            })
+            .eq("id", id);
+
+          // Step 6: Finalize artifacts
+          progress("正在定稿所有产物...");
+          const { data: finalArtifactsData } = await admin
+            .from("artifacts")
+            .select("*")
+            .eq("job_id", id)
+            .in("kind", ["publish_script", "quick_summary", "inspiration_questions"])
+            .order("updated_at", { ascending: false });
+
+          const finalArtifacts = ((finalArtifactsData || []) as ArtifactRow[]).map((artifact) => ({
+            ...artifact,
+            title:
+              artifact.status === "draft"
+                ? getArtifactLabel(artifact.kind as "publish_script" | "quick_summary" | "inspiration_questions")
+                : artifact.title,
+            status: "ready",
+            metadata: {
+              ...((artifact.metadata as Record<string, string | null>) || {}),
+              live_draft: "false",
+              finalized_at: new Date().toISOString(),
+              status_text: statusText,
+            },
+          }));
+
+          for (const artifact of finalArtifacts) {
+            await admin
+              .from("artifacts")
+              .update({ title: artifact.title, status: artifact.status, metadata: artifact.metadata })
+              .eq("id", artifact.id);
+          }
+
+          const { data: finalizedJobData } = await admin
+            .from("jobs")
+            .select("*")
+            .eq("id", id)
+            .single();
+
+          emit({
+            type: "complete",
+            result: {
+              ok: true,
+              data: {
+                job: finalizedJobData || updatedJobData,
+                draftArtifacts: finalArtifacts,
+                transcript: transcriptRow,
+                statusText: "最终文稿已保存",
+              },
+            },
+          });
+        } catch (error) {
+          emit({
+            type: "error",
+            message: error instanceof Error ? error.message : "Finalization failed",
+          });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readableStream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
+  // ── Non-streaming path (unchanged) ───────────────────────────────────
 
   const ensuredJob = job;
   let finalTranscriptText = transcriptText;
@@ -296,23 +659,12 @@ export async function POST(
     return jsonOk({ job: updatedJobData, draftArtifacts: [], statusText });
   }
 
-  const { data: glossary } = await supabase
-    .from("glossary_terms")
-    .select("term")
-    .eq("user_id", userId);
-
-  const { data: sourcesData } = await supabase
-    .from("sources")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("project_id", ensuredJob.project_id || "")
-    .order("created_at", { ascending: false })
-    .limit(6);
-
-  const glossaryTerms = (glossary || []).map((term) => term.term);
-  const sourceContext = buildSourceContext((sourcesData || []) as SourceRow[]);
-  const clarifications = await loadJobClarifications(supabase, id);
-  const clarificationContext = buildClarificationContext(clarifications);
+  const ctx = await buildFinalizeContext(
+    { id, userId, transcriptText: finalTranscriptText, statusText },
+    supabase,
+    admin,
+    ensuredJob,
+  );
 
   async function upsertDraftArtifact(
     kind: "publish_script" | "quick_summary" | "inspiration_questions",
@@ -383,10 +735,10 @@ export async function POST(
   try {
     const draftText = await generateArtifactText("publish_script", {
       transcriptText: finalTranscriptText,
-      glossaryTerms,
+      glossaryTerms: ctx.glossaryTerms,
       uncertainTerms: [],
-      sourceContext,
-      clarificationContext,
+      sourceContext: ctx.sourceContext,
+      clarificationContext: ctx.clarificationContext,
       title: ensuredJob.title || "",
       guestName: ensuredJob.guest_name || "",
       interviewerName: ensuredJob.interviewer_name || "",
@@ -397,10 +749,10 @@ export async function POST(
 
     const quickSummaryText = await generateArtifactText("quick_summary", {
       transcriptText: finalTranscriptText,
-      glossaryTerms,
+      glossaryTerms: ctx.glossaryTerms,
       uncertainTerms: [],
-      sourceContext,
-      clarificationContext,
+      sourceContext: ctx.sourceContext,
+      clarificationContext: ctx.clarificationContext,
       title: ensuredJob.title || "",
       guestName: ensuredJob.guest_name || "",
       interviewerName: ensuredJob.interviewer_name || "",
@@ -413,10 +765,10 @@ export async function POST(
     if (includeInspiration && finalTranscriptText.length >= 60) {
       const inspirationText = await generateArtifactText("inspiration_questions", {
         transcriptText: finalTranscriptText,
-        glossaryTerms,
+        glossaryTerms: ctx.glossaryTerms,
         uncertainTerms: [],
-        sourceContext,
-        clarificationContext,
+        sourceContext: ctx.sourceContext,
+        clarificationContext: ctx.clarificationContext,
         title: ensuredJob.title || "",
         guestName: ensuredJob.guest_name || "",
         interviewerName: ensuredJob.interviewer_name || "",

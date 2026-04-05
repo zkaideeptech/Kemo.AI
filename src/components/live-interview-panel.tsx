@@ -641,6 +641,7 @@ export function LiveInterviewPanel({
       throw new Error("Live job is not ready");
     }
 
+    console.log(`[LivePanel] createGatewaySession: posting to /api/jobs/${jobId}/live/audio`);
     const res = await fetch(`/api/jobs/${jobId}/live/audio`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -652,6 +653,7 @@ export function LiveInterviewPanel({
     });
 
     const json = await res.json();
+    console.log(`[LivePanel] createGatewaySession response: ok=${res.ok} json.ok=${json.ok}`, JSON.stringify(json).slice(0, 500));
     if (!res.ok || !json.ok) {
       throw new Error(json?.error?.message || (isZh ? "\u5b9e\u65f6 ASR \u4f1a\u8bdd\u51c6\u5907\u5931\u8d25" : "Failed to prepare the live ASR session"));
     }
@@ -660,6 +662,7 @@ export function LiveInterviewPanel({
       applyAudioSnapshotData(json.data.snapshot);
     }
 
+    console.log(`[LivePanel] createGatewaySession: wsUrl=${json.data?.wsUrl} token=${json.data?.token?.slice(0, 20)}...`);
     return json.data as GatewaySessionBootstrap;
   }
 
@@ -760,6 +763,14 @@ export function LiveInterviewPanel({
         return;
       }
 
+      flushLogCounter += 1;
+      if (flushLogCounter % 62 === 1) {
+        const buffered = getBufferedByteLength();
+        const socketReady = gatewaySocketRef.current?.readyState === WebSocket.OPEN;
+        const gwReady = gatewayReadyRef.current;
+        console.log(`[LivePanel] flushLoop tick #${flushLogCounter} buffered=${buffered}bytes socketOpen=${socketReady} gwReady=${gwReady}`);
+      }
+
       for (let pass = 0; pass < MAX_FLUSH_PASSES_PER_TICK; pass += 1) {
         if (!flushAudio()) {
           break;
@@ -807,6 +818,9 @@ export function LiveInterviewPanel({
     return true;
   }
 
+  // Periodic log of audio flush stats (log every ~5s = 62 ticks at 80ms)
+  let flushLogCounter = 0;
+
   function flushAllAudio() {
     let safety = 0;
     while (getBufferedByteLength() > 0 && safety < 2000) {
@@ -837,8 +851,114 @@ export function LiveInterviewPanel({
           transcriptText: finalTranscript,
           statusText,
           finalize: true,
+          streaming: true,
         }),
       });
+
+      // ── Streaming path: read newline-delimited JSON events ──
+      if (finalizeRes.ok && finalizeRes.body) {
+        const reader = finalizeRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let finalResult: Record<string, unknown> | null = null;
+        let hadError = false;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+
+              try {
+                const event = JSON.parse(trimmed) as {
+                  type: string;
+                  step?: number;
+                  totalSteps?: number;
+                  statusText?: string;
+                  kind?: string;
+                  artifact?: unknown;
+                  result?: Record<string, unknown>;
+                  message?: string;
+                };
+
+                if (event.type === "progress" && event.statusText) {
+                  const progressLabel = event.step && event.totalSteps
+                    ? `(${event.step}/${event.totalSteps}) ${event.statusText}`
+                    : event.statusText;
+                  setStatus(progressLabel);
+                }
+
+                if (event.type === "artifact" && event.artifact) {
+                  // Each artifact arrives as it's generated — no need to wait for all
+                }
+
+                if (event.type === "complete" && event.result) {
+                  finalResult = event.result;
+                }
+
+                if (event.type === "error") {
+                  hadError = true;
+                  const failureStatus = event.message || (isZh ? "\u5b9e\u65f6\u8bbf\u8c08\u5df2\u505c\u6b62\uff0c\u4f46\u6700\u7ec8\u4fdd\u5b58\u5931\u8d25" : "Live capture stopped, but final save failed");
+                  setStatus(failureStatus);
+                  onFinalizeSettled?.({
+                    success: false,
+                    statusText: failureStatus,
+                  });
+                }
+              } catch {
+                // skip malformed JSON lines
+              }
+            }
+          }
+        } catch {
+          // stream reading error — treat as network-level failure
+          if (!finalResult && !hadError) {
+            hadError = true;
+            const failureStatus = isZh ? "\u6d41\u5f0f\u8bfb\u53d6\u4e2d\u65ad" : "Stream reading interrupted";
+            setStatus(failureStatus);
+            onFinalizeSettled?.({ success: false, statusText: failureStatus });
+          }
+        }
+
+        // Process the final result
+        if (finalResult && !hadError) {
+          const data = (finalResult as { ok?: boolean; data?: Record<string, unknown> }).data;
+          if (data) {
+            const finalizedTranscriptText =
+              typeof (data.transcript as Record<string, unknown>)?.transcript_text === "string" &&
+              ((data.transcript as Record<string, unknown>).transcript_text as string).trim()
+                ? (data.transcript as Record<string, unknown>).transcript_text as string
+                : finalTranscript;
+            setLiveText(finalizedTranscriptText);
+            onFinalized?.({
+              job: data.job,
+              draftArtifacts: data.draftArtifacts as unknown[],
+              transcriptText: finalizedTranscriptText,
+              statusText: copy.finalized,
+            });
+            if (Array.isArray(data.draftArtifacts) && data.draftArtifacts.length) {
+              setStatus(copy.finalized);
+            } else {
+              setStatus(copy.transcriptSaved);
+            }
+            onFinalizeSettled?.({
+              success: true,
+              statusText: copy.finalized,
+            });
+          }
+        }
+
+        return;
+      }
+
+      // ── Fallback: non-streaming JSON path ──
       const finalizeJson = await finalizeRes.json().catch(() => null);
 
       if (finalizeRes.ok && finalizeJson?.ok) {
@@ -892,6 +1012,7 @@ export function LiveInterviewPanel({
     void finalizeLiveInterview(jobId, transcriptText, statusText);
   }
 
+
   function handleGatewayMessage(message: GatewaySocketMessage) {
     if (message.snapshot) {
       applyAudioSnapshotData({
@@ -903,6 +1024,7 @@ export function LiveInterviewPanel({
     if (message.type === "session.ready") {
       gatewayReadyRef.current = true;
       setStatus(isZh ? "\u5b9e\u65f6\u91c7\u96c6\u4e2d\uff1a\u97f3\u9891\u5df2\u63a5\u5165 ASR" : "Live capture active: audio connected to ASR");
+      console.log("[LivePanel] gateway session.ready received, flushing queued audio");
       flushAudio();
       return;
     }
@@ -958,6 +1080,7 @@ export function LiveInterviewPanel({
           };
 
           socket.onopen = () => {
+            console.log("[LivePanel] gateway WS opened, sending client.start");
             socket.send(
               JSON.stringify({
                 type: "client.start",
@@ -976,6 +1099,7 @@ export function LiveInterviewPanel({
 
             try {
               const message = JSON.parse(event.data) as GatewaySocketMessage;
+              console.log(`[LivePanel] gateway message type=${message.type}`, message.snapshot?.previewText?.slice(0, 60) || "");
               handleGatewayMessage(message);
 
               if (message.type === "session.ready" && !settled) {
@@ -1158,6 +1282,7 @@ export function LiveInterviewPanel({
           : null;
 
       if (!ensured?.jobId) {
+        console.warn(`[LivePanel] ensureJob returned no jobId:`, ensured);
         cleanupTracks.push(...(micStream?.getTracks() || []), ...(displayStream?.getTracks() || []));
         cleanupTracks.forEach((track) => track.stop());
         setStatus(
@@ -1167,6 +1292,8 @@ export function LiveInterviewPanel({
         );
         return;
       }
+
+      console.log(`[LivePanel] ensureJob success: jobId=${ensured.jobId}`);
 
       activeJobIdRef.current = ensured.jobId;
       const gatewaySessionPromise = createGatewaySession(ensured.jobId);
@@ -1240,6 +1367,10 @@ export function LiveInterviewPanel({
         const pcmBytes = floatToPcm16Chunk(event.inputBuffer, audioContext.sampleRate);
         pcmChunksRef.current.push(pcmBytes);
         recordedPcmChunksRef.current.push(pcmBytes);
+        // Log every 50th chunk (~3.2s at 4096 frames)
+        if (recordedPcmChunksRef.current.length % 50 === 1) {
+          console.log(`[LivePanel] audioprocess chunk #${recordedPcmChunksRef.current.length} bytes=${pcmBytes.byteLength} sampleRate=${audioContext.sampleRate} bufferSize=${pcmChunksRef.current.length}`);
+        }
       };
 
       const sourceNodes: MediaStreamAudioSourceNode[] = [];

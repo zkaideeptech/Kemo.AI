@@ -17,6 +17,7 @@ This document serves as the supreme execution rulebook for the Antigravity agent
 - **Organization:** Keep `/src` structure clean and consistent.
 - **API Formatting:** Strictly use the consistent API response format: `{ ok: true, data: ... }` or `{ ok: false, error: ... }`.
 - **Background Jobs:** Long, heavy tasks must not run synchronously in HTTP handlers in production. Offload them properly.
+- **Server External Packages:** 凡是服务端代码中使用了带 C++ 原生插件的 npm 包（如 `ws`、`bufferutil`、`utf-8-validate`、`sharp`、`bcrypt` 等），**必须**在 `next.config.ts` 的 `serverExternalPackages` 中声明，让 Next.js 跳过 webpack 打包、直接用 Node.js 原生 `require()` 加载。否则 webpack 会破坏原生 `.node` 二进制模块，导致运行时报错（如 `bufferUtil.unmask is not a function`）。
 
 ---
 

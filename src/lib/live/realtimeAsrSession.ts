@@ -308,7 +308,10 @@ export async function startRealtimeAsrSession({
   forceRestart?: boolean;
 }) {
   const apiKey = process.env.DASHSCOPE_API_KEY || "";
+  console.log(`${LOG} startRealtimeAsrSession jobId=${jobId} language=${language} mode=${turnDetectionMode} forceRestart=${forceRestart}`);
+  console.log(`${LOG} DASHSCOPE_API_KEY present=${!!apiKey} length=${apiKey.length}`);
   if (!apiKey) {
+    console.error(`${LOG} FATAL: Missing DASHSCOPE_API_KEY`);
     throw new Error("Missing DASHSCOPE_API_KEY");
   }
 
@@ -330,7 +333,10 @@ export async function startRealtimeAsrSession({
 
   const ready = createDeferred();
   const finish = createDeferred();
-  const ws = new WebSocket(`${resolveRealtimeWsUrl()}?model=${encodeURIComponent(DEFAULT_MODEL)}`, {
+  const wsUrl = `${resolveRealtimeWsUrl()}?model=${encodeURIComponent(DEFAULT_MODEL)}`;
+  console.log(`${LOG} connecting to DashScope WS: ${wsUrl}`);
+  console.log(`${LOG} model=${DEFAULT_MODEL} vad_threshold=${DEFAULT_VAD_THRESHOLD} vad_silence=${DEFAULT_VAD_SILENCE_MS}`);
+  const ws = new WebSocket(wsUrl, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "OpenAI-Beta": "realtime=v1",
@@ -364,7 +370,8 @@ export async function startRealtimeAsrSession({
   store.set(jobId, session);
 
   ws.on("open", () => {
-    sendJson(session, {
+    console.log(`${LOG} DashScope WS OPEN for job=${jobId}`);
+    const sessionUpdatePayload = {
       event_id: crypto.randomUUID(),
       type: "session.update",
       session: {
@@ -383,14 +390,18 @@ export async function startRealtimeAsrSession({
                 silence_duration_ms: Number.isFinite(DEFAULT_VAD_SILENCE_MS) ? DEFAULT_VAD_SILENCE_MS : 400,
               },
       },
-    });
+    };
+    console.log(`${LOG} sending session.update:`, JSON.stringify(sessionUpdatePayload).slice(0, 500));
+    sendJson(session, sessionUpdatePayload);
   });
 
   ws.on("message", (raw) => {
     try {
       const parsed = JSON.parse(raw.toString()) as Record<string, unknown>;
+      console.log(`${LOG} DashScope event job=${jobId} type=${parsed.type}`, JSON.stringify(parsed).slice(0, 300));
       updateFromEvent(session, parsed);
     } catch (error) {
+      console.error(`${LOG} DashScope message parse error job=${jobId}:`, error);
       session.errorMessage = error instanceof Error ? error.message : "Failed to parse realtime ASR event";
       session.statusText = session.errorMessage;
       publishSessionEvent(session, "parse_error", {
@@ -401,6 +412,7 @@ export async function startRealtimeAsrSession({
 
   ws.on("error", (error) => {
     const message = error instanceof Error ? error.message : "Realtime ASR socket error";
+    console.error(`${LOG} DashScope WS ERROR job=${jobId}: ${message}`, error);
     session.errorMessage = message;
     session.statusText = message;
     session.rejectReady(new Error(message));
@@ -459,6 +471,7 @@ export async function appendRealtimeAsrAudio({
   let session = store.get(jobId);
 
   if (!session || !isSessionOpen(session)) {
+    console.log(`${LOG} appendAudio: session missing or closed for job=${jobId}, restarting...`);
     await startRealtimeAsrSession({
       jobId,
       language: session?.language || language,
@@ -470,10 +483,14 @@ export async function appendRealtimeAsrAudio({
   }
 
   if (!session) {
+    console.error(`${LOG} appendAudio: session still not found after restart for job=${jobId}`);
     throw new Error("Realtime ASR session not found");
   }
 
   await withTimeout(session.readyPromise, READY_TIMEOUT_MS, "Realtime ASR ready");
+  const audioLen = audioBase64.length;
+  const audioBytes = Math.round(audioLen * 3 / 4);
+  console.log(`${LOG} appendAudio job=${jobId} base64_len=${audioLen} ~${audioBytes}bytes finals=${session.finalSegments.length} interim="${session.interimTranscriptText.slice(0, 40)}"`);
   sendJson(session, {
     event_id: crypto.randomUUID(),
     type: "input_audio_buffer.append",

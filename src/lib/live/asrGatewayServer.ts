@@ -275,6 +275,7 @@ function createGatewayServer() {
     };
 
     sendSocketJson(socket, { type: "gateway.connected" });
+    console.log("[ASRGateway] browser client connected");
 
     socket.on("message", async (raw: RawData, isBinary) => {
       try {
@@ -290,6 +291,7 @@ function createGatewayServer() {
                 ? raw
                 : Buffer.from(raw as ArrayBuffer);
 
+          console.log(`[ASRGateway] binary audio from browser job=${state.jobId} bytes=${binaryChunk.byteLength}`);
           await appendRealtimeAsrAudio({
             jobId: state.jobId,
             audioBase64: binaryChunk.toString("base64"),
@@ -309,6 +311,7 @@ function createGatewayServer() {
           const turnDetectionMode =
             getString(message, "turnDetectionMode") === "manual" ? "manual" : "server_vad";
           const verified = verifyAsrGatewaySessionToken(token);
+          console.log(`[ASRGateway] client.start jobId=${jobId} language=${language} mode=${turnDetectionMode} tokenValid=${!!verified}`);
 
           if (!verified || verified.jobId !== jobId) {
             throw new Error("Invalid gateway session token");
@@ -334,6 +337,7 @@ function createGatewayServer() {
             snapshot,
             debug: getRealtimeAsrDebugState(verified.jobId),
           });
+          console.log(`[ASRGateway] session.ready sent to browser for job=${verified.jobId}`);
           return;
         }
 

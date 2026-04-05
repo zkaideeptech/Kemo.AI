@@ -1796,15 +1796,12 @@ export function KemoWorkspace({
       setCenterSection("tasks");
     }
     setStudioFeedback("\u6b63\u5728\u5b9a\u7a3f\u53d1\u5e03\u7a3f\u3001\u6458\u8981\u4e0e\u7075\u611f\u63d0\u95ee");
-
-    const transcriptText = payload.transcriptText;
-    Promise.all([
-      requestArtifact("publish_script", transcriptText),
-      requestArtifact("quick_summary", transcriptText),
-      requestArtifact("inspiration_questions", transcriptText),
-      requestArtifact("meeting_minutes", transcriptText),
-    ]).catch(() => {});
+    // NOTE: artifact generation is now handled entirely by the streaming
+    // finalize endpoint in /api/jobs/[id]/live — no need for separate
+    // requestArtifact() calls here. The streaming events will update the
+    // UI progress via onFinalized / onFinalizeSettled callbacks.
   }
+
 
   function handleLiveFinalizeSettled(payload: { success: boolean; statusText: string }) {
     if (payload.success) {
@@ -1817,7 +1814,9 @@ export function KemoWorkspace({
   }
 
   async function ensureLiveJob() {
+    console.log(`[KemoWorkspace] ensureLiveJob called. selectedProjectId=${selectedProjectId} selectedJob?.id=${selectedJob?.id} selectedJob?.capture_mode=${selectedJob?.capture_mode} selectedJob?.status=${selectedJob?.status}`);
     if (!selectedProjectId) {
+      console.warn(`[KemoWorkspace] ensureLiveJob: no selectedProjectId, opening new project dialog`);
       setNewProjectOpen(true);
       return { jobId: null, statusText: projectLockedReason };
     }
@@ -1831,9 +1830,11 @@ export function KemoWorkspace({
         : null;
 
     if (reusableJob) {
+      console.log(`[KemoWorkspace] ensureLiveJob: reusing existing job ${reusableJob.id}`);
       return { jobId: reusableJob.id, statusText: "\u5df2\u63a5\u5165\u5f53\u524d\u5b9e\u65f6\u8bbf\u8c08" };
     }
 
+    console.log(`[KemoWorkspace] ensureLiveJob: creating new job for project ${selectedProjectId}`);
     const title = `\u5b9e\u65f6\u8bbf\u8c08 ${new Date().toLocaleString("zh-CN", {
       month: "2-digit",
       day: "2-digit",
@@ -1841,25 +1842,33 @@ export function KemoWorkspace({
       minute: "2-digit",
     })}`;
 
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        projectId: selectedProjectId,
-        sourceType: "live_capture",
-        captureMode: "live",
-      }),
-    });
-    const json = await res.json();
+    try {
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          projectId: selectedProjectId,
+          sourceType: "live_capture",
+          captureMode: "live",
+        }),
+      });
+      const json = await res.json();
+      console.log(`[KemoWorkspace] ensureLiveJob: POST /api/jobs response ok=${res.ok} json.ok=${json.ok}`);
 
-    if (!res.ok || !json.ok) {
-      return { jobId: null, statusText: json?.error?.message || "\u65e0\u6cd5\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
+      if (!res.ok || !json.ok) {
+        console.error(`[KemoWorkspace] ensureLiveJob: failed to create job:`, json?.error);
+        return { jobId: null, statusText: json?.error?.message || "\u65e0\u6cd5\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
+      }
+
+      const createdJob = json.data.job as JobRow;
+      console.log(`[KemoWorkspace] ensureLiveJob: created job ${createdJob.id}`);
+      handleJobCreated(createdJob);
+      return { jobId: createdJob.id, statusText: "\u5df2\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
+    } catch (err) {
+      console.error(`[KemoWorkspace] ensureLiveJob: exception:`, err);
+      return { jobId: null, statusText: err instanceof Error ? err.message : "\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08\u5f02\u5e38" };
     }
-
-    const createdJob = json.data.job as JobRow;
-    handleJobCreated(createdJob);
-    return { jobId: createdJob.id, statusText: "\u5df2\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
   }
 
   async function handleLiveInterviewUploadFile(file: File) {
@@ -3923,10 +3932,12 @@ export function KemoWorkspace({
 
             {/* 技能卡 - 默认展开（带进度条） */}
             <section className={`${workspacePanelClass} relative overflow-hidden`}>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setLiveSkillDeckCollapsed((v) => !v)}
-                className={`flex w-full items-center justify-between px-6 py-4 text-left transition-colors ${workspaceHoverPanelClass}`}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setLiveSkillDeckCollapsed((v) => !v); } }}
+                className={`flex w-full cursor-pointer items-center justify-between px-6 py-4 text-left transition-colors ${workspaceHoverPanelClass}`}
               >
                 <div className="flex items-center gap-3">
                   <p className={workspaceEyebrowClass}>{ui.skillDeck}</p>
@@ -3944,7 +3955,7 @@ export function KemoWorkspace({
                   )}
                   <ChevronDown className={`h-4 w-4 transition-transform ${liveSkillDeckCollapsed ? "-rotate-90" : ""} ${workspaceSoftTextClass}`} />
                 </div>
-              </button>
+              </div>
               
               {!liveSkillDeckCollapsed && (
                 <div className="px-6 pb-6 pt-2">

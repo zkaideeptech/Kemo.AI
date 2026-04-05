@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: skipBuildChecks,
   },
+  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate"],
 };
 
 const withNextIntl = createNextIntlPlugin();
