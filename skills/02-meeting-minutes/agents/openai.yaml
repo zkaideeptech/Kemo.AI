@@ -1,0 +1,6 @@
+interface:
+  display_name: "会议纪要"
+  short_description: "将发布稿整理为完整会议纪要 docx"
+  default_prompt: "Use $meeting-minutes to convert this finalized dialogue script into a detailed meeting-minutes document and export it as docx."
+policy:
+  allow_implicit_invocation: true

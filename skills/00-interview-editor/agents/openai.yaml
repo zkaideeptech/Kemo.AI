@@ -1,0 +1,6 @@
+interface:
+  display_name: "访谈对话整理"
+  short_description: "将录音转稿整理为可发布对话稿"
+  default_prompt: "Use $interview-editor to turn this transcript into a publishable dialogue script without summarizing or compressing it."
+policy:
+  allow_implicit_invocation: true
