@@ -55,8 +55,8 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
       if (error) throw error;
       alert("个人资料更新成功");
       router.refresh();
-    } catch (error: any) {
-      alert("更新失败: " + error.message);
+    } catch (error) {
+      alert("更新失败: " + (error as Error).message);
     } finally {
       setIsSavingProfile(false);
     }
@@ -79,8 +79,8 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
 
       const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
       setAvatarUrl(data.publicUrl);
-    } catch (error: any) {
-      alert("头像上传失败: " + error.message + " (请确保已执行 avatars bucket 的 SQL 脚本)");
+    } catch (error) {
+      alert("头像上传失败: " + (error as Error).message + " (请确保已执行 avatars bucket 的 SQL 脚本)");
     } finally {
       setIsUploadingAvatar(false);
       if (e.target) e.target.value = "";
@@ -100,8 +100,8 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
       alert("密码修改成功");
       setPassword("");
       setConfirmPassword("");
-    } catch (error: any) {
-      alert("密码修改失败: " + error.message);
+    } catch (error) {
+      alert("密码修改失败: " + (error as Error).message);
     } finally {
       setIsSavingPassword(false);
     }

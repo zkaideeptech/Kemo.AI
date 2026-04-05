@@ -1,0 +1,41 @@
+
+> app@0.1.0 lint
+> eslint
+
+
+C:\Users\Administrator\Desktop\Toni\Kemo.AI-main\scripts\test-asr.ts
+  133:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\Administrator\Desktop\Toni\Kemo.AI-main\src\app\[locale]\app\settings\settings-client-view.tsx
+  187:19  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\Users\Administrator\Desktop\Toni\Kemo.AI-main\src\components\live-interview-panel.tsx
+     4:43  warning  'Upload' is defined but never used                          @typescript-eslint/no-unused-vars
+   293:3   warning  'onRequestUpload' is defined but never used                 @typescript-eslint/no-unused-vars
+  1202:9   warning  'recorderPrimaryLine' is assigned a value but never used    @typescript-eslint/no-unused-vars
+  1203:9   warning  'recorderSecondaryLine' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Administrator\Desktop\Toni\Kemo.AI-main\src\components\new-job-form.tsx
+   30:10  warning  'Label' is defined but never used              @typescript-eslint/no-unused-vars
+  135:3   warning  'plan' is defined but never used               @typescript-eslint/no-unused-vars
+  137:3   warning  'embedded' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  147:9   warning  't' is assigned a value but never used         @typescript-eslint/no-unused-vars
+
+C:\Users\Administrator\Desktop\Toni\Kemo.AI-main\src\components\notebook-workspace.tsx
+     6:3   warning  'ArrowLeft' is defined but never used                                      @typescript-eslint/no-unused-vars
+   337:10  warning  'expandedArtifactIds' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+   337:31  warning  'setExpandedArtifactIds' is assigned a value but never used                @typescript-eslint/no-unused-vars
+  1550:12  warning  'handleProjectSwipeStart' is defined but never used                        @typescript-eslint/no-unused-vars
+  1561:12  warning  'handleProjectSwipeEnd' is defined but never used                          @typescript-eslint/no-unused-vars
+  1581:12  warning  'handleProjectSwipeCancel' is defined but never used                       @typescript-eslint/no-unused-vars
+  1588:12  warning  'handleJobSwipeStart' is defined but never used                            @typescript-eslint/no-unused-vars
+  1599:12  warning  'handleJobSwipeEnd' is defined but never used                              @typescript-eslint/no-unused-vars
+  1619:12  warning  'handleJobSwipeCancel' is defined but never used                           @typescript-eslint/no-unused-vars
+  2174:9   warning  'activePrimaryArtifact' is assigned a value but never used                 @typescript-eslint/no-unused-vars
+  2175:9   warning  'activePrimaryConfig' is assigned a value but never used                   @typescript-eslint/no-unused-vars
+  2178:9   warning  'shouldDockActivePrimaryBelowRecorder' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  2482:29  warning  'isProjectSwiped' is assigned a value but never used                       @typescript-eslint/no-unused-vars
+  2534:41  warning  'isJobSwiped' is assigned a value but never used                           @typescript-eslint/no-unused-vars
+
+✖ 24 problems (1 error, 23 warnings)
+

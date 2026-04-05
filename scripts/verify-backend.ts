@@ -247,7 +247,7 @@ async function main() {
         const transUrl = pollJson?.output?.result?.transcription_url;
         if (transUrl) {
           const trRes = await fetch(transUrl);
-          const trJson: any = await trRes.json();
+          const trJson = (await trRes.json()) as Record<string, unknown>;
           const transcripts = trJson?.transcripts;
           if (Array.isArray(transcripts)) {
             for (const t of transcripts) {

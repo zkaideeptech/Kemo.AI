@@ -122,7 +122,7 @@ async function main() {
   // 第三步：获取转写文本
   console.log("\n▶ 步骤 3/3: 获取转写文本...");
 
-  const transcriptionUrl = (finalResult as any)?.output?.result?.transcription_url;
+  const transcriptionUrl = (finalResult as { output?: { result?: { transcription_url?: string } } })?.output?.result?.transcription_url;
 
   if (transcriptionUrl) {
     console.log(`  transcription_url: ${transcriptionUrl.slice(0, 80)}...`);
@@ -130,7 +130,7 @@ async function main() {
     const transJson = await transRes.json();
 
     // 提取文本
-    const transcripts = (transJson as any)?.transcripts;
+    const transcripts = (transJson as { transcripts?: { text?: string; sentences?: { text?: string }[] }[] })?.transcripts;
     let text = "";
     if (Array.isArray(transcripts)) {
       for (const t of transcripts) {
