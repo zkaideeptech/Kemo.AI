@@ -86,7 +86,7 @@ export async function GET(
   const artifacts = (artifactsData.data || []) as ArtifactRow[];
   const sources = (sourcesData.data || []) as SourceRow[];
 
-  const results: ProjectSearchResult[] = [];
+  const rawResults: ProjectSearchResult[] = [];
 
   jobs.forEach((job) => {
     if (
@@ -94,10 +94,10 @@ export async function GET(
       includesQuery(job.guest_name, q) ||
       includesQuery(job.interviewer_name, q)
     ) {
-      results.push({
+      rawResults.push({
         id: `job-${job.id}`,
         kind: "job",
-        title: job.title || "Untitled interview",
+        title: job.title || "未命名访谈",
         snippet: `${job.interviewer_name || "Interviewer"} × ${job.guest_name || "Guest"}`,
         job_id: job.id,
         artifact_id: null,
@@ -108,7 +108,7 @@ export async function GET(
 
   transcripts.forEach((transcript) => {
     if (includesQuery(transcript.transcript_text, q)) {
-      results.push({
+      rawResults.push({
         id: `transcript-${transcript.id}`,
         kind: "transcript",
         title: "Transcript match",
@@ -126,7 +126,7 @@ export async function GET(
       includesQuery(artifact.summary, q) ||
       includesQuery(artifact.content, q)
     ) {
-      results.push({
+      rawResults.push({
         id: `artifact-${artifact.id}`,
         kind: "artifact",
         title: artifact.title,
@@ -144,7 +144,7 @@ export async function GET(
       includesQuery(source.url, q) ||
       includesQuery(source.extracted_text, q)
     ) {
-      results.push({
+      rawResults.push({
         id: `source-${source.id}`,
         kind: "source",
         title: source.title || source.url || "Imported source",
@@ -155,6 +155,25 @@ export async function GET(
       });
     }
   });
+
+  const results: ProjectSearchResult[] = [];
+  const seenJobIds = new Set<string>();
+
+  for (const item of rawResults) {
+    if (item.job_id) {
+      if (seenJobIds.has(item.job_id)) {
+        continue;
+      }
+      seenJobIds.add(item.job_id);
+
+      const parentJob = jobs.find((j) => j.id === item.job_id);
+      if (parentJob) {
+        item.title = parentJob.title || "未命名访谈";
+        item.kind = "job"; // Make it appear as a job in the UI
+      }
+    }
+    results.push(item);
+  }
 
   return jsonOk({ results: results.slice(0, 20) });
 }

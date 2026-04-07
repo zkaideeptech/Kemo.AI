@@ -1243,7 +1243,7 @@ export function NotebookWorkspace({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         setFavoriteState(previousState);
-        console.error("收藏失败:", res.status, json);
+        console.warn("收藏失败:", res.status, json);
         window.alert(`收藏失败: ${json?.error?.message || res.statusText || "服务器错误"}`);
         return;
       }
@@ -1315,7 +1315,7 @@ export function NotebookWorkspace({
 
       if (!res.ok || !json?.ok) {
         setFavoriteState(previousState);
-        console.error("收藏失败:", res.status, json);
+        console.warn("收藏失败:", res.status, json);
         window.alert(`收藏失败: ${json?.error?.message || res.statusText || "服务器错误"}`);
         return;
       }
@@ -2029,7 +2029,7 @@ export function NotebookWorkspace({
     config: { title: string; icon: LucideIcon; isPrimary?: boolean; accent?: boolean }
   ) {
     const isPending = pendingArtifactKindSet.has(kind);
-    const isSelected = hasStarted && openedSkillKinds.includes(kind);
+    const isSelected = openedSkillKinds.includes(kind);
     const Icon = config.icon;
 
     return (
@@ -2131,7 +2131,7 @@ export function NotebookWorkspace({
   }
 
   function renderSkillOutputCards() {
-    if (!hasStarted || !openedSkillKinds.length) {
+    if (!openedSkillKinds.length) {
       return (
         <div className="workspace-empty-card workspace-skill-output-empty">
           <p className="workspace-skill-output-empty-copy">
@@ -2311,7 +2311,6 @@ export function NotebookWorkspace({
           <KemoMark className="w-9 h-9 shadow-sm rounded-xl border border-slate-200 dark:border-white/5" />
           <span className="flex items-center gap-2">
             <span className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100 group-hover:opacity-80 transition-opacity">kemo</span>
-            <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-slate-400 mt-1">workspace</span>
           </span>
         </Link>
 
@@ -2370,12 +2369,12 @@ export function NotebookWorkspace({
                 
                 <button
                   type="button"
-                  className={`flex items-center justify-center p-2 rounded-xl transition-all ${sidebarFavoritesOpen ? 'text-amber-500 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/20' : 'text-slate-500 hover:text-slate-800 hover:bg-black/5 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
+                  className={`flex items-center justify-center p-2 rounded-xl transition-all ${sidebarFavoritesOpen ? 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20' : 'text-slate-500 hover:text-slate-800 hover:bg-black/5 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
                   onClick={() => setSidebarFavoritesOpen((value) => !value)}
                   aria-expanded={sidebarFavoritesOpen}
                   title="我的收藏"
                 >
-                  <Star className={`w-[1.1rem] h-[1.1rem] ${favoriteState.length ? "fill-amber-400 text-amber-500" : ""}`} />
+                  <Star className="w-[1.1rem] h-[1.1rem]" />
                 </button>
 
                 <button

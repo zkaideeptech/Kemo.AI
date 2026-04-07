@@ -1,0 +1,4 @@
+469:   const hasStarted = Boolean(transcriptContent.trim() || Object.values(primaryArtifactsByKind).some(Boolean));
+2032:     const isSelected = hasStarted && openedSkillKinds.includes(kind);
+2134:     if (!hasStarted || !openedSkillKinds.length) {
+2138:             {hasStarted

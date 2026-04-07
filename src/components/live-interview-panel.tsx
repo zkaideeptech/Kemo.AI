@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Mic, Radio, ScreenShare, Square, Upload } from "lucide-react";
+import { Mic, Chrome, Users, Square, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -50,13 +50,13 @@ const CAPTURE_MODE_OPTIONS: Array<{
     mode: "system",
     label: "会议 App",
     description: "捕获会议软件或电脑系统声音，适合飞书、Meet、Zoom。",
-    icon: ScreenShare,
+    icon: Users,
   },
   {
     mode: "tab",
     label: "浏览器页面",
     description: "选择任意已打开标签页，例如 YouTube、播客或网页直播。",
-    icon: Radio,
+    icon: Chrome,
   },
 ];
 
@@ -1219,10 +1219,15 @@ export function LiveInterviewPanel({
         </div>
       </div>
 
-      <div className={`flex items-center gap-1.5 mb-1 overflow-x-auto pb-1 ${compact ? "opacity-80 hover:opacity-100 transition-opacity" : ""}`}>
+      <div className={`flex items-center gap-7 mb-2 overflow-x-auto py-2 px-1 ${compact ? "opacity-80 hover:opacity-100 transition-opacity" : ""}`}>
         {CAPTURE_MODE_OPTIONS.map((option) => {
           const Icon = option.icon;
           const isActive = captureMode === option.mode;
+          const getActiveClasses = (mode: string) => {
+            if (mode === "mic") return "bg-[#0070f3] text-white border-[#0070f3] shadow-[0_4px_14px_0_rgb(0,118,255,0.39)] scale-110";
+            if (mode === "system") return "bg-[#eb367f] text-white border-[#eb367f] shadow-[0_4px_14px_0_rgb(235,54,127,0.39)] scale-110";
+            return "bg-[#ff5b4f] text-white border-[#ff5b4f] shadow-[0_4px_14px_0_rgb(255,91,79,0.39)] scale-110";
+          };
 
           return (
             <button
@@ -1231,47 +1236,47 @@ export function LiveInterviewPanel({
               onClick={() => setCaptureMode(option.mode)}
               disabled={disabled || isRunning || isStarting || isStopping}
               title={disabled ? disabledReason : option.description}
-              className={`flex justify-center items-center h-8 w-8 rounded-full outline-none transition-all border ${
+              className={`flex justify-center items-center h-12 w-12 shrink-0 rounded-full outline-none transition-all duration-300 border ${
                 isActive 
-                  ? "bg-slate-800 text-white border-slate-800 shadow-sm dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200" 
-                  : "bg-transparent text-slate-500 border-transparent hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                  ? getActiveClasses(option.mode)
+                  : "bg-white text-slate-500 border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 hover:text-slate-800 dark:bg-[#171717] dark:border-white/10 dark:hover:border-white/20 hover:scale-110"
               }`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-5 w-5" />
             </button>
           );
         })}
-        <div className="w-[1px] h-3 bg-slate-200 dark:bg-slate-700 mx-1" />
+        <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-700 mx-4" />
         {isCompleted ? (
-          <span className="text-xs font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800 dark:text-slate-400 px-3 py-1.5 rounded-full whitespace-nowrap shrink-0">
+          <span className="text-sm font-semibold text-[#0068d6] bg-[#ebf5ff] dark:bg-[#003d7a]/30 dark:text-[#66b3ff] px-5 py-2.5 rounded-full whitespace-nowrap shrink-0 shadow-[0_0_0_1px_rgba(0,104,214,0.1)]">
             录音已整理结束
           </span>
         ) : !isRunning ? (
           <Button
             onClick={startLive}
-            className="rounded-full shadow-md text-xs h-8 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700 whitespace-nowrap shrink-0"
+            className="rounded-full shadow-[0_4px_14px_0_rgb(0,118,255,0.39)] hover:shadow-[0_6px_20px_rgba(0,118,255,0.23)] hover:-translate-y-0.5 transition-all text-sm h-12 px-8 font-[600] text-white bg-[#0070f3] hover:bg-[#0060df] whitespace-nowrap shrink-0 border-0"
             disabled={startButtonDisabled}
           >
             {isStarting ? "正在连接..." : "开始捕获"}
           </Button>
         ) : (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-4">
             <Button
               onClick={pauseLive}
               variant="secondary"
-              className="rounded-full shadow-md text-xs h-8 px-3 font-semibold whitespace-nowrap shrink-0 border border-slate-200"
+              className="rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.04)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all text-sm h-12 px-6 font-[500] whitespace-nowrap shrink-0 border-0 bg-white hover:bg-slate-50 dark:bg-slate-900"
               disabled={stopButtonDisabled || pendingAction === "pausing"}
             >
-              <Square className="h-3.5 w-3.5 mr-1" />
+              <Square className="h-4 w-4 mr-2" />
               {pendingAction === "pausing" ? "暂停中..." : "暂停录制"}
             </Button>
             <Button
               onClick={stopLive}
               variant="destructive"
-              className="rounded-full shadow-md text-xs h-8 px-3 font-semibold whitespace-nowrap shrink-0"
+              className="rounded-full shadow-[0_4px_14px_0_rgb(255,91,79,0.39)] hover:shadow-[0_6px_20px_rgba(255,91,79,0.23)] hover:-translate-y-0.5 transition-all text-sm h-12 px-6 font-[600] whitespace-nowrap shrink-0 bg-[#ff5b4f] hover:bg-[#ff4536] text-white border-0"
               disabled={stopButtonDisabled}
             >
-              <Square className="h-3.5 w-3.5 mr-1" />
+              <Square className="h-4 w-4 mr-2" />
               {isStopping ? "正在停止..." : "结束并整理"}
             </Button>
           </div>

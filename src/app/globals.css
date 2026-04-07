@@ -2,29 +2,29 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-background: #F2F2F7;
-  --color-foreground: #1C1C1E;
-  --color-card: rgba(255, 255, 255, 0.42);
-  --color-card-foreground: #1C1C1E;
-  --color-popover: rgba(255, 255, 255, 0.55);
-  --color-popover-foreground: #1C1C1E;
-  --color-primary: #F97316;
+  --color-background: #ffffff;
+  --color-foreground: #171717;
+  --color-card: #ffffff;
+  --color-card-foreground: #171717;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #171717;
+  --color-primary: #171717;
   --color-primary-foreground: #ffffff;
-  --color-secondary: rgba(249, 115, 22, 0.08);
-  --color-secondary-foreground: #F97316;
-  --color-muted: rgba(0, 0, 0, 0.03);
-  --color-muted-foreground: #8E8E93;
-  --color-accent: rgba(249, 115, 22, 0.08);
-  --color-accent-foreground: #F97316;
-  --color-destructive: #FF3B30;
+  --color-secondary: #fafafa;
+  --color-secondary-foreground: #171717;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #666666;
+  --color-accent: #ebebeb;
+  --color-accent-foreground: #171717;
+  --color-destructive: #ff5b4f;
   --color-destructive-foreground: #ffffff;
-  --color-border: rgba(0, 0, 0, 0.06);
-  --color-input: rgba(0, 0, 0, 0.04);
-  --color-ring: #F97316;
-  --radius-lg: 1.25rem;
-  --radius-md: 1rem;
-  --radius-sm: 0.625rem;
-  --font-sans: "Inter", "SF Pro Display", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --color-border: rgba(0, 0, 0, 0.08);
+  --color-input: #ebebeb;
+  --color-ring: #0072f5;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 6px;
+  --font-sans: "Geist", "Geist Sans", system-ui, sans-serif;
 }
 
 * {
