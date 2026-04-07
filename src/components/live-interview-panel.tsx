@@ -444,34 +444,33 @@ export function LiveInterviewPanel({
         sourceValueMuted: "text-[#c7d2cf]",
       }
     : {
-        shell: "bg-[#f6f1e8] text-[#1a1c1c]",
-        pickerShell: "border-[#dacfc3] bg-[linear-gradient(180deg,rgba(255,252,247,0.98),rgba(248,241,232,0.94))]",
-        modeCard: "border-[#eadfce] bg-[#fffaf4] hover:border-[#cfa98a] hover:bg-white",
+        shell: "bg-background text-foreground",
+        pickerShell: "border-transparent bg-transparent",
+        modeCard: "border-border bg-card hover:border-[#cccccc] hover:bg-muted",
         modeCardActive:
-          "border-[#cfa98a] bg-[#fff4e6] shadow-[0_16px_32px_rgba(138,90,60,0.12)]",
-        modeIcon: "border-[#eadfce] bg-[#fff6ec] text-[#8a5a3c]",
-        modeIconActive: "border-[#d8c0ab] bg-[#fff1e1] text-[#8a5a3c]",
-        modeLabel: "text-[#1a1c1c]",
-        modeMeta: "text-[#8a5a3c]",
-        actionShell:
-          "border-[#e3d7ca] bg-[linear-gradient(180deg,rgba(255,252,247,0.98),rgba(247,240,230,0.96))]",
-        actionIcon: "border-[#eadfce] bg-[#fff6ec] text-[#8a5a3c]",
+          "border-[#111111] bg-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.15)]",
+        modeIcon: "text-[#666666]",
+        modeIconActive: "text-[#ffffff]",
+        modeLabel: "text-foreground",
+        modeMeta: "text-muted-foreground",
+        actionShell: "border-border bg-card",
+        actionIcon: "text-foreground",
         stageShell:
-          "border-[#d9cbbd] bg-[radial-gradient(circle_at_top,rgba(138,90,60,0.14),transparent_50%),linear-gradient(135deg,rgba(255,253,249,0.98),rgba(244,236,225,0.96)_58%,rgba(237,228,216,0.98))]",
-        stageIcon: "border-[#eadfce] bg-[#fff1e1] text-[#8a5a3c]",
-        stagePill: "border-[#d8c0ab] bg-[#fff6ec] text-[#8a5a3c]",
-        statCard: "border-[#eadfce] bg-white/80",
-        statLabel: "text-[#7c6f66]",
-        statValue: "text-[#1a1c1c]",
-        statNote: "text-[#7c6f66]",
-        emptyShell: "border-dashed border-[#dacfc3] bg-white/75",
-        emptyPill: "border-[#d8c0ab] bg-[#fff6ec] text-[#8a5a3c]",
-        transcriptText: "text-[#334155]",
-        transcriptBox: "border-[#eadfce] bg-white/80",
-        transcriptDivider: "border-[#efe4d9]",
-        sourceNote: "text-[#7c6f66]",
-        sourceValue: "text-[#1a1c1c]",
-        sourceValueMuted: "text-[#7c6f66]",
+          "border-border bg-card shadow-[0_2px_8px_rgba(0,0,0,0.04)]",
+        stageIcon: "border-border bg-secondary text-foreground",
+        stagePill: "border-border bg-secondary text-foreground",
+        statCard: "border-border bg-card",
+        statLabel: "text-muted-foreground",
+        statValue: "text-foreground",
+        statNote: "text-muted-foreground",
+        emptyShell: "border-dashed border-border bg-muted/30",
+        emptyPill: "border-border bg-secondary text-foreground",
+        transcriptText: "text-foreground",
+        transcriptBox: "border-border bg-card",
+        transcriptDivider: "border-border",
+        sourceNote: "text-muted-foreground",
+        sourceValue: "text-foreground",
+        sourceValueMuted: "text-muted-foreground",
       };
   const copy = {
     ready: isZh ? "\u5df2\u5c31\u7eea" : "Ready",
@@ -1534,7 +1533,7 @@ export function LiveInterviewPanel({
 
   function renderExpandedModePicker() {
     return (
-      <div className={`flex items-center justify-center gap-4 rounded-[1.55rem] border py-2.5 px-4 ${themeClasses.pickerShell}`}>
+      <div className={`flex flex-wrap items-center justify-center gap-4`}>
         {captureModeOptions.map((option) => {
           const Icon = option.icon;
           const isActive = captureMode === option.mode;
@@ -1545,12 +1544,23 @@ export function LiveInterviewPanel({
               type="button"
               onClick={() => setCaptureMode(option.mode)}
               disabled={disabled || isRunning || isStarting || isStopping}
-              className={`group relative flex h-12 w-12 items-center justify-center rounded-2xl border transition-all ${isActive ? themeClasses.modeCardActive : themeClasses.modeCard}`}
+              className={`group relative flex h-[64px] w-[64px] items-center justify-center rounded-[1.25rem] border outline-none transition-all duration-300 ${
+                isActive 
+                  ? (isDarkTheme 
+                      ? "bg-[#181C1D] shadow-[0_8px_30px_rgba(0,220,191,0.15)] border-[#00DCBF]/40" 
+                      : "bg-[#111] shadow-[0_8px_20px_rgba(0,0,0,0.2)] border-[#111]") 
+                  : (isDarkTheme 
+                      ? "bg-white/[0.02] border-white/10 hover:bg-white/[0.06] hover:border-white/20" 
+                      : "bg-white border-[#E2E8F0] shadow-sm hover:border-[#CBD5E1] hover:bg-[#F8FAFC]")
+              }`}
               title={option.label}
             >
-              <Icon className={`h-5 w-5 ${isActive ? (isDarkTheme ? "text-[#48F9DB]" : "text-[#8a5a3c]") : (isDarkTheme ? "text-[#97ada8]" : "text-[#8a5a3c]")}`} />
+              <Icon 
+                className={`h-[24px] w-[24px] transition-all duration-300 transform group-hover:scale-110 ${isActive ? (isDarkTheme ? "text-[#00DCBF]" : "text-white") : (isDarkTheme ? "text-[#97ada8]" : "text-[#64748b]")}`} 
+                strokeWidth={isActive ? 2.5 : 1.75} 
+              />
               {isActive && isRunning ? (
-                  <span className={`absolute right-[2px] -top-1 flex h-2 w-2 items-center justify-center rounded-full ${isDarkTheme ? "bg-[#48F9DB]" : "bg-[#8a5a3c]"} animate-pulse`} aria-hidden="true" />
+                  <span className={`absolute right-[-4px] top-[-4px] flex h-3.5 w-3.5 items-center justify-center rounded-full ${isDarkTheme ? "bg-[#00DCBF]" : "bg-[#ef4444]"} animate-pulse ring-4 ${isDarkTheme ? "ring-[#111314]" : "ring-white"}`} aria-hidden="true" />
               ) : null}
             </button>
           );
@@ -1645,7 +1655,7 @@ export function LiveInterviewPanel({
             )}
           </div>
         </div>
-        <div className="border-t border-white/5 px-6 py-5">
+        <div className={`border-t ${isDarkTheme ? "border-white/5" : "border-border/60"} px-6 py-5`}>
           {renderExpandedModePicker()}
         </div>
       </div>

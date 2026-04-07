@@ -66,15 +66,20 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => null);
-  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  const title = typeof body?.title === "string" ? body.title.trim() : undefined;
+  const is_archived = typeof body?.is_archived === "boolean" ? body.is_archived : undefined;
 
-  if (!title) {
-    return jsonError("invalid_payload", "Title is required", { status: 400 });
+  if (title === undefined && is_archived === undefined) {
+    return jsonError("invalid_payload", "No valid fields to update", { status: 400 });
   }
+
+  const payload: Partial<JobRow> = {};
+  if (title !== undefined) payload.title = title;
+  if (is_archived !== undefined) payload.is_archived = is_archived;
 
   const { data: jobData, error } = await supabase
     .from("jobs")
-    .update({ title })
+    .update(payload)
     .eq("id", id)
     .eq("user_id", user.id)
     .select("*")
@@ -113,6 +118,22 @@ export async function DELETE(
 
   if (jobError || !job || job.user_id !== user.id) {
     return jsonError("not_found", "Job not found", { status: 404 });
+  }
+
+  const { searchParams } = new URL(_req.url);
+  const hardDelete = searchParams.get("hard") === "true";
+
+  if (!hardDelete) {
+    const { error } = await supabase
+      .from("jobs")
+      .update({ is_archived: true })
+      .eq("id", id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      return jsonError("db_error", error.message, { status: 500 });
+    }
+    return jsonOk({ removed: true, mode: "soft" });
   }
 
   const cleanupTargets = [

@@ -31,9 +31,22 @@ export default async function SettingsPage({
     plan = await getUserPlan(supabase, user.id);
 
     const [allJobsRes, monthJobsRes, monthTranscriptsRes] = await Promise.all([
-      supabase.from("jobs").select("id", { count: "exact", head: true }).eq("user_id", user.id),
-      supabase.from("jobs").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", startOfMonth),
-      supabase.from("audio_assets").select("duration_seconds").eq("user_id", user.id).gte("created_at", startOfMonth),
+      supabase.from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_archived", false)
+        .throwOnError(),
+      supabase.from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_archived", false)
+        .gte("created_at", startOfMonth)
+        .throwOnError(),
+      supabase.from("audio_assets")
+        .select("duration_seconds")
+        .eq("user_id", user.id)
+        .gte("created_at", startOfMonth)
+        .throwOnError(),
     ]);
 
     totalJobsHistorical = allJobsRes.count || 0;
@@ -44,6 +57,7 @@ export default async function SettingsPage({
       totalMinutesThisMonth = Math.ceil(totalSeconds / 60);
     }
   } catch (error) {
+    console.error("Settings query error:", error);
     if (process.env.NODE_ENV !== "development") {
       throw error;
     }

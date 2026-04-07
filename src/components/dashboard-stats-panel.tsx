@@ -281,15 +281,7 @@ export function DashboardStatsPanel({
         </div>
 
         {/* ── Stat Cards ── */}
-        <div className="mb-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            icon={Folder}
-            label={isZh ? "项目" : "Projects"}
-            value={projects.length}
-            subtitle={isZh ? `${completedCount} 个已完成` : `${completedCount} completed`}
-            isDark={isDark}
-            accentGlow
-          />
+        <div className="mb-10 grid gap-5 sm:grid-cols-3 lg:grid-cols-3">
           <StatCard
             icon={AudioLines}
             label={isZh ? "访谈" : "Interviews"}

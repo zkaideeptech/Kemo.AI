@@ -23,6 +23,35 @@ export async function enqueueJob(jobId: string) {
   }
 }
 
+export async function cleanupStaleJobs() {
+  const supabase = createSupabaseAdminClient();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  const staleStatuses = [
+    JOB_STATUS.transcribing,
+    JOB_STATUS.extracting_terms,
+    JOB_STATUS.summarizing,
+    JOB_STATUS.queued,
+  ];
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .update({
+      status: JOB_STATUS.failed,
+      error_message: "Job stuck in intermediate state for over 1 hour. Automatically failed by worker cleanup.",
+      updated_at: new Date().toISOString(),
+    })
+    .in("status", staleStatuses)
+    .lt("updated_at", oneHourAgo)
+    .select("id");
+
+  if (error) {
+    console.error("[Queue] ✗ Failed to cleanup stale jobs:", error);
+  } else if (data && data.length > 0) {
+    console.log(`[Queue] 🧹 Cleaned up (failed) ${data.length} stale/zombie jobs.`);
+  }
+}
+
 export async function runQueuedJobs(limit = 3): Promise<QueueRunSummary> {
   const supabase = createSupabaseAdminClient();
 

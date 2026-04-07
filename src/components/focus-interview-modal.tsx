@@ -87,7 +87,7 @@ export function FocusInterviewModal({
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
-        className="fixed inset-0 flex items-center justify-center border-0 bg-transparent p-0 shadow-none [&>button]:hidden"
+        className="fixed inset-0 flex items-center justify-center border-0 bg-transparent p-0 shadow-none translate-x-0 translate-y-0 [&>button]:hidden"
         style={{ maxWidth: "100vw", maxHeight: "100vh", width: "100vw", height: "100vh" }}
       >
         <DialogTitle className="sr-only">{jobTitle || "Focus Interview"}</DialogTitle>

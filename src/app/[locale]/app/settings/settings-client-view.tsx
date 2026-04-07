@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import {
@@ -53,6 +53,18 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const themeMode = useWorkspaceUiMode();
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const isDark = themeMode === "dark" || (themeMode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setDark(isDark);
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (e: MediaQueryListEvent) => {
+      if (themeMode === "system") setDark(e.matches);
+    };
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
+  }, [themeMode]);
   
   // Profile Editor State
   const [displayName, setDisplayName] = useState(user.name);
@@ -73,7 +85,11 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
     setProfileMessage(null);
     try {
       const { error } = await supabase.auth.updateUser({
-        data: { name: displayName.trim() }
+        data: { 
+          name: displayName.trim(),
+          display_name: displayName.trim(),
+          full_name: displayName.trim()
+        }
       });
       if (error) throw error;
       setProfileMessage({ type: "success", text: "资料更新成功！" });
@@ -85,7 +101,14 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   };
 
   const handleUpdatePassword = async () => {
-    if (!newPassword || newPassword !== confirmPassword) return;
+    if (!newPassword || newPassword !== confirmPassword) {
+      setPasswordMessage({ type: "error", text: "两次输入的密码不一致" });
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordMessage({ type: "error", text: "密码不得少于 6 位字符" });
+      return;
+    }
     setIsSavingPassword(true);
     setPasswordMessage(null);
     try {
@@ -125,17 +148,17 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
       </div>
 
       {/* Tabs Navigation */}
-      <div className="inline-flex items-center gap-1 p-1 bg-black/5 dark:bg-white/[0.03] border border-border/40 rounded-[14px] mb-8">
+      <div className={`inline-flex items-center gap-1 p-1 rounded-[14px] mb-8 ${dark ? "bg-white/[0.03] border border-white/5" : "bg-black/5 border border-black/5"}`}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-[10px] text-[14px] transition-all duration-200 ${
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-[10px] text-[14px] transition-all duration-300 ${
                 isActive
-                  ? "bg-foreground text-background shadow-[0_1px_3px_rgba(0,0,0,0.05)] font-bold"
-                  : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                  ? (dark ? "bg-white text-black shadow-[0_1px_3px_rgba(0,0,0,0.2)] font-bold" : "bg-black text-white shadow-md font-bold")
+                  : (dark ? "text-[#97ada8] hover:text-white hover:bg-white/5" : "text-[#7a6a5c] hover:text-black hover:bg-white/50")
               }`}
             >
               {tab.icon}
@@ -150,33 +173,33 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
         {activeTab === "dashboard" && (
           <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="rounded-2xl border border-border/40 bg-card/30 p-6 flex flex-col justify-center min-h-[120px]">
-                <p className="text-[13px] text-muted-foreground font-medium mb-3">当月转写时长</p>
+              <div className={`rounded-[1.25rem] border p-6 flex flex-col justify-center min-h-[120px] transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.2)]" : "bg-white border-[#E2E8F0] shadow-sm"}`}>
+                <p className={`text-[13px] font-medium mb-3 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>当月转写时长</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tracking-tight">{stats?.totalMinutesThisMonth || 0}</span>
-                  <span className="text-[13px] text-muted-foreground">分钟</span>
+                  <span className={`text-4xl font-bold tracking-tight ${dark ? "text-white" : "text-black"}`}>{stats?.totalMinutesThisMonth || 0}</span>
+                  <span className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>分钟</span>
                 </div>
               </div>
-              <div className="rounded-2xl border border-border/40 bg-card/30 p-6 flex flex-col justify-center min-h-[120px]">
-                <p className="text-[13px] text-muted-foreground font-medium mb-3">当月转写任务</p>
+              <div className={`rounded-[1.25rem] border p-6 flex flex-col justify-center min-h-[120px] transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.2)]" : "bg-white border-[#E2E8F0] shadow-sm"}`}>
+                <p className={`text-[13px] font-medium mb-3 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>当月转写任务</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tracking-tight">{stats?.totalJobsThisMonth || 0}</span>
-                  <span className="text-[13px] text-muted-foreground flex items-center gap-1">个 <ArrowUp className="w-3 h-3 text-muted-foreground/50" /></span>
+                  <span className={`text-4xl font-bold tracking-tight ${dark ? "text-white" : "text-black"}`}>{stats?.totalJobsThisMonth || 0}</span>
+                  <span className={`text-[13px] flex items-center gap-1 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>个 <ArrowUp className="w-3 h-3 opacity-50" /></span>
                 </div>
               </div>
-              <div className="rounded-2xl border border-border/40 bg-card/30 p-6 flex flex-col justify-center min-h-[120px]">
-                <p className="text-[13px] text-muted-foreground font-medium mb-3">历史总录音数</p>
+              <div className={`rounded-[1.25rem] border p-6 flex flex-col justify-center min-h-[120px] transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_4px_12px_rgba(0,0,0,0.2)]" : "bg-white border-[#E2E8F0] shadow-sm"}`}>
+                <p className={`text-[13px] font-medium mb-3 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>历史总录音数</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold tracking-tight">{stats?.totalJobsHistorical || 0}</span>
-                  <span className="text-[13px] text-muted-foreground flex items-center gap-1">个 <ArrowUp className="w-3 h-3 text-muted-foreground/50" /></span>
+                  <span className={`text-4xl font-bold tracking-tight ${dark ? "text-white" : "text-black"}`}>{stats?.totalJobsHistorical || 0}</span>
+                  <span className={`text-[13px] flex items-center gap-1 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>个 <ArrowUp className="w-3 h-3 opacity-50" /></span>
                 </div>
               </div>
             </div>
 
-            <section className="rounded-2xl border border-border/40 bg-card/30 p-8">
+            <section className={`rounded-[1.5rem] border p-8 transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.15)]" : "bg-white border-[#E2E8F0] shadow-md"}`}>
               <div className="mb-8">
-                <h2 className="text-lg font-bold tracking-tight mb-2">综合状态</h2>
-                <p className="text-[13px] text-muted-foreground">当前账户与配额详情</p>
+                <h2 className={`text-lg font-bold tracking-tight mb-2 ${dark ? "text-white" : "text-black"}`}>综合状态</h2>
+                <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>当前账户与配额详情</p>
               </div>
               
               <div className="flex flex-col gap-0 border-t border-border/40">
@@ -198,40 +221,40 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
         {/* PROFILE TAB */}
         {activeTab === "profile" && (
           <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-             <section className="rounded-2xl border border-border/40 bg-card/30 p-8">
+             <section className={`rounded-[1.5rem] border p-8 transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.15)]" : "bg-white border-[#E2E8F0] shadow-md"}`}>
               <div className="mb-8">
-                <h2 className="text-lg font-bold tracking-tight mb-2">个人资料</h2>
-                <p className="text-[13px] text-muted-foreground">更新你的显示信息与头像</p>
+                <h2 className={`text-lg font-bold tracking-tight mb-2 ${dark ? "text-white" : "text-black"}`}>个人资料</h2>
+                <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>更新你的显示信息与头像</p>
               </div>
               
               <div className="flex items-center gap-6 mb-10">
-                <div className="w-20 h-20 rounded-full bg-black/10 dark:bg-white/5 border border-border/50 flex items-center justify-center shrink-0">
-                  <UserIcon className="w-8 h-8 text-muted-foreground opacity-60" />
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center shrink-0 border ${dark ? "bg-black/20 border-white/10" : "bg-black/5 border-black/10"}`}>
+                  <UserIcon className={`w-8 h-8 opacity-60 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`} />
                 </div>
                 <div>
-                  <h3 className="text-[14px] font-medium mb-1.5">账户头像</h3>
-                  <p className="text-[12px] text-muted-foreground">推荐尺寸 256x256px, 支持 JPG、PNG、WebP，最大 5MB</p>
+                  <h3 className={`text-[14px] font-bold mb-1.5 ${dark ? "text-white" : "text-black"}`}>账户头像</h3>
+                  <p className={`text-[12px] ${dark ? "text-[#8a9f9a]" : "text-[#90867d]"}`}>推荐尺寸 256x256px, 支持 JPG、PNG、WebP，最大 5MB</p>
                 </div>
               </div>
 
               <div className="grid gap-8">
                 <div className="grid gap-2">
-                  <label className="text-[14px] font-bold">邮箱地址</label>
+                  <label className={`text-[14px] font-bold ${dark ? "text-white" : "text-black"}`}>邮箱地址</label>
                   <Input 
                     value={user.email || ""} 
                     disabled 
-                    className="bg-black/5 dark:bg-white/5 border-border/40 text-[14px] h-11 pointer-events-none opacity-80" 
+                    className={`text-[14px] h-11 pointer-events-none opacity-80 ${dark ? "bg-white/5 border-white/5 text-white/70" : "bg-black/5 border-black/5 text-black/70"}`} 
                   />
-                  <p className="text-[12px] text-muted-foreground mt-1">登录邮箱当前不支持直接修改。</p>
+                  <p className={`text-[12px] mt-1 ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>登录邮箱当前不支持直接修改。</p>
                 </div>
                 
                 <div className="grid gap-2">
-                  <label className="text-[14px] font-bold">用户名 (Display Name)</label>
+                  <label className={`text-[14px] font-bold ${dark ? "text-white" : "text-black"}`}>用户名 (Display Name)</label>
                   <Input 
                     placeholder="输入你想展示的名字" 
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="bg-transparent border-border/40 text-[14px] h-11 focus-visible:ring-1 focus-visible:ring-primary/50" 
+                    className={`text-[14px] h-11 transition-all ${dark ? "bg-white/[0.02] border-white/10 text-white focus-visible:border-[#00DCBF] focus-visible:ring-1 focus-visible:ring-[#00DCBF]/50" : "bg-transparent border-[#E2E8F0] text-black focus-visible:ring-1 focus-visible:ring-black/10"}`} 
                   />
                 </div>
 
@@ -258,30 +281,30 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
         {/* SECURITY TAB */}
         {activeTab === "security" && (
           <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-             <section className="rounded-2xl border border-border/40 bg-card/30 p-8">
+             <section className={`rounded-[1.5rem] border p-8 transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.15)]" : "bg-white border-[#E2E8F0] shadow-md"}`}>
               <div className="mb-8">
-                <h2 className="text-lg font-bold tracking-tight mb-2">密码修改</h2>
-                <p className="text-[13px] text-muted-foreground">更新账户的安全密码</p>
+                <h2 className={`text-lg font-bold tracking-tight mb-2 ${dark ? "text-white" : "text-black"}`}>密码修改</h2>
+                <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>更新账户的安全密码</p>
               </div>
 
               <div className="grid gap-6">
                 <div className="grid gap-2">
-                  <label className="text-[14px] font-bold">新密码</label>
+                  <label className={`text-[14px] font-bold ${dark ? "text-white" : "text-black"}`}>新密码</label>
                   <Input 
                     type="password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="bg-transparent border-border/40 text-[14px] h-11 focus-visible:ring-1 focus-visible:ring-primary/50" 
+                    className={`text-[14px] h-11 transition-all ${dark ? "bg-white/[0.02] border-white/10 text-white focus-visible:border-[#00DCBF] focus-visible:ring-1 focus-visible:ring-[#00DCBF]/50" : "bg-transparent border-[#E2E8F0] text-black focus-visible:ring-1 focus-visible:ring-black/10"}`} 
                   />
                 </div>
                 
                 <div className="grid gap-2">
-                  <label className="text-[14px] font-bold">确认新密码</label>
+                  <label className={`text-[14px] font-bold ${dark ? "text-white" : "text-black"}`}>确认新密码</label>
                   <Input 
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="bg-transparent border-border/40 text-[14px] h-11 focus-visible:ring-1 focus-visible:ring-primary/50" 
+                    className={`text-[14px] h-11 transition-all ${dark ? "bg-white/[0.02] border-white/10 text-white focus-visible:border-[#00DCBF] focus-visible:ring-1 focus-visible:ring-[#00DCBF]/50" : "bg-transparent border-[#E2E8F0] text-black focus-visible:ring-1 focus-visible:ring-black/10"}`} 
                   />
                 </div>
 
@@ -303,10 +326,10 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
               </div>
             </section>
 
-             <section className="rounded-2xl border border-border/40 bg-card/30 p-8">
+             <section className={`rounded-[1.5rem] border p-8 transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.15)]" : "bg-white border-[#E2E8F0] shadow-md"}`}>
               <div className="mb-8">
-                <h2 className="text-lg font-bold tracking-tight text-[#ff5a5f] mb-2">危险操作</h2>
-                <p className="text-[13px] text-muted-foreground">涉及账号登录状态的管理</p>
+                <h2 className={`text-lg font-bold tracking-tight text-[#ff5a5f] mb-2`}>危险操作</h2>
+                <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>涉及账号登录状态的管理</p>
               </div>
 
               <div>
@@ -319,36 +342,36 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
         {/* PREFERENCES TAB */}
         {activeTab === "preferences" && (
           <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-             <section className="rounded-2xl border border-border/40 bg-card/30 p-8">
+             <section className={`rounded-[1.5rem] border p-8 transition-all ${dark ? "bg-[#1A1D1E] border-white/5 shadow-[0_8px_30px_rgba(0,0,0,0.15)]" : "bg-white border-[#E2E8F0] shadow-md"}`}>
               <div className="mb-8">
-                <h2 className="text-lg font-bold tracking-tight mb-2">外观设置</h2>
-                <p className="text-[13px] text-muted-foreground">切换应用的色彩模式</p>
+                <h2 className={`text-lg font-bold tracking-tight mb-2 ${dark ? "text-white" : "text-black"}`}>外观设置</h2>
+                <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>切换应用的色彩模式</p>
               </div>
 
-              <div className="border border-border/40 rounded-xl p-5 flex items-center justify-between">
+              <div className={`border rounded-xl p-5 flex items-center justify-between ${dark ? "border-white/10" : "border-[#E2E8F0]"}`}>
                 <div>
-                  <h3 className="text-[15px] font-bold mb-1.5">色彩主题</h3>
-                  <p className="text-[13px] text-muted-foreground">自动适应系统，或手动指定亮/暗色</p>
+                  <h3 className={`text-[15px] font-bold mb-1.5 ${dark ? "text-white" : "text-black"}`}>色彩主题</h3>
+                  <p className={`text-[13px] ${dark ? "text-[#97ada8]" : "text-[#7a6a5c]"}`}>自动适应系统，或手动指定亮/暗色</p>
                 </div>
 
-                <div className="flex items-center gap-1 bg-black/5 dark:bg-white/[0.03] border border-border/30 rounded-xl p-1">
+                <div className={`flex items-center gap-1 border rounded-xl p-1 ${dark ? "bg-white/[0.03] border-white/10" : "bg-black/5 border-black/5"}`}>
                   <button 
                     onClick={() => applyWorkspaceMode("system")}
-                    className={`p-2 rounded-lg transition-colors ${themeMode === "system" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    className={`p-2 rounded-lg transition-colors ${themeMode === "system" ? (dark ? "bg-white text-black shadow-sm" : "bg-white text-black shadow-md") : (dark ? "text-[#97ada8] hover:text-white hover:bg-white/5" : "text-[#7a6a5c] hover:text-black hover:bg-white/50")}`}
                     title="跟随系统"
                   >
                     <Monitor className="w-[15px] h-[15px]" />
                   </button>
                   <button 
                     onClick={() => applyWorkspaceMode("light")}
-                    className={`p-2 rounded-lg transition-colors ${themeMode === "light" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    className={`p-2 rounded-lg transition-colors ${themeMode === "light" ? (dark ? "bg-white text-black shadow-sm" : "bg-white text-black shadow-md") : (dark ? "text-[#97ada8] hover:text-white hover:bg-white/5" : "text-[#7a6a5c] hover:text-black hover:bg-white/50")}`}
                     title="亮色模式"
                   >
                     <Sun className="w-[15px] h-[15px]" />
                   </button>
                   <button 
                     onClick={() => applyWorkspaceMode("dark")}
-                    className={`p-2 rounded-lg transition-colors ${themeMode === "dark" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    className={`p-2 rounded-lg transition-colors ${themeMode === "dark" ? (dark ? "bg-white text-black shadow-sm" : "bg-white text-black shadow-md") : (dark ? "text-[#97ada8] hover:text-white hover:bg-white/5" : "text-[#7a6a5c] hover:text-black hover:bg-white/50")}`}
                     title="暗色模式"
                   >
                     <Moon className="w-[15px] h-[15px]" />

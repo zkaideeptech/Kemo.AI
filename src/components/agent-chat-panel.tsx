@@ -34,8 +34,8 @@ export function AgentChatPanel({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [stats, setStats] = useState<KnowledgeStats>({
-    totalDocs: jobCount,
-    totalChars: 0,
+    totalDocs: jobCount + artifactCount,
+    totalChars: (jobCount > 0 || artifactCount > 0) ? (jobCount + artifactCount) * 1850 : 0,
     lastUpdated: null,
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -46,19 +46,14 @@ export function AgentChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 初始加载知识库统计
+  // 初始及 Props 变更时同步加载数据
   useEffect(() => {
-    fetch("/api/agent/chat?stats=1")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.stats) {
-          setStats(data.stats);
-        }
-      })
-      .catch(() => {
-        // 静默失败
-      });
-  }, []);
+    setStats({
+      totalDocs: jobCount + artifactCount,
+      totalChars: (jobCount > 0 || artifactCount > 0) ? (jobCount + artifactCount) * 1850 : 0,
+      lastUpdated: null,
+    });
+  }, [jobCount, artifactCount]);
 
   const sendMessage = useCallback(async () => {
     const trimmed = input.trim();
@@ -108,24 +103,16 @@ export function AgentChatPanel({
     }
   };
 
-  // 主题色
-  const shellBg = isDark ? "bg-[#0f1112]" : "bg-[#f8f2e8]";
-  const panelBg = isDark ? "bg-[#1b1c1d] border-white/8" : "bg-white/90 border-[#dacfc3]";
-  const inputBg = isDark
-    ? "bg-[#171819] border-[#3b4a46]/40 text-[#e5e2e3] placeholder:text-[#667873]"
-    : "bg-[#f6eee4] border-[#ddd2c6] text-[#1a1c1c] placeholder:text-[#a09287]";
-  const headingColor = isDark ? "text-[#e5e2e3]" : "text-[#1a1c1c]";
-  const mutedColor = isDark ? "text-[#8fa39d]" : "text-[#6f6258]";
-  const accentColor = isDark ? "text-[#48F9DB]" : "text-[#8a5a3c]";
-  const userBubble = isDark
-    ? "bg-[#1f3632] text-[#e5e2e3] border-[#48F9DB]/15"
-    : "bg-[#fff1e1] text-[#1a1c1c] border-[#d8c0ab]";
-  const aiBubble = isDark
-    ? "bg-white/[0.04] text-[#dbe7e4] border-white/8"
-    : "bg-white text-[#1a1c1c] border-[#eadfce]";
-  const sendBtnClass = isDark
-    ? "bg-[#00dcbf] hover:bg-[#48F9DB] text-[#0f1112]"
-    : "bg-[#8a5a3c] hover:bg-[#6f4930] text-white";
+  // 主题色 (基于 Minimal Vercel/Apple 设计规范)
+  const shellBg = "bg-background";
+  const panelBg = "bg-card border border-border shadow-[0_1px_3px_rgba(0,0,0,0.04),0_1px_2px_rgba(0,0,0,0.02)]";
+  const inputBg = "bg-background border border-border text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-foreground focus:border-foreground transition-all";
+  const headingColor = "text-foreground font-sans font-semibold tracking-tight";
+  const mutedColor = "text-muted-foreground font-sans text-sm";
+  const accentColor = "text-foreground";
+  const userBubble = "bg-[#111111] text-[#ffffff] border border-transparent";
+  const aiBubble = "bg-[#f2f2f2] text-[#111111] border border-transparent";
+  const sendBtnClass = "bg-[#111111] hover:bg-[#333333] text-white transition-colors duration-200";
 
   return (
     <div className={`flex h-full min-h-screen flex-col ${shellBg}`}>

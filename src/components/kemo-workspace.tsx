@@ -13,6 +13,8 @@ import {
   ExternalLink,
   Folder,
   FolderPlus,
+  Layers,
+  Library,
   Lightbulb,
   Link2,
   Loader2,
@@ -367,6 +369,7 @@ export function KemoWorkspace({
   const [collapsed, setCollapsed] = useState(false);
   const [darkRailHovered, setDarkRailHovered] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<"projects" | "favorites" | "trash">("projects");
   const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [centerSection, setCenterSection] = useState<"interview" | "tasks" | "sources">(initialCenterSection);
   const [interviewDraftMode, setInterviewDraftMode] = useState<"live" | "file" | null>(initialInterviewDraftMode);
@@ -449,14 +452,14 @@ export function KemoWorkspace({
       grouped.set(
         project.id,
         jobState
-          .filter((job) => job.project_id === project.id)
+          .filter((job) => job.project_id === project.id && !job.is_archived)
           .sort((left, right) => getJobTimestamp(right) - getJobTimestamp(left))
       );
     }
     return grouped;
   }, [jobState, projectState]);
   const jobsByRecency = useMemo(
-    () => [...jobState].sort((left, right) => getJobTimestamp(right) - getJobTimestamp(left)),
+    () => [...jobState].filter(job => !job.is_archived).sort((left, right) => getJobTimestamp(right) - getJobTimestamp(left)),
     [jobState]
   );
 
@@ -1076,7 +1079,7 @@ export function KemoWorkspace({
   }, []);
 
   useEffect(() => {
-    if (!selectedProjectId || search.trim().length < 2) {
+    if (search.trim().length < 2) {
       setProjectResults([]);
       return;
     }
@@ -1086,7 +1089,8 @@ export function KemoWorkspace({
       setIsProjectSearching(true);
 
       try {
-        const res = await fetch(`/api/projects/${selectedProjectId}/search?q=${encodeURIComponent(search.trim())}`);
+        const targetId = selectedProjectId || "all";
+        const res = await fetch(`/api/projects/${targetId}/search?q=${encodeURIComponent(search.trim())}`);
         const json = await res.json();
 
         if (!ignore && res.ok && json.ok) {
@@ -1704,6 +1708,50 @@ export function KemoWorkspace({
 
     if (!res.ok || !json?.ok) {
       window.alert(json?.error?.message || "\u5220\u9664\u5f55\u97f3\u5931\u8d25");
+      return;
+    }
+
+    setJobState((prev) => prev.map((item) => item.id === job.id ? { ...item, is_archived: true, updated_at: new Date().toISOString() } : item));
+    setSwipedJobId(null);
+    setOpenJobMenuId(null);
+
+    if (selectedSource?.job_id === job.id) {
+      setSelectedSourceId(null);
+    }
+
+    if (selectedJobId === job.id) {
+      setSelectedJobId(null);
+      setCenterSection("tasks");
+      setLiveTranscriptSnapshot("");
+      setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
+    }
+  }
+
+  async function restoreJob(job: JobRow) {
+    const res = await fetch(`/api/jobs/${job.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_archived: false }),
+    });
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.ok) {
+      window.alert(json?.error?.message || "恢复失败");
+      return;
+    }
+
+    setJobState((prev) => prev.map((item) => item.id === job.id ? { ...item, is_archived: false } : item));
+  }
+
+  async function hardDeleteJob(job: JobRow) {
+    const confirmed = window.confirm(`彻底删除「${getJobDisplayTitle(job)}」将永久移除所有衍生文件及关联状态，确认销毁？`);
+    if (!confirmed) return;
+
+    const res = await fetch(`/api/jobs/${job.id}?hard=true`, { method: "DELETE" });
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok || !json?.ok) {
+      window.alert(json?.error?.message || "彻底删除失败");
       return;
     }
 
@@ -3142,39 +3190,50 @@ export function KemoWorkspace({
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-current/10 px-4 py-4">
+            <div className="flex items-center justify-between pb-6 border-b border-current/10">
               <button
                 type="button"
                 onClick={() => setNewProjectOpen(true)}
-                className={`flex h-10 w-10 items-center justify-center rounded-[1rem] border transition-colors ${dark ? "border-white/10 bg-[#00DCBF]/10 text-[#00DCBF] hover:bg-[#00DCBF]/20" : "border-[#e3d7ca] bg-[#8a5a3c]/10 text-[#8a5a3c] hover:bg-[#8a5a3c]/20"}`}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-[12px] border transition-all duration-300 ${dark ? "bg-[#1A1D1E] border-white/5 hover:border-[#00DCBF]/50 shadow-[0_4px_12px_rgba(0,0,0,0.5)]" : "bg-white border-[#E2E8F0] hover:border-[#8A5A3C]/40 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"}`}
                 title={ui.newProject}
               >
-                <FolderPlus className="h-[18px] w-[18px]" />
+                <Plus className={`h-4 w-4 transition-transform group-hover:scale-110 ${dark ? "text-[#00DCBF]" : "text-[#8a5a3c]"}`} strokeWidth={2.5} />
               </button>
 
               <button
                 type="button"
-                onClick={() => setSidebarSearchOpen((value) => !value)}
-                className={`flex h-10 w-10 items-center justify-center rounded-[1rem] border transition-colors ${dark ? "border-white/10 bg-white/5 text-[#97ada8] hover:bg-white/10 hover:text-white" : "border-[#e3d7ca] bg-black/5 text-[#8a5a3c] hover:bg-black/10"}`}
-                title={ui.searchWorkspace}
+                onClick={() => { setSidebarSearchOpen((value) => !value); setSidebarMode("projects"); }}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-[12px] border transition-all duration-300 ${sidebarSearchOpen ? (dark ? "bg-white/10 border-white/10" : "bg-black/5 border-black/10 shadow-inner") : (dark ? "bg-transparent border-transparent hover:bg-white/5" : "bg-transparent border-transparent hover:bg-black/5")}`}
+                title="全局搜索"
               >
-                <Search className="h-[18px] w-[18px]" />
+                <Search className={`h-4 w-4 ${sidebarSearchOpen ? (dark ? "text-white" : "text-black") : (dark ? "text-[#97ada8]" : "text-[#7a6a5c]")}`} strokeWidth={2} />
               </button>
 
               <button
                 type="button"
-                className={`flex h-10 w-10 items-center justify-center rounded-[1rem] border transition-colors ${dark ? "border-white/10 bg-white/5 text-[#97ada8] hover:bg-white/10 hover:text-white" : "border-[#e3d7ca] bg-black/5 text-[#8a5a3c] hover:bg-black/10"}`}
-                title={ui.favorite}
+                onClick={() => { setSidebarMode("projects"); setSidebarSearchOpen(false); }}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-[12px] border transition-all duration-300 ${(!sidebarSearchOpen && sidebarMode === "projects") ? (dark ? "bg-white/10 border-white/10" : "bg-white border-[#E2E8F0] shadow-sm") : (dark ? "bg-transparent border-transparent hover:bg-white/5" : "bg-transparent border-transparent hover:bg-black/5")}`}
+                title="项目库"
               >
-                <Star className="h-[18px] w-[18px]" />
+                <Layers className={`h-4 w-4 ${(!sidebarSearchOpen && sidebarMode === "projects") ? (dark ? "text-white" : "text-black") : (dark ? "text-[#97ada8]" : "text-[#7a6a5c]")}`} strokeWidth={2} />
               </button>
 
               <button
                 type="button"
-                className={`flex h-10 w-10 items-center justify-center rounded-[1rem] border transition-colors ${dark ? "border-white/10 bg-white/5 text-[#97ada8] hover:bg-white/10 hover:text-white" : "border-[#e3d7ca] bg-black/5 text-[#8a5a3c] hover:bg-black/10"}`}
-                title={ui.deleteProject}
+                onClick={() => { setSidebarMode("favorites"); setSidebarSearchOpen(false); }}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-[12px] border transition-all duration-300 ${sidebarMode === "favorites" ? (dark ? "bg-[#332200] border-[#FFB800]/30" : "bg-[#FFF9EA] border-[#FFD24D]/50 shadow-sm") : (dark ? "bg-transparent border-transparent hover:bg-white/5" : "bg-transparent border-transparent hover:bg-black/5")}`}
+                title="星标收藏"
               >
-                <Trash2 className="h-[18px] w-[18px]" />
+                <Star className={`h-4 w-4 ${sidebarMode === "favorites" ? "text-[#FFB800]" : (dark ? "text-[#97ada8]" : "text-[#7a6a5c]")}`} strokeWidth={sidebarMode === "favorites" ? 2.5 : 2} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setSidebarMode("trash"); setSidebarSearchOpen(false); }}
+                className={`group relative flex h-10 w-10 items-center justify-center rounded-[12px] border transition-all duration-300 ${sidebarMode === "trash" ? (dark ? "bg-[#3A1111] border-[#FF4D4D]/30" : "bg-[#FFF0F0] border-[#FF9999]/50 shadow-sm") : (dark ? "bg-transparent border-transparent hover:bg-white/5" : "bg-transparent border-transparent hover:bg-black/5")}`}
+                title="垃圾箱"
+              >
+                <Trash2 className={`h-4 w-4 ${sidebarMode === "trash" ? "text-[#FF4D4D]" : (dark ? "text-[#97ada8]" : "text-[#7a6a5c]")}`} strokeWidth={sidebarMode === "trash" ? 2.5 : 2} />
               </button>
             </div>
 
@@ -3188,11 +3247,11 @@ export function KemoWorkspace({
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       className="w-full bg-transparent text-sm outline-none"
-                      placeholder={hasSelectedProject ? ui.searchInProject : ui.selectProjectFirst}
-                      disabled={!hasSelectedProject}
+                      placeholder={"全局/项目内穿透搜索"}
+                      // disabled 限制已移除
                     />
                   </label>
-                  {hasSelectedProject && search.trim().length >= 2 ? (
+                  {search.trim().length >= 2 ? (
                     <div className="space-y-2">
                       <div className={`flex items-center gap-2 text-xs uppercase tracking-[0.16em] ${mutedClass}`}>
                         {isProjectSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
@@ -3206,10 +3265,19 @@ export function KemoWorkspace({
                             onClick={() => jumpToSearchResult(result)}
                             className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm ${dark ? "bg-[#17191a] hover:bg-[#1d2021]" : "bg-[#f5f1ea] hover:bg-[#efe9df]"}`}
                           >
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] ${dark ? "bg-[#223530] text-[#98D2C4]" : "bg-[#f1e2d4] text-[#8a5a3c]"}`}>
-                              {result.kind}
-                            </span>
-                            <span className="truncate">{result.title}</span>
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="truncate flex items-center gap-2">
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] shrink-0 ${dark ? "bg-[#223530] text-[#98D2C4]" : "bg-[#f1e2d4] text-[#8a5a3c]"}`}>
+                                  访谈
+                                </span>
+                                <span className="truncate">{result.title}</span>
+                              </span>
+                              {result.snippet && (
+                                <span className={`truncate text-xs mt-1 ${dark ? "text-[#5e706b]" : "text-[#968a80]"}`}>
+                                  ...{result.snippet}...
+                                </span>
+                              )}
+                            </div>
                           </button>
                         ))
                       ) : (
@@ -3223,7 +3291,64 @@ export function KemoWorkspace({
               </div>
             ) : null}
 
-            <div className="px-3 py-4">
+            <div className="px-3 py-4 overflow-y-auto flex-1">
+              {sidebarMode === "favorites" ? (
+                <div className="space-y-2">
+                  <h3 className={`text-xs font-bold uppercase tracking-[0.1em] mb-4 ${mutedClass}`}>全局星标收藏 ({favoriteJobIds.size})</h3>
+                  {Array.from(favoriteJobIds).map((favJobId) => {
+                    const job = jobState.find(j => j.id === favJobId);
+                    if (!job) return null;
+                    const isSelected = selectedJobId === job.id;
+                    const preview = getJobSummaryPreview(job);
+                    return (
+                      <div key={job.id} className="group/job flex items-start gap-1.5 p-1">
+                        <button
+                          type="button"
+                          onClick={() => activateProjectJob(job.project_id || selectedProjectId!, job.id)}
+                          className={`flex min-w-0 flex-1 flex-col gap-0.5 rounded-xl px-2 py-1.5 text-left transition-colors ${isSelected ? (dark ? "bg-[#1d2222] text-white" : "border border-[#d8c0ab] bg-[#fff7ef] text-[#1a1c1c]") : (dark ? "hover:bg-white/[0.03]" : "hover:bg-[#fff8f0]")}`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Star className={`h-3.5 w-3.5 shrink-0 ${dark ? "fill-[#48F9DB] text-[#48F9DB]" : "fill-[#8a5a3c] text-[#8a5a3c]"}`} />
+                            <span className="line-clamp-1 text-sm font-semibold leading-tight">{getJobDisplayTitle(job)}</span>
+                          </span>
+                          {preview && <span className={`line-clamp-2 pl-[22px] text-[11px] leading-[1.5] ${mutedClass}`}>{preview}</span>}
+                        </button>
+                        <button onClick={() => toggleJobFavorite(job)} className={`pt-2 ${mutedClass} opacity-0 group-hover/job:opacity-100 transition-opacity`} title="取消收藏">
+                           <Trash2 className="h-3.5 w-3.5"/>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {favoriteJobIds.size === 0 && <p className={`text-sm ${mutedClass} px-2`}>暂未收藏任何内容</p>}
+                </div>
+              ) : sidebarMode === "trash" ? (
+                <div className="space-y-2">
+                  <h3 className={`text-xs font-bold uppercase tracking-[0.1em] mb-4 ${mutedClass}`}>垃圾站</h3>
+                  {jobState.filter(j => j.is_archived).map((job) => {
+                    const preview = getJobSummaryPreview(job);
+                    return (
+                      <div key={job.id} className="group/job flex items-start gap-1.5 p-1 rounded-xl border border-current/10">
+                        <div className={`flex min-w-0 flex-1 flex-col gap-0.5 px-2 py-1.5 text-left`}>
+                          <span className="flex items-center gap-2">
+                            <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                            <span className="line-clamp-1 text-sm font-semibold leading-tight">{getJobDisplayTitle(job)}</span>
+                          </span>
+                          {preview && <span className={`line-clamp-2 pl-[22px] text-[11px] leading-[1.5] ${mutedClass}`}>{preview}</span>}
+                        </div>
+                        <div className={`pt-2 flex items-center gap-2 pr-2`}>
+                           <button onClick={() => restoreJob(job)} className={`text-[#3b82f6] hover:text-[#2563eb] transition-colors`} title="恢复到项目">
+                              还原
+                           </button>
+                           <button onClick={() => hardDeleteJob(job)} className={`text-[#ef4444] hover:text-[#b91c1c] transition-colors`} title="彻底销毁">
+                              销毁
+                           </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {jobState.filter(j => j.is_archived).length === 0 && <p className={`text-sm ${mutedClass} px-2`}>垃圾站目前为空</p>}
+                </div>
+              ) : (
               <div className="space-y-2">
                 {projectState.length ? (
                   projectState.map((project) => {
@@ -3426,6 +3551,7 @@ export function KemoWorkspace({
                   </div>
                 )}
               </div>
+              )}
             </div>
 
 
@@ -3773,7 +3899,6 @@ export function KemoWorkspace({
     return (
       <div className={`flex h-screen w-full overflow-hidden ${workspaceCanvasClass}`}>
         {renderDarkRail("dashboard")}
-        {renderWorkspaceBrowser()}
         <main className={`min-w-0 flex-1 overflow-y-auto ${workspaceMainSurfaceClass}`}>
           {showInterviewCenter ? (
             <div className="mx-auto flex max-w-4xl flex-col gap-5 px-8 py-8 xl:px-12">
