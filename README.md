@@ -43,6 +43,15 @@ cp .env.example .env.local
 See `.env.example` for the full list.
 Never expose `SUPABASE_SERVICE_ROLE_KEY` to the client.
 
+### Baseline verification
+Before and after changes that touch environment setup, providers, Supabase access, or deployment wiring, run:
+
+```bash
+npm run qa:baseline
+```
+
+This command builds the app and verifies the current local baseline for Supabase auth/REST/storage, the configured OpenAI-compatible model endpoint, Tavily, Firecrawl, and DashScope. It exits non-zero on failure and does not print secret values.
+
 ### Execution mode
 Long tasks must never run in HTTP requests in production.
 - `JOB_EXECUTION_MODE=queue` is required in production
