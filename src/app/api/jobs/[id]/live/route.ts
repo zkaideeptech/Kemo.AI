@@ -4,7 +4,7 @@ import { buildClarificationContext, loadJobClarifications } from "@/lib/clarific
 import { sanitizeTranscriptText } from "@/lib/live/transcriptCleanup";
 import { generateArtifactText } from "@/lib/providers/llmProvider";
 import { extractSpeakerSegments, formatSpeakerTranscript, pollResult, transcribeWithSpeakerDiarization } from "@/lib/providers/asrProvider";
-import { getArtifactLabel } from "@/lib/workspace";
+import { getArtifactLabel, type ArtifactKind } from "@/lib/workspace";
 import { JOB_STATUS } from "@/lib/workflows/jobStatus";
 import type { Database, Json } from "@/lib/supabase/types";
 
@@ -13,6 +13,12 @@ type SourceRow = Database["public"]["Tables"]["sources"]["Row"];
 type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
 type TranscriptRow = Database["public"]["Tables"]["transcripts"]["Row"];
 type AudioAssetRow = Database["public"]["Tables"]["audio_assets"]["Row"];
+type LiveDraftArtifactKind =
+  | "live_meeting_editor"
+  | "live_question_coach"
+  | "publish_script"
+  | "quick_summary"
+  | "inspiration_questions";
 
 const DEFAULT_ASR_POLL_INTERVAL_MS = 5000;
 const DEFAULT_ASR_POLL_MAX_ATTEMPTS = 120;
@@ -128,6 +134,86 @@ function buildFallbackQuickSummary({
     "重点：",
     ...(focus.length ? focus : overview).map((unit) => `- ${unit}`),
   ].join("\n");
+}
+
+function getTaggedXmlSection(content: string, tag: string) {
+  const matches = Array.from(content.matchAll(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*<\\/${tag}>`, "gi")));
+  return matches.at(-1)?.[1]?.trim() || "";
+}
+
+function getLastNonEmptyLines(text: string, count = 2) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-count)
+    .join("\n");
+}
+
+function stripJsonCodeFence(text: string) {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function parseLiveCoachJson(content: string) {
+  const cleaned = stripJsonCodeFence(content);
+  try {
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function getNextCoachHeartbeatId(content: string) {
+  const parsed = parseLiveCoachJson(content);
+  const heartbeatId = parsed && typeof parsed.heartbeat_id === "number" ? parsed.heartbeat_id : -1;
+  return Math.max(0, heartbeatId + 1);
+}
+
+function buildFallbackLiveEditorDraft(transcriptText: string) {
+  return [
+    "<polished_segment>",
+    transcriptText.trim() || "实时转写已接入，等待下一段可整理内容。",
+    "</polished_segment>",
+    "",
+    "<unprocessed_tail>",
+    "</unprocessed_tail>",
+    "",
+    "<state_updates>",
+    "  <new_terminology>",
+    "  </new_terminology>",
+    "  <new_people>",
+    "  </new_people>",
+    "  <uncertainties>",
+    "  </uncertainties>",
+    "  <notes>AI 实时整理暂不可用，当前展示原始转写兜底。</notes>",
+    "</state_updates>",
+  ].join("\n");
+}
+
+function buildFallbackLiveCoachDraft(previousContent: string, transcriptText: string) {
+  const nextHeartbeatId = getNextCoachHeartbeatId(previousContent);
+  return JSON.stringify(
+    {
+      heartbeat_id: nextHeartbeatId,
+      pool_a: {
+        items: [],
+        callback_to_pool_b: null,
+      },
+      pool_b: {
+        operations: [],
+        current_state: [],
+      },
+      fallback_note: transcriptText.trim()
+        ? "Live Question Coach 暂不可用，本轮未生成追问建议。"
+        : "等待实时 ASR 输入。",
+    },
+    null,
+    2
+  );
 }
 
 function getLiveDraftWarning(error: unknown) {
@@ -315,8 +401,9 @@ export async function POST(
   const clarificationContext = buildClarificationContext(clarifications);
 
   async function upsertDraftArtifact(
-    kind: "publish_script" | "quick_summary" | "inspiration_questions",
-    content: string
+    kind: LiveDraftArtifactKind,
+    content: string,
+    extraMetadata: Record<string, string | null> = {}
   ) {
     const { data: existingDraftData } = await supabase
       .from("artifacts")
@@ -333,6 +420,7 @@ export async function POST(
       generated_at: new Date().toISOString(),
       live_draft: "true",
       status_text: statusText,
+      ...extraMetadata,
     };
 
     if (existingDraft) {
@@ -379,6 +467,119 @@ export async function POST(
   }
 
   const draftArtifacts: ArtifactRow[] = [];
+  const appendToLiveDraft = (previousContent: string, nextContent: string) =>
+    [previousContent.trim(), nextContent.trim()].filter(Boolean).join("\n\n");
+  const { data: existingLiveDraftsData } = await supabase
+    .from("artifacts")
+    .select("*")
+    .eq("job_id", id)
+    .in("kind", ["live_meeting_editor", "live_question_coach"])
+    .eq("status", "draft");
+  const existingLiveDrafts = (existingLiveDraftsData || []) as ArtifactRow[];
+  const existingLiveEditor = existingLiveDrafts.find((artifact) => artifact.kind === "live_meeting_editor") || null;
+  const existingLiveCoach = existingLiveDrafts.find((artifact) => artifact.kind === "live_question_coach") || null;
+  const editorMetadata = (existingLiveEditor?.metadata || {}) as Record<string, unknown>;
+  const previousSourceLengthRaw = editorMetadata.source_length;
+  const previousSourceLength =
+    typeof previousSourceLengthRaw === "number"
+      ? previousSourceLengthRaw
+      : typeof previousSourceLengthRaw === "string"
+        ? Number.parseInt(previousSourceLengthRaw, 10) || 0
+        : 0;
+  const segmentFromCursor =
+    previousSourceLength > 0 && previousSourceLength < finalTranscriptText.length
+      ? finalTranscriptText.slice(previousSourceLength)
+      : finalTranscriptText;
+  const liveSegmentText =
+    segmentFromCursor.trim().length >= 24
+      ? segmentFromCursor.trim()
+      : finalTranscriptText.slice(Math.max(0, finalTranscriptText.length - 3000)).trim();
+  const previousEditorContent = existingLiveEditor?.content || "";
+  const previousCoachContent = existingLiveCoach?.content || "";
+  let liveWarning: string | null = null;
+
+  try {
+    const liveEditorText = await generateArtifactText("live_meeting_editor", {
+      transcriptText: liveSegmentText,
+      glossaryTerms,
+      uncertainTerms: [],
+      sourceContext,
+      clarificationContext,
+      title: ensuredJob.title || "",
+      guestName: ensuredJob.guest_name || "",
+      interviewerName: ensuredJob.interviewer_name || "",
+      isLiveDraft: true,
+      statusText,
+      liveEditorState: {
+        previousTail: getTaggedXmlSection(previousEditorContent, "unprocessed_tail"),
+        lastTwoLines: getLastNonEmptyLines(getTaggedXmlSection(previousEditorContent, "polished_segment")),
+        terminology: getTaggedXmlSection(previousEditorContent, "new_terminology") || glossaryTerms.join("\n"),
+        people: getTaggedXmlSection(previousEditorContent, "new_people"),
+      },
+    });
+
+    draftArtifacts.push(
+      await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, liveEditorText), {
+        source_length: String(finalTranscriptText.length),
+        previous_source_length: String(previousSourceLength),
+        skill: "live-meeting-editor",
+      })
+    );
+  } catch (error) {
+    liveWarning = getLiveDraftWarning(error);
+    draftArtifacts.push(
+      await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, buildFallbackLiveEditorDraft(liveSegmentText)), {
+        source_length: String(finalTranscriptText.length),
+        previous_source_length: String(previousSourceLength),
+        skill: "live-meeting-editor",
+        fallback: "true",
+      })
+    );
+  }
+
+  try {
+    const liveCoachText = await generateArtifactText("live_question_coach", {
+      transcriptText: liveSegmentText,
+      glossaryTerms,
+      uncertainTerms: [],
+      sourceContext,
+      clarificationContext,
+      title: ensuredJob.title || "",
+      guestName: ensuredJob.guest_name || "",
+      interviewerName: ensuredJob.interviewer_name || "",
+      isLiveDraft: true,
+      statusText,
+      liveCoachState: {
+        heartbeatId: getNextCoachHeartbeatId(previousCoachContent),
+        previousState: previousCoachContent,
+      },
+    });
+
+    draftArtifacts.push(
+      await upsertDraftArtifact("live_question_coach", stripJsonCodeFence(liveCoachText), {
+        source_length: String(finalTranscriptText.length),
+        skill: "live-question-coach",
+      })
+    );
+  } catch (error) {
+    liveWarning = liveWarning || getLiveDraftWarning(error);
+    draftArtifacts.push(
+      await upsertDraftArtifact("live_question_coach", buildFallbackLiveCoachDraft(previousCoachContent, liveSegmentText), {
+        source_length: String(finalTranscriptText.length),
+        skill: "live-question-coach",
+        fallback: "true",
+      })
+    );
+  }
+
+  if (!finalize) {
+    return jsonOk({
+      job: updatedJobData,
+      draftArtifacts,
+      statusText,
+      warning: liveWarning,
+    });
+  }
 
   try {
     const draftText = await generateArtifactText("publish_script", {
@@ -426,15 +627,8 @@ export async function POST(
 
       draftArtifacts.push(await upsertDraftArtifact("inspiration_questions", inspirationText));
     }
-
-    if (!finalize) {
-      return jsonOk({
-        job: updatedJobData,
-        draftArtifacts,
-        statusText,
-      });
-    }
   } catch (error) {
+    liveWarning = liveWarning || getLiveDraftWarning(error);
     if (!draftArtifacts.some((artifact) => artifact.kind === "publish_script")) {
       const fallbackPublishDraft = buildFallbackPublishDraft({
         title: ensuredJob.title || "",
@@ -460,15 +654,6 @@ export async function POST(
 
     if (finalTranscriptText.length >= 60 && !draftArtifacts.some((artifact) => artifact.kind === "inspiration_questions")) {
       draftArtifacts.push(await upsertDraftArtifact("inspiration_questions", buildFallbackInspirationDraft(finalTranscriptText)));
-    }
-
-    if (!finalize) {
-      return jsonOk({
-        job: updatedJobData,
-        draftArtifacts,
-        statusText,
-        warning: getLiveDraftWarning(error),
-      });
     }
   }
 
@@ -544,14 +729,14 @@ export async function POST(
     .from("artifacts")
     .select("*")
     .eq("job_id", id)
-    .in("kind", ["publish_script", "quick_summary", "inspiration_questions"])
+    .in("kind", ["live_meeting_editor", "live_question_coach", "publish_script", "quick_summary", "inspiration_questions"])
     .order("updated_at", { ascending: false });
 
   const finalArtifacts = ((finalArtifactsData || []) as ArtifactRow[]).map((artifact) => ({
     ...artifact,
     title:
       artifact.status === "draft"
-        ? getArtifactLabel(artifact.kind as "publish_script" | "quick_summary" | "inspiration_questions")
+        ? getArtifactLabel(artifact.kind as ArtifactKind)
         : artifact.title,
     status: "ready",
     metadata: {

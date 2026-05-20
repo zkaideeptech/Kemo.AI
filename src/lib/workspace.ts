@@ -5,6 +5,8 @@ import type { Database } from "@/lib/supabase/types";
 export const DEFAULT_PROJECT_TITLE = "Kemo Notebook";
 
 export const ARTIFACT_KINDS = [
+  "live_meeting_editor",
+  "live_question_coach",
   "publish_script",
   "roadshow_transcript",
   "meeting_minutes",
@@ -47,6 +49,8 @@ export function isArtifactKind(value: string): value is ArtifactKind {
 
 export function getArtifactLabel(kind: ArtifactKind) {
   const labels: Record<ArtifactKind, string> = {
+    live_meeting_editor: "Live Editor",
+    live_question_coach: "Live Question Coach",
     publish_script: "发布稿整理",
     roadshow_transcript: "路演整理稿",
     meeting_minutes: "会议纪要",
@@ -66,6 +70,8 @@ export function getArtifactLabel(kind: ArtifactKind) {
 
 export function getArtifactDescription(kind: ArtifactKind) {
   const descriptions: Record<ArtifactKind, string> = {
+    live_meeting_editor: "实时访谈中按 live-meeting-editor skill 滚动整理出的可读对话稿",
+    live_question_coach: "实时访谈中按 live-question-coach skill 维护的追问建议与待问清单",
     publish_script: "按照访谈编辑规范整理成可发布对话稿",
     roadshow_transcript: "基于发布稿整理成结构清晰的路演整理稿并导出 docx",
     meeting_minutes: "基于发布稿整理成结构完整的会议纪要并导出 docx",

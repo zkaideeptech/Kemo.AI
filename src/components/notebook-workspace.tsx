@@ -198,6 +198,94 @@ function parseArtifactContent(content: string): ParsedArtifactContent {
   };
 }
 
+function extractXmlSections(content: string, tag: string) {
+  return Array.from(content.matchAll(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*<\\/${tag}>`, "gi")))
+    .map((match) => match[1]?.trim() || "")
+    .filter(Boolean);
+}
+
+function extractLatestXmlSection(content: string, tag: string) {
+  const sections = extractXmlSections(content, tag);
+  return sections.at(-1) || "";
+}
+
+function getLiveEditorPolishedText(content: string) {
+  const segments = extractXmlSections(content, "polished_segment");
+  if (segments.length) {
+    return segments.join("\n\n");
+  }
+
+  return content.trim();
+}
+
+function getLiveEditorTailText(content: string) {
+  return extractLatestXmlSection(content, "unprocessed_tail");
+}
+
+type LiveCoachItem = {
+  title?: string;
+  narrative?: string;
+  follow_up?: string;
+};
+
+type LiveCoachStateItem = {
+  id?: number;
+  question?: string;
+  how_to_ask?: string;
+  status?: string;
+  status_reason?: string;
+};
+
+type LiveCoachOperation = {
+  op?: string;
+  id?: number;
+  question?: string;
+  reason?: string;
+  new_status?: string;
+};
+
+type LiveCoachPayload = {
+  heartbeat_id?: number;
+  pool_a?: {
+    items?: LiveCoachItem[];
+    callback_to_pool_b?: {
+      ref_id?: number;
+      context?: string;
+      how_to_ask?: string;
+    } | null;
+  };
+  pool_b?: {
+    operations?: LiveCoachOperation[];
+    current_state?: LiveCoachStateItem[];
+  };
+  fallback_note?: string;
+};
+
+function parseLiveCoachPayload(content: string): LiveCoachPayload | null {
+  const cleaned = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(cleaned) as LiveCoachPayload;
+  } catch {
+    return null;
+  }
+}
+
+function getLiveCoachStatusLabel(status?: string) {
+  if (status === "starred") return "★ 升权";
+  if (status === "half_resolved") return "◐ 半解决";
+  if (status === "resolved") return "✓ 已解决";
+  return "待问";
+}
+
 const PRIMARY_ARTIFACT_CONFIG: Record<
   PrimaryArtifactKind,
   {
@@ -330,7 +418,6 @@ export function NotebookWorkspace({
   const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || null);
   const [selectedJobId, setSelectedJobId] = useState(initialJobId || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [activePrimaryKind, setActivePrimaryKind] = useState<PrimaryArtifactKind>("publish_script");
   const [selectedSkillKind, setSelectedSkillKind] = useState<ArtifactKind | null>(null);
   const [openedSkillKinds, setOpenedSkillKinds] = useState<ArtifactKind[]>([]);
   const [collapsedSkillKinds, setCollapsedSkillKinds] = useState<Partial<Record<ArtifactKind, boolean>>>({});
@@ -367,18 +454,11 @@ export function NotebookWorkspace({
   const liveDraftSyncRef = useRef<{
     inFlight: boolean;
     lastLength: number;
-    timer: number | null;
-  }>({
-    inFlight: false,
-    lastLength: 0,
-    timer: null,
-  });
-  const inspirationRefreshRef = useRef<{
-    inFlight: boolean;
     lastRequestedAt: number;
     timer: number | null;
   }>({
     inFlight: false,
+    lastLength: 0,
     lastRequestedAt: 0,
     timer: null,
   });
@@ -411,9 +491,7 @@ export function NotebookWorkspace({
   }, [jobState, projectState]);
 
   const selectedJob = jobState.find((job) => job.id === selectedJobId && job.project_id === selectedProjectId) || null;
-  const selectedJobPrimaryId = selectedJob?.id || null;
   const selectedJobPrimaryMode = selectedJob?.capture_mode || null;
-  const selectedJobPrimaryStatus = selectedJob?.status || null;
   const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
   const selectedArtifacts = useMemo(
     () =>
@@ -431,6 +509,14 @@ export function NotebookWorkspace({
   );
   const selectedPublishArtifact =
     selectedArtifacts.find((artifact) => artifact.kind === "publish_script") || null;
+  const liveEditorArtifact =
+    selectedArtifacts.find((artifact) => artifact.kind === "live_meeting_editor") || null;
+  const liveCoachArtifact =
+    selectedArtifacts.find((artifact) => artifact.kind === "live_question_coach") || null;
+  const liveCoachPayload = useMemo(
+    () => parseLiveCoachPayload(liveCoachArtifact?.content || ""),
+    [liveCoachArtifact?.content]
+  );
   const selectedTaskArtifacts = selectedArtifacts;
   const primaryArtifactsByKind = useMemo(
     () =>
@@ -462,17 +548,16 @@ export function NotebookWorkspace({
     [previewArtifact]
   );
   const transcriptContent =
-    transcript?.transcript_text ||
-    selectedJob?.live_transcript_snapshot ||
-    liveTranscriptSnapshot ||
-    "";
+    selectedJob?.capture_mode === "live"
+      ? liveTranscriptSnapshot || selectedJob.live_transcript_snapshot || transcript?.transcript_text || ""
+      : transcript?.transcript_text || selectedJob?.live_transcript_snapshot || "";
   const hasStarted = Boolean(transcriptContent.trim() || Object.values(primaryArtifactsByKind).some(Boolean));
   const hasSelectedProject = Boolean(selectedProjectId);
   const hasSelectedJob = Boolean(selectedJob?.id);
   const projectLockedReason = "\u8bf7\u5148\u521b\u5efa\u9879\u76ee";
   const activePrimaryDisplayOrder = useMemo(() => {
-    if (!selectedJobPrimaryMode) return ["inspiration_questions", "quick_summary"] as PrimaryArtifactKind[];
-    if (selectedJobPrimaryMode === "live") return ["inspiration_questions", "quick_summary"] as PrimaryArtifactKind[];
+    if (!selectedJobPrimaryMode) return ["quick_summary"] as PrimaryArtifactKind[];
+    if (selectedJobPrimaryMode === "live") return ["quick_summary"] as PrimaryArtifactKind[];
     return ["quick_summary", "meeting_minutes"] as PrimaryArtifactKind[];
   }, [selectedJobPrimaryMode]);
   const pendingArtifactKindSet = new Set(pendingArtifactKinds);
@@ -757,16 +842,11 @@ export function NotebookWorkspace({
 
   useEffect(() => {
     liveDraftSyncRef.current.lastLength = 0;
+    liveDraftSyncRef.current.lastRequestedAt = 0;
     liveDraftSyncRef.current.inFlight = false;
     if (liveDraftSyncRef.current.timer !== null) {
       window.clearTimeout(liveDraftSyncRef.current.timer);
       liveDraftSyncRef.current.timer = null;
-    }
-    inspirationRefreshRef.current.lastRequestedAt = 0;
-    inspirationRefreshRef.current.inFlight = false;
-    if (inspirationRefreshRef.current.timer !== null) {
-      window.clearTimeout(inspirationRefreshRef.current.timer);
-      inspirationRefreshRef.current.timer = null;
     }
     setPendingArtifactKinds([]);
     clearPrimaryProgress();
@@ -775,13 +855,9 @@ export function NotebookWorkspace({
 
   useEffect(() => {
     const syncState = liveDraftSyncRef.current;
-    const inspirationState = inspirationRefreshRef.current;
     return () => {
       if (syncState.timer !== null) {
         window.clearTimeout(syncState.timer);
-      }
-      if (inspirationState.timer !== null) {
-        window.clearTimeout(inspirationState.timer);
       }
     };
   }, []);
@@ -834,12 +910,18 @@ export function NotebookWorkspace({
     }
 
     const transcriptText = liveTranscriptSnapshot.trim();
-    if (transcriptText.length < 80) {
+    if (transcriptText.length < 160) {
       return;
     }
 
     const syncState = liveDraftSyncRef.current;
-    if (syncState.inFlight || transcriptText.length - syncState.lastLength < 80) {
+    const deltaLength = transcriptText.length - syncState.lastLength;
+    const elapsedSinceLastRequest = Date.now() - syncState.lastRequestedAt;
+    const shouldRunFirstSegment = syncState.lastLength === 0 && transcriptText.length >= 160;
+    const shouldRunBySize = deltaLength >= 700;
+    const shouldRunByTime = deltaLength >= 160 && elapsedSinceLastRequest >= 60000;
+
+    if (syncState.inFlight || (!shouldRunFirstSegment && !shouldRunBySize && !shouldRunByTime)) {
       return;
     }
 
@@ -850,7 +932,8 @@ export function NotebookWorkspace({
     syncState.timer = window.setTimeout(() => {
       syncState.timer = null;
       syncState.inFlight = true;
-      setPendingArtifactKinds((prev) => Array.from(new Set([...prev, "publish_script", "quick_summary"])));
+      syncState.lastRequestedAt = Date.now();
+      setPendingArtifactKinds((prev) => Array.from(new Set([...prev, "live_meeting_editor", "live_question_coach"])));
 
       void (async () => {
         const res = await fetch(`/api/jobs/${selectedJob.id}/live`, {
@@ -874,7 +957,7 @@ export function NotebookWorkspace({
       })().finally(() => {
         syncState.inFlight = false;
         setPendingArtifactKinds((prev) =>
-          prev.filter((kind) => !["publish_script", "quick_summary"].includes(kind))
+          prev.filter((kind) => !["live_meeting_editor", "live_question_coach"].includes(kind))
         );
       });
     }, 1200);
@@ -886,84 +969,6 @@ export function NotebookWorkspace({
       }
     };
   }, [liveCaptureStatus, liveTranscriptSnapshot, selectedJob?.capture_mode, selectedJob?.id, selectedJob?.status]);
-
-  useEffect(() => {
-    if (selectedJob?.capture_mode !== "live" || selectedJob.status === "completed") {
-      return;
-    }
-
-    if (liveCaptureStatus.includes("\u6b63\u5728\u6574\u7406\u6700\u7ec8\u6587\u7a3f")) {
-      return;
-    }
-
-    const transcriptText = liveTranscriptSnapshot.trim();
-    if (transcriptText.length < 120) {
-      return;
-    }
-
-    const inspirationState = inspirationRefreshRef.current;
-    if (inspirationState.inFlight) {
-      return;
-    }
-
-    const existingInspiration = selectedTaskArtifacts.find((artifact) => artifact.kind === "inspiration_questions");
-    const isFirstRound = !existingInspiration;
-    const elapsed = Date.now() - inspirationState.lastRequestedAt;
-    const intervalMs = 60000; // 滚动更新间隔：60秒
-
-    // 首轮逻辑：使用 debounce，停顿 800ms 生成
-    if (isFirstRound) {
-      if (inspirationState.timer !== null) {
-        window.clearTimeout(inspirationState.timer);
-      }
-      inspirationState.timer = window.setTimeout(() => {
-        inspirationState.timer = null;
-        inspirationState.inFlight = true;
-        inspirationState.lastRequestedAt = Date.now();
-        setPendingArtifactKinds((prev) => Array.from(new Set([...prev, "inspiration_questions"])));
-
-        void requestArtifact("inspiration_questions", transcriptText)
-          .then((artifact) => {
-            if (artifact) setStudioFeedback(`灵感追问已首次生成 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
-          })
-          .finally(() => {
-            inspirationState.inFlight = false;
-          });
-      }, 800);
-
-      return () => {
-        if (inspirationState.timer !== null) {
-          window.clearTimeout(inspirationState.timer);
-          inspirationState.timer = null;
-        }
-      };
-    }
-
-    // 后续滚动更新逻辑：如果自上次请求超过 60s，且当前说话内容触发了组件渲染，立即触发更新
-    if (elapsed >= intervalMs) {
-      if (inspirationState.timer !== null) {
-        window.clearTimeout(inspirationState.timer);
-      }
-      inspirationState.timer = window.setTimeout(() => {
-        inspirationState.timer = null;
-        inspirationState.inFlight = true;
-        inspirationState.lastRequestedAt = Date.now();
-        setPendingArtifactKinds((prev) => Array.from(new Set([...prev, "inspiration_questions", "quick_summary", "meeting_minutes"])));
-
-        Promise.all([
-          requestArtifact("inspiration_questions", transcriptText),
-          requestArtifact("quick_summary", transcriptText),
-          requestArtifact("meeting_minutes", transcriptText),
-        ])
-          .then(() => {
-            setStudioFeedback(`智能分析已滚动刷新 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`);
-          })
-          .finally(() => {
-            inspirationState.inFlight = false;
-          });
-      }, 0);
-    }
-  }, [liveCaptureStatus, liveTranscriptSnapshot, requestArtifact, selectedJob?.capture_mode, selectedJob?.id, selectedJob?.status, selectedTaskArtifacts]);
 
   useEffect(() => {
     const projectJobs = selectedProjectId ? jobsByProject.get(selectedProjectId) || [] : [];
@@ -1001,16 +1006,6 @@ export function NotebookWorkspace({
       setCenterSection("tasks");
     }
   }, [parsedPublishArtifact]);
-
-  useEffect(() => {
-    if (!selectedJobPrimaryId) {
-      setActivePrimaryKind("publish_script");
-      return;
-    }
-
-    const isLive = selectedJobPrimaryMode === "live" && selectedJobPrimaryStatus !== "completed";
-    setActivePrimaryKind(isLive ? "quick_summary" : "publish_script");
-  }, [selectedJobPrimaryId, selectedJobPrimaryMode, selectedJobPrimaryStatus]);
 
   async function createProject() {
     if (!newProjectTitle.trim()) {
@@ -1419,7 +1414,7 @@ export function NotebookWorkspace({
       setStudioFeedback("\u4e3b\u7ed3\u679c\u5df2\u5b9a\u7a3f");
     }
 
-    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind)));
+    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind) && !["live_meeting_editor", "live_question_coach"].includes(kind)));
     clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
     setLiveTranscriptSnapshot(payload.transcriptText);
     setLiveCaptureStatus(payload.statusText);
@@ -1430,7 +1425,9 @@ export function NotebookWorkspace({
       return;
     }
 
-    setPendingArtifactKinds((prev) => Array.from(new Set([...prev, ...PRIMARY_ARTIFACT_KINDS])));
+    setPendingArtifactKinds((prev) =>
+      Array.from(new Set([...prev, ...PRIMARY_ARTIFACT_KINDS, "live_meeting_editor", "live_question_coach"]))
+    );
     startPrimaryProgress([...PRIMARY_ARTIFACT_KINDS], "finalizing");
     setCenterSection("tasks");
     setStudioFeedback("系统正在后台生成快摘与纪要。您可以随时切换查阅其他项目。");
@@ -1441,7 +1438,7 @@ export function NotebookWorkspace({
       return;
     }
 
-    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind)));
+    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind) && !["live_meeting_editor", "live_question_coach"].includes(kind)));
     clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
     setStudioFeedback(payload.statusText);
   }
@@ -1978,6 +1975,171 @@ export function NotebookWorkspace({
     );
   }
 
+  function renderLiveEditorPanel() {
+    const isRefreshing = pendingArtifactKindSet.has("live_meeting_editor");
+    const editorContent = getLiveEditorPolishedText(liveEditorArtifact?.content || "");
+    const tailContent = getLiveEditorTailText(liveEditorArtifact?.content || "");
+    const rawTranscript = transcriptContent.trim();
+    const displayContent = editorContent || (selectedJob?.status === "completed" ? rawTranscript : "");
+
+    return (
+      <section className="workspace-task-card workspace-live-editor-card">
+        <header className="workspace-task-card-head">
+          <div className="workspace-card-title-row">
+            {isRefreshing ? (
+              <Loader2 className="workspace-card-title-icon animate-spin" />
+            ) : (
+              <NotebookText className="workspace-card-title-icon" />
+            )}
+            <div className="min-w-0">
+              <h4 className="workspace-heading text-[1rem]">Live Editor</h4>
+              <p className="workspace-muted-copy">
+                {isRefreshing ? "正在按 live-meeting-editor 整理" : liveEditorArtifact ? "实时整理稿" : liveCaptureStatus}
+              </p>
+            </div>
+          </div>
+          <span className="workspace-live-editor-status">
+            {rawTranscript ? `${rawTranscript.length} 字 ASR` : "待接入 ASR"}
+          </span>
+        </header>
+
+        <div className="workspace-live-editor-body">
+          {displayContent ? (
+            <div className="workspace-live-editor-copy whitespace-pre-wrap">{displayContent}</div>
+          ) : (
+            <div className="workspace-live-empty-state">
+              <AudioLines className="h-5 w-5" />
+              <span>开始捕获后，会议内容会分段流式整理到这里。</span>
+            </div>
+          )}
+        </div>
+
+        {tailContent ? (
+          <div className="workspace-live-tail">
+            <span>tail</span>
+            <p>{tailContent}</p>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="workspace-live-raw-toggle"
+          onClick={() => setIsLiveTranscriptExpanded((prev) => !prev)}
+          disabled={!rawTranscript}
+        >
+          <ChevronDown className={`h-4 w-4 transition-transform ${isLiveTranscriptExpanded ? "-rotate-180" : ""}`} />
+          <span>{isLiveTranscriptExpanded ? "收起原始 ASR" : "查看原始 ASR"}</span>
+        </button>
+
+        {isLiveTranscriptExpanded && rawTranscript ? (
+          <div className="workspace-live-raw-box whitespace-pre-wrap">{rawTranscript}</div>
+        ) : null}
+      </section>
+    );
+  }
+
+  function renderLiveQuestionCoach() {
+    const isRefreshing = pendingArtifactKindSet.has("live_question_coach");
+    const poolAItems = liveCoachPayload?.pool_a?.items || [];
+    const poolBItems = liveCoachPayload?.pool_b?.current_state || [];
+    const operations = liveCoachPayload?.pool_b?.operations || [];
+    const callback = liveCoachPayload?.pool_a?.callback_to_pool_b || null;
+
+    if (rightRailCollapsed) {
+      return (
+        <div className="workspace-right-rail-collapsed-body">
+          {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin text-orange-500" /> : <Lightbulb className="h-4 w-4 text-orange-500" />}
+          <span className="workspace-right-rail-collapsed-label">Coach</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="workspace-live-coach">
+        <div className="workspace-live-coach-head">
+          <div>
+            <p className="workspace-kicker">Live Question Coach</p>
+            <h3 className="workspace-heading text-[1rem]">实时提问搭档</h3>
+          </div>
+          <div className="workspace-live-coach-heartbeat">
+            {isRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            <span>#{liveCoachPayload?.heartbeat_id ?? 0}</span>
+          </div>
+        </div>
+
+        <section className="workspace-live-coach-section">
+          <div className="workspace-live-coach-section-title">
+            <AudioLines className="h-4 w-4" />
+            <span>本段追问</span>
+          </div>
+          {poolAItems.length ? (
+            <div className="workspace-live-coach-stack">
+              {poolAItems.map((item, index) => (
+                <article className="workspace-live-coach-a-item" key={`${item.title || "coach"}-${index}`}>
+                  <h4>{item.title || `追问 ${index + 1}`}</h4>
+                  {item.narrative ? <p>{item.narrative}</p> : null}
+                  {item.follow_up ? <blockquote>{item.follow_up}</blockquote> : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="workspace-live-coach-empty">
+              {liveCoachPayload?.fallback_note || "在听。当前片段还没有值得打断会议节奏的追问。"}
+            </div>
+          )}
+
+          {callback?.how_to_ask ? (
+            <div className="workspace-live-coach-callback">
+              <span>顺势勾回池 B{callback.ref_id ? ` #${callback.ref_id}` : ""}</span>
+              {callback.context ? <p>{callback.context}</p> : null}
+              <blockquote>{callback.how_to_ask}</blockquote>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="workspace-live-coach-section workspace-live-coach-section-fill">
+          <div className="workspace-live-coach-section-title">
+            <ClipboardList className="h-4 w-4" />
+            <span>待问清单</span>
+            <em>{poolBItems.length} 条</em>
+          </div>
+
+          {operations.length ? (
+            <div className="workspace-live-coach-ops">
+              {operations.slice(0, 3).map((operation, index) => (
+                <span key={`${operation.op || "op"}-${operation.id || index}`}>
+                  {operation.op || "update"}{operation.id ? ` #${operation.id}` : ""}{operation.reason ? ` · ${operation.reason}` : ""}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {poolBItems.length ? (
+            <div className="workspace-live-coach-b-list">
+              {poolBItems.map((item, index) => (
+                <article className={`workspace-live-coach-b-item workspace-live-coach-b-${item.status || "pending"}`} key={`${item.id || index}-${item.question || ""}`}>
+                  <div className="workspace-live-coach-b-top">
+                    <span>#{item.id || index + 1}</span>
+                    <strong>{item.question || "待问问题"}</strong>
+                  </div>
+                  {item.how_to_ask ? <p>{item.how_to_ask}</p> : null}
+                  <div className="workspace-live-coach-b-foot">
+                    <span>{getLiveCoachStatusLabel(item.status)}</span>
+                    {item.status_reason ? <em>{item.status_reason}</em> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="workspace-live-coach-empty">
+              还在建立会议上下文。待问清单会随实时访谈推进自动累积。
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
   function getSkillDisplay(kind: ArtifactKind) {
     if (isPrimaryArtifactKind(kind)) {
       return {
@@ -2013,7 +2175,6 @@ export function NotebookWorkspace({
     setOpenedSkillKinds((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
 
     if (isPrimary) {
-      setActivePrimaryKind(kind as PrimaryArtifactKind);
       setCenterSection("tasks");
       return;
     }
@@ -2171,11 +2332,8 @@ export function NotebookWorkspace({
 
   const activeSource = selectedSource || projectSources[0] || null;
   const displayCenterSection = centerSection === "sources" ? "sources" : "tasks";
-  const activePrimaryArtifact = primaryArtifactsByKind[activePrimaryKind];
-  const activePrimaryConfig = PRIMARY_ARTIFACT_CONFIG[activePrimaryKind];
   const isFinalizing = liveCaptureStatus.includes("整理最终文稿") || liveCaptureStatus.includes("正在定稿");
   const isLiveRunning = selectedJob?.capture_mode === "live" && selectedJob?.status !== "completed" && !isFinalizing;
-  const shouldDockActivePrimaryBelowRecorder = displayCenterSection === "tasks" && isLiveRunning;
 
   function renderActivePrimaryTaskPanels() {
     const isLive = selectedJob?.capture_mode === "live";
@@ -2217,48 +2375,12 @@ export function NotebookWorkspace({
     );
   }
 
-  function renderLiveTranscriptFocusCard() {
-    return (
-      <div className="workspace-center-primary-card">
-        <section className="workspace-task-card workspace-live-focus-card">
-          <header 
-            className="workspace-task-card-head cursor-pointer select-none"
-            onClick={() => setIsLiveTranscriptExpanded((prev) => !prev)}
-          >
-            <div className="workspace-card-title-row">
-              <NotebookText className="workspace-card-title-icon" />
-              <div className="min-w-0">
-                <h4 className="workspace-heading text-[1rem]">{"\u5b9e\u65f6\u8f6c\u5199"}</h4>
-                <p className="workspace-muted-copy">
-                  {selectedJob?.status === "completed" ? "\u8bbf\u8c08\u5df2\u7ed3\u675f\uff0c\u4ee5\u4e0b\u4e3a\u6574\u7406\u540e\u7684\u5b8c\u6574\u8f6c\u5199" : liveCaptureStatus}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="workspace-inline-action"
-                aria-label={isLiveTranscriptExpanded ? "收起" : "展开"}
-              >
-                <ChevronDown className={`h-4 w-4 transition-transform ${isLiveTranscriptExpanded ? "-rotate-180" : ""}`} />
-              </button>
-            </div>
-          </header>
-          {isLiveTranscriptExpanded ? (
-            <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-              {transcriptContent || "\u5f00\u59cb\u540e\u663e\u793a\u8f6c\u5199\u3002"}
-            </div>
-          ) : null}
-        </section>
-      </div>
-    );
-  }
   const centerSectionContent =
     displayCenterSection === "tasks" ? (
       <div className="workspace-center-section-body">
         {hasSelectedJob ? (
           <div className="workspace-task-groups">
-            {selectedJob?.capture_mode === "live" ? renderLiveTranscriptFocusCard() : null}
+            {selectedJob?.capture_mode === "live" ? renderLiveEditorPanel() : null}
             {(!isLiveRunning || isFinalizing || selectedJob?.capture_mode !== "live") ? renderActivePrimaryTaskPanels() : null}
           </div>
         ) : (
@@ -2616,7 +2738,7 @@ export function NotebookWorkspace({
                 {renderCenterEmptyState("project")}
               </div>
             ) : (
-              <div className="flex-1 flex flex-col w-full max-w-[880px] mx-auto min-h-0 bg-transparent">
+                <div className="flex-1 flex flex-col w-full max-w-[980px] mx-auto min-h-0 bg-transparent">
                 <div className="flex-shrink-0 flex flex-col gap-2 mb-4">
                   <div className="workspace-center-board-title w-full">
                     {displayCenterSection === "sources" ? (
@@ -2692,7 +2814,7 @@ export function NotebookWorkspace({
                 </div>
 
                 {hasSelectedJob && selectedJob?.capture_mode === "live" && (
-                  <div className="flex-shrink-0 mb-4 pb-4 border-b border-slate-100 dark:border-white/5">
+                  <div className="workspace-live-media-bar flex-shrink-0 mb-4 pb-4 border-b border-slate-100 dark:border-white/5">
                     <LiveInterviewPanel
                       key={selectedProjectId || "workspace-live"}
                       onTranscriptChange={setLiveTranscriptSnapshot}
@@ -2721,7 +2843,11 @@ export function NotebookWorkspace({
           {!hasSelectedProject ? (
             <>
               <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100/10 dark:border-white/5 mb-2">
-                {!rightRailCollapsed ? <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">skill</span> : <span />}
+                {!rightRailCollapsed ? (
+                  <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">
+                    {selectedJob?.capture_mode === "live" ? "question coach" : "skill"}
+                  </span>
+                ) : <span />}
                 <button
                   type="button"
                   className="workspace-inline-action transition-opacity hover:opacity-100 opacity-60"
@@ -2745,7 +2871,11 @@ export function NotebookWorkspace({
           ) : (
             <>
               <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100/10 dark:border-white/5 mb-2">
-                {!rightRailCollapsed ? <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">skill</span> : <span />}
+                {!rightRailCollapsed ? (
+                  <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">
+                    {selectedJob?.capture_mode === "live" ? "question coach" : "skill"}
+                  </span>
+                ) : <span />}
                 <button
                   type="button"
                   className="workspace-inline-action transition-opacity hover:opacity-100 opacity-60"
@@ -2758,40 +2888,52 @@ export function NotebookWorkspace({
               </div>
               {rightRailCollapsed ? (
                 <div className="workspace-right-rail-collapsed-body mt-2 flex flex-col gap-3 overflow-y-auto sidebar-scroll pb-4 flex-1 items-center">
-                  {activePrimaryDisplayOrder.map((kind) =>
-                    renderStudioButton(kind, {
-                      title: getArtifactLabel(kind),
-                      icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
-                      isPrimary: true,
-                    })
-                  )}
-                  {SECONDARY_SKILL_ITEMS.map((item) =>
-                    renderStudioButton(item.kind, {
-                      title: item.title,
-                      icon: item.icon,
-                      accent: item.accent,
-                    })
+                  {selectedJob?.capture_mode === "live" ? (
+                    renderLiveQuestionCoach()
+                  ) : (
+                    <>
+                      {activePrimaryDisplayOrder.map((kind) =>
+                        renderStudioButton(kind, {
+                          title: getArtifactLabel(kind),
+                          icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
+                          isPrimary: true,
+                        })
+                      )}
+                      {SECONDARY_SKILL_ITEMS.map((item) =>
+                        renderStudioButton(item.kind, {
+                          title: item.title,
+                          icon: item.icon,
+                          accent: item.accent,
+                        })
+                      )}
+                    </>
                   )}
                 </div>
               ) : (
                 <div className="workspace-right-stream flex-1 flex flex-col overflow-y-auto pr-1 pb-4 sidebar-scroll">
-                  <div className="grid grid-cols-2 gap-3 mb-6">
-                    {activePrimaryDisplayOrder.map((kind) =>
-                      renderStudioButton(kind, {
-                        title: getArtifactLabel(kind),
-                        icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
-                        isPrimary: true,
-                      })
-                    )}
-                    {SECONDARY_SKILL_ITEMS.map((item) =>
-                      renderStudioButton(item.kind, {
-                        title: item.title,
-                        icon: item.icon,
-                        accent: item.accent,
-                      })
-                    )}
-                  </div>
-                  {renderSkillOutputCards()}
+                  {selectedJob?.capture_mode === "live" ? (
+                    renderLiveQuestionCoach()
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 mb-6">
+                        {activePrimaryDisplayOrder.map((kind) =>
+                          renderStudioButton(kind, {
+                            title: getArtifactLabel(kind),
+                            icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
+                            isPrimary: true,
+                          })
+                        )}
+                        {SECONDARY_SKILL_ITEMS.map((item) =>
+                          renderStudioButton(item.kind, {
+                            title: item.title,
+                            icon: item.icon,
+                            accent: item.accent,
+                          })
+                        )}
+                      </div>
+                      {renderSkillOutputCards()}
+                    </>
+                  )}
                 </div>
               )}
             </>

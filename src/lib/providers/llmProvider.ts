@@ -21,6 +21,18 @@ type ArtifactInput = {
   interviewerName?: string;
   publishScriptText?: string;
   isLiveDraft?: boolean;
+  statusText?: string;
+  liveEditorState?: {
+    previousTail?: string;
+    lastTwoLines?: string;
+    terminology?: string;
+    people?: string;
+    briefing?: string;
+  };
+  liveCoachState?: {
+    heartbeatId?: number;
+    previousState?: string;
+  };
 };
 
 function renderPrompt(template: string, vars: Record<string, string>) {
@@ -258,6 +270,8 @@ async function callLlm(prompt: string, label: string) {
 
 function getPromptFile(kind: ArtifactKind) {
   const files: Record<ArtifactKind, string> = {
+    live_meeting_editor: "publish_script.md",
+    live_question_coach: "inspiration_questions.md",
     publish_script: "publish_script.md",
     roadshow_transcript: "publish_script.md",
     meeting_minutes: "publish_script.md",
@@ -276,11 +290,13 @@ function getPromptFile(kind: ArtifactKind) {
 }
 
 function isSkillBackedArtifact(kind: ArtifactKind) {
-  return ["publish_script", "roadshow_transcript", "meeting_minutes"].includes(kind);
+  return ["publish_script", "roadshow_transcript", "meeting_minutes", "live_meeting_editor", "live_question_coach"].includes(kind);
 }
 
 async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) {
   const skillDirMap: Record<ArtifactKind, string> = {
+    live_meeting_editor: "03-live-meeting-editor",
+    live_question_coach: "04-live-question-coach",
     publish_script: "00-interview-editor",
     roadshow_transcript: "01-roadshow-transcript",
     meeting_minutes: "02-meeting-minutes",
@@ -330,6 +346,77 @@ async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) 
       "",
       "[输出要求]",
       "直接输出结果正文，不要解释执行过程。",
+    ].join("\n");
+  }
+
+  if (kind === "live_meeting_editor") {
+    const state = input.liveEditorState || {};
+    return [
+      "你正在执行 KEMO 的实时整理 skill。严格遵循以下 SKILL.md。",
+      skillText,
+      "",
+      "<instruction>process</instruction>",
+      "",
+      "<context>",
+      "<briefing>",
+      state.briefing || [
+        input.title ? `会议标题：${input.title}` : null,
+        input.interviewerName ? `采访者：${input.interviewerName}` : null,
+        input.guestName ? `受访者：${input.guestName}` : null,
+        input.sourceContext?.trim() ? `会前材料摘要：\n${input.sourceContext.trim().slice(0, 6000)}` : null,
+      ].filter(Boolean).join("\n"),
+      "</briefing>",
+      "<terminology>",
+      state.terminology || input.glossaryTerms.join("\n"),
+      "</terminology>",
+      "<people>",
+      state.people || [
+        input.interviewerName ? `guest|${input.interviewerName}|采访者|` : null,
+        input.guestName ? `host|${input.guestName}|受访者|` : null,
+      ].filter(Boolean).join("\n"),
+      "</people>",
+      "<previous_tail>",
+      state.previousTail || "",
+      "</previous_tail>",
+      "<last_two_lines>",
+      state.lastTwoLines || "",
+      "</last_two_lines>",
+      "</context>",
+      "",
+      "<new_transcript>",
+      input.transcriptText,
+      "</new_transcript>",
+      "",
+      "只输出 SKILL.md 规定的 XML，不要额外解释。",
+    ].join("\n");
+  }
+
+  if (kind === "live_question_coach") {
+    const state = input.liveCoachState || {};
+    return [
+      "你正在执行 KEMO 的实时提问搭档 skill。严格遵循以下 SKILL.md。",
+      skillText,
+      "",
+      "output_mode: json",
+      `heartbeat_id: ${Math.max(0, state.heartbeatId ?? 0)}`,
+      "",
+      "<meeting_context>",
+      input.title ? `会议标题：${input.title}` : "",
+      input.interviewerName ? `采访者：${input.interviewerName}` : "",
+      input.guestName ? `受访者：${input.guestName}` : "",
+      input.statusText ? `当前状态：${input.statusText}` : "",
+      input.sourceContext?.trim() ? `会前材料/项目来源：\n${input.sourceContext.trim().slice(0, 8000)}` : "",
+      "</meeting_context>",
+      "",
+      "<previous_pool_state>",
+      state.previousState || "",
+      "</previous_pool_state>",
+      "",
+      "<new_asr_segment>",
+      input.transcriptText,
+      "</new_asr_segment>",
+      "",
+      "只输出单个 JSON 对象本体。不要 markdown 代码块，不要解释文字。",
     ].join("\n");
   }
 
