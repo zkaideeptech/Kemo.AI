@@ -11,13 +11,28 @@ const handleI18nRouting = createMiddleware({
 
 export default async function middleware(request: NextRequest) {
   // Update Supabase session to prevent auth expiration (this creates a valid response)
-  const supabaseResponse = await updateSession(request);
+  const { response: supabaseResponse, user } = await updateSession(request);
 
   // Apply next-intl routing rules
-  const isApi = request.nextUrl.pathname.startsWith('/api');
+  const pathname = request.nextUrl.pathname;
+  const isApi = pathname.startsWith("/api");
   if (isApi) {
     // API routes do not use next-intl.
     return supabaseResponse;
+  }
+
+  const appRouteMatch = pathname.match(new RegExp(`^/(${locales.join("|")})/app(?:/|$)`));
+  if (appRouteMatch && !user) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = `/${appRouteMatch[1]}/login`;
+    loginUrl.search = "";
+
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+
+    return redirectResponse;
   }
 
   const i18nResponse = handleI18nRouting(request);

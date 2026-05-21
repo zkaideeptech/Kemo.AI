@@ -22,9 +22,19 @@ type LiveDraftArtifactKind =
 
 const DEFAULT_ASR_POLL_INTERVAL_MS = 5000;
 const DEFAULT_ASR_POLL_MAX_ATTEMPTS = 120;
+const LIVE_DRAFT_TIMEOUT_MS = Number(process.env.LIVE_DRAFT_TIMEOUT_MS || "12000");
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
 }
 
 async function pollUntilCompleted(vendorTaskId: string) {
@@ -498,79 +508,85 @@ export async function POST(
   const previousCoachContent = existingLiveCoach?.content || "";
   let liveWarning: string | null = null;
 
-  try {
-    const liveEditorText = await generateArtifactText("live_meeting_editor", {
-      transcriptText: liveSegmentText,
-      glossaryTerms,
-      uncertainTerms: [],
-      sourceContext,
-      clarificationContext,
-      title: ensuredJob.title || "",
-      guestName: ensuredJob.guest_name || "",
-      interviewerName: ensuredJob.interviewer_name || "",
-      isLiveDraft: true,
-      statusText,
-      liveEditorState: {
-        previousTail: getTaggedXmlSection(previousEditorContent, "unprocessed_tail"),
-        lastTwoLines: getLastNonEmptyLines(getTaggedXmlSection(previousEditorContent, "polished_segment")),
-        terminology: getTaggedXmlSection(previousEditorContent, "new_terminology") || glossaryTerms.join("\n"),
-        people: getTaggedXmlSection(previousEditorContent, "new_people"),
-      },
-    });
+  const liveEditorTask = (async () => {
+    try {
+      const liveEditorText = await withTimeout(
+        generateArtifactText("live_meeting_editor", {
+          transcriptText: liveSegmentText,
+          glossaryTerms,
+          uncertainTerms: [],
+          sourceContext,
+          clarificationContext,
+          title: ensuredJob.title || "",
+          guestName: ensuredJob.guest_name || "",
+          interviewerName: ensuredJob.interviewer_name || "",
+          isLiveDraft: true,
+          statusText,
+          liveEditorState: {
+            previousTail: getTaggedXmlSection(previousEditorContent, "unprocessed_tail"),
+            lastTwoLines: getLastNonEmptyLines(getTaggedXmlSection(previousEditorContent, "polished_segment")),
+            terminology: getTaggedXmlSection(previousEditorContent, "new_terminology") || glossaryTerms.join("\n"),
+            people: getTaggedXmlSection(previousEditorContent, "new_people"),
+          },
+        }),
+        LIVE_DRAFT_TIMEOUT_MS,
+        "live_meeting_editor"
+      );
 
-    draftArtifacts.push(
-      await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, liveEditorText), {
+      return await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, liveEditorText), {
         source_length: String(finalTranscriptText.length),
         previous_source_length: String(previousSourceLength),
         skill: "live-meeting-editor",
-      })
-    );
-  } catch (error) {
-    liveWarning = getLiveDraftWarning(error);
-    draftArtifacts.push(
-      await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, buildFallbackLiveEditorDraft(liveSegmentText)), {
+      });
+    } catch (error) {
+      liveWarning = liveWarning || getLiveDraftWarning(error);
+      return await upsertDraftArtifact("live_meeting_editor", appendToLiveDraft(previousEditorContent, buildFallbackLiveEditorDraft(liveSegmentText)), {
         source_length: String(finalTranscriptText.length),
         previous_source_length: String(previousSourceLength),
         skill: "live-meeting-editor",
         fallback: "true",
-      })
-    );
-  }
+      });
+    }
+  })();
 
-  try {
-    const liveCoachText = await generateArtifactText("live_question_coach", {
-      transcriptText: liveSegmentText,
-      glossaryTerms,
-      uncertainTerms: [],
-      sourceContext,
-      clarificationContext,
-      title: ensuredJob.title || "",
-      guestName: ensuredJob.guest_name || "",
-      interviewerName: ensuredJob.interviewer_name || "",
-      isLiveDraft: true,
-      statusText,
-      liveCoachState: {
-        heartbeatId: getNextCoachHeartbeatId(previousCoachContent),
-        previousState: previousCoachContent,
-      },
-    });
+  const liveCoachTask = (async () => {
+    try {
+      const liveCoachText = await withTimeout(
+        generateArtifactText("live_question_coach", {
+          transcriptText: liveSegmentText,
+          glossaryTerms,
+          uncertainTerms: [],
+          sourceContext,
+          clarificationContext,
+          title: ensuredJob.title || "",
+          guestName: ensuredJob.guest_name || "",
+          interviewerName: ensuredJob.interviewer_name || "",
+          isLiveDraft: true,
+          statusText,
+          liveCoachState: {
+            heartbeatId: getNextCoachHeartbeatId(previousCoachContent),
+            previousState: previousCoachContent,
+          },
+        }),
+        LIVE_DRAFT_TIMEOUT_MS,
+        "live_question_coach"
+      );
 
-    draftArtifacts.push(
-      await upsertDraftArtifact("live_question_coach", stripJsonCodeFence(liveCoachText), {
+      return await upsertDraftArtifact("live_question_coach", stripJsonCodeFence(liveCoachText), {
         source_length: String(finalTranscriptText.length),
         skill: "live-question-coach",
-      })
-    );
-  } catch (error) {
-    liveWarning = liveWarning || getLiveDraftWarning(error);
-    draftArtifacts.push(
-      await upsertDraftArtifact("live_question_coach", buildFallbackLiveCoachDraft(previousCoachContent, liveSegmentText), {
+      });
+    } catch (error) {
+      liveWarning = liveWarning || getLiveDraftWarning(error);
+      return await upsertDraftArtifact("live_question_coach", buildFallbackLiveCoachDraft(previousCoachContent, liveSegmentText), {
         source_length: String(finalTranscriptText.length),
         skill: "live-question-coach",
         fallback: "true",
-      })
-    );
-  }
+      });
+    }
+  })();
+
+  draftArtifacts.push(...(await Promise.all([liveEditorTask, liveCoachTask])));
 
   if (!finalize) {
     return jsonOk({

@@ -14,7 +14,7 @@ export async function updateSession(request: NextRequest) {
     "";
 
   if (!supabaseUrl || !supabasePublicKey) {
-    return supabaseResponse;
+    return { response: supabaseResponse, user: null };
   }
 
   const supabase = createServerClient<Database>(supabaseUrl, supabasePublicKey, {
@@ -35,7 +35,9 @@ export async function updateSession(request: NextRequest) {
   });
 
   // IMPORTANT: fetching the user refreshes the session!
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  return supabaseResponse;
+  return { response: supabaseResponse, user };
 }

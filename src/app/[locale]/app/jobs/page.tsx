@@ -8,6 +8,7 @@ import {
   type JobRow,
   type ProjectRow,
   type SourceRow,
+  type TermOccurrenceRow,
   type TranscriptRow,
   type WorkspaceArtifact,
 } from "@/lib/workspace";
@@ -27,7 +28,16 @@ export default async function JobsPage({
   const admin = createSupabaseAdminClient();
   const plan = await getUserPlan(supabase, user.id);
 
-  const [{ data: projects }, { data: jobs }, { data: transcripts }, { data: memos }, { data: artifacts }, { data: favorites }, { data: sources }] =
+  const [
+    { data: projects },
+    { data: jobs },
+    { data: transcripts },
+    { data: memos },
+    { data: artifacts },
+    { data: favorites },
+    { data: sources },
+    { data: termOccurrences },
+  ] =
     await Promise.all([
       supabase.from("projects").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
       supabase.from("jobs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -36,6 +46,7 @@ export default async function JobsPage({
       supabase.from("artifacts").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       admin.from("favorites").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("sources").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+      supabase.from("term_occurrences").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     ]);
 
   const safeProjectsTyped = (projects || []) as ProjectRow[];
@@ -52,6 +63,7 @@ export default async function JobsPage({
   const safeArtifacts = (artifacts || []) as ArtifactRow[];
   const safeFavorites = (favorites || []) as FavoriteRow[];
   const safeSources = (sources || []) as SourceRow[];
+  const safeTermOccurrences = (termOccurrences || []) as TermOccurrenceRow[];
   const requestedJobId =
     typeof query.job === "string" && safeJobs.some((job) => job.id === query.job) ? query.job : null;
   const openNewInterview = query.new === "1";
@@ -86,6 +98,7 @@ export default async function JobsPage({
       artifacts={[...(safeArtifacts as WorkspaceArtifact[]), ...legacyArtifacts]}
       favorites={safeFavorites}
       sources={safeSources}
+      termOccurrences={safeTermOccurrences}
       initialJobId={requestedJobId}
       initialNewInterviewOpen={openNewInterview}
     />

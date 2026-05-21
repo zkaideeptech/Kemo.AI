@@ -25,7 +25,13 @@
   "register": {
     "title": "Sign up",
     "subtitle": "Create an account to get started",
-    "confirmPassword": "Confirm password"
+    "confirmPassword": "Confirm password",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "passwordPlaceholder": "At least 6 characters",
+    "confirmPasswordPlaceholder": "Enter password again",
+    "signingUp": "Signing up...",
+    "hasAccount": "Already have an account?"
   },
   "new": {
     "title": "Create a job",
@@ -85,6 +91,319 @@
   "plan": {
     "free": "Free",
     "pro": "Pro"
+  },
+  "settings": {
+    "title": "Account center",
+    "subtitle": "Manage your dashboard, profile, security, and preferences.",
+    "profileUpdated": "Profile updated",
+    "updateFailed": "Update failed",
+    "avatarUploadFailed": "Avatar upload failed",
+    "passwordUpdated": "Password updated",
+    "passwordUpdateFailed": "Password update failed",
+    "confirmSignOut": "Sign out of this device?",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "profile": "Profile",
+      "security": "Security",
+      "appearance": "Appearance"
+    },
+    "stats": {
+      "minutes": "Transcription minutes this month",
+      "files": "Transcription jobs this month",
+      "totalJobs": "Total recordings"
+    },
+    "units": {
+      "minutes": "min",
+      "items": "items"
+    },
+    "overview": {
+      "title": "Account status",
+      "description": "Current plan and quota details",
+      "fileLimit": "Single-file upload limit"
+    },
+    "profile": {
+      "title": "Profile",
+      "description": "Update your display information and avatar",
+      "avatar": "Account avatar",
+      "avatarHint": "Recommended 256x256px. Supports JPG, PNG, and WebP up to 5MB.",
+      "emailLocked": "Login email cannot be changed here yet.",
+      "displayName": "Display name",
+      "displayNamePlaceholder": "Enter the name you want to show"
+    },
+    "security": {
+      "passwordTitle": "Change password",
+      "passwordDescription": "Update your account password",
+      "newPassword": "New password",
+      "confirmNewPassword": "Confirm new password",
+      "updatePassword": "Update password"
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "Account session controls",
+      "signOut": "Sign out of this device"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Switch the app color mode",
+      "theme": "Color theme",
+      "themeHint": "Follow the system setting or choose light / dark manually"
+    }
+  },
+  "workspace": {
+    "brand": {
+      "subtitle": "Research Workspace"
+    },
+    "nav": {
+      "aria": "Workspace navigation",
+      "workspace": "Workspace",
+      "live": "Live Capture",
+      "sources": "Sources",
+      "artifacts": "Artifacts",
+      "favorites": "Favorites",
+      "settings": "Settings"
+    },
+    "status": {
+      "pending": "Pending",
+      "queued": "Queued",
+      "transcribing": "Transcribing",
+      "extracting_terms": "Extracting terms",
+      "needs_review": "Needs review",
+      "summarizing": "Summarizing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "unknown": "Unknown"
+    },
+    "fallbacks": {
+      "untitledInterview": "Untitled interview",
+      "interview": "Interview",
+      "interviewRecord": "Interview record"
+    },
+    "overview": {
+      "kicker": "Workspace Overview",
+      "title": "Research Workspace",
+      "description": "Interview records, source material, and generated artifacts in one working surface."
+    },
+    "metrics": {
+      "projects": "Projects",
+      "completed": "Completed",
+      "artifacts": "Artifacts",
+      "interviews": "{count} interviews",
+      "needReview": "{count} need review",
+      "sources": "{count} sources"
+    },
+    "recent": {
+      "title": "Recent Interviews"
+    },
+    "actions": {
+      "newResearchMaterial": "New Research Material",
+      "addMaterial": "Add material",
+      "add": "Add",
+      "createOne": "Create one",
+      "deleteProject": "Delete project",
+      "rename": "Rename",
+      "favorite": "Favorite",
+      "favorited": "Favorited",
+      "delete": "Delete",
+      "queue": "Queue",
+      "queueJob": "Queue job",
+      "coreSet": "Core set",
+      "generating": "Generating",
+      "open": "Open",
+      "generate": "Generate",
+      "import": "Import",
+      "importSource": "Import source",
+      "importUrl": "Import URL",
+      "project": "Project",
+      "refresh": "Refresh",
+      "signOut": "Sign out",
+      "downloadDocx": "Download DOCX"
+    },
+    "empty": {
+      "noProjects": "No projects yet.",
+      "noProjectSelected": "No project selected",
+      "noInterviewsTitle": "No interviews in this project",
+      "noInterviewsCopy": "Upload audio, import a document, or start a live capture."
+    },
+    "context": {
+      "kicker": "Context",
+      "project": "Project",
+      "interview": "Interview",
+      "thisProject": "this project",
+      "status": "Status",
+      "sources": "Sources",
+      "artifacts": "Artifacts"
+    },
+    "plan": {
+      "kicker": "Plan",
+      "limitNote": "Single-file limit: {limit}MB. Supabase Storage is project-level."
+    },
+    "review": {
+      "blocker": "Review Blocker",
+      "pendingTerms": "{count} terms pending",
+      "reviewNow": "Review now",
+      "kicker": "Term Review",
+      "title": "Confirm extracted terminology",
+      "confirm": "Confirm terms"
+    },
+    "transcript": {
+      "kicker": "Transcript",
+      "readyTitle": "Readable record",
+      "waitingTitle": "Waiting for transcript",
+      "emptyTitle": "Transcript is not ready",
+      "emptyCopy": "Queue the job after upload, then refresh when processing completes."
+    },
+    "artifacts": {
+      "kicker": "AI Outputs",
+      "generateTitle": "Generate artifacts",
+      "explorerKicker": "Artifact Explorer",
+      "allTitle": "All Project Artifacts",
+      "generatedOutputs": "{count} generated outputs.",
+      "emptyTitle": "No artifacts yet",
+      "emptyJobCopy": "Generate an output once the transcript is ready.",
+      "emptyProjectCopy": "Select an interview with transcript text to generate outputs.",
+      "noContent": "No content.",
+      "kind": {
+        "publish_script": {
+          "label": "Publish Script",
+          "short": "Script",
+          "description": "Polished interview narrative generated from the transcript and project context."
+        },
+        "quick_summary": {
+          "label": "Quick Summary",
+          "short": "Summary",
+          "description": "Compact synthesis for catching up on the session quickly."
+        },
+        "inspiration_questions": {
+          "label": "Question Coach",
+          "short": "Questions",
+          "description": "Follow-up questions grounded in the latest transcript."
+        },
+        "live_question_coach": {
+          "label": "Question Coach",
+          "short": "Questions",
+          "description": "Follow-up questions grounded in the latest transcript."
+        },
+        "meeting_minutes": {
+          "label": "Meeting Minutes",
+          "short": "Minutes",
+          "description": "Structured minutes that can be exported as a document."
+        },
+        "roadshow_transcript": {
+          "label": "Roadshow Transcript",
+          "short": "Roadshow",
+          "description": "Clean long-form transcript prepared for presentation or sharing."
+        },
+        "ic_qa": {
+          "label": "IC Q&A",
+          "short": "IC Q&A",
+          "description": "Investor and research committee style questions and answers."
+        },
+        "wechat_article": {
+          "label": "WeChat Article",
+          "short": "Article",
+          "description": "Public-facing article draft generated from the research material."
+        }
+      }
+    },
+    "live": {
+      "ready": "Ready",
+      "kicker": "Live Meeting Mode",
+      "title": "Live research capture",
+      "badge": "Live",
+      "jobReady": "Live job ready.",
+      "jobCreated": "Live job created.",
+      "defaultTitle": "Live interview",
+      "transcriptKicker": "Live Transcript",
+      "currentCapture": "Current capture",
+      "noTranscript": "No live transcript yet",
+      "startHint": "Start capture to stream transcript text into this workspace.",
+      "questionCoach": "Question Coach",
+      "questionCoachEmpty": "Generate question coach output after a transcript exists."
+    },
+    "sources": {
+      "kicker": "Source Library",
+      "title": "Project Sources",
+      "connected": "{count} sources connected to {project}.",
+      "importedSource": "Imported source",
+      "emptyTitle": "No sources yet",
+      "emptyCopy": "Import a URL or document to ground artifact generation.",
+      "preview": "Preview",
+      "selectSource": "Select a source",
+      "noContent": "No extracted content.",
+      "helper": "Sources are used by artifact generation as project context."
+    },
+    "favorites": {
+      "kicker": "Favorites",
+      "title": "Saved research fragments",
+      "savedItems": "{count} saved items.",
+      "savedItem": "Saved item",
+      "emptyTitle": "No favorites yet",
+      "emptyCopy": "Favorite interviews or artifacts to keep them close."
+    },
+    "search": {
+      "placeholder": "Search project",
+      "selectProject": "Select a project",
+      "searching": "Searching..."
+    },
+    "projectDialog": {
+      "title": "Create Project",
+      "titleLabel": "Title",
+      "titlePlaceholder": "Q4 Research Sprint",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Optional project context",
+      "create": "Create project"
+    },
+    "captureDialog": {
+      "title": "Add Research Material",
+      "liveTitle": "Live capture",
+      "liveCopy": "Use the real-time ASR workflow.",
+      "uploadTitle": "Upload file",
+      "uploadCopy": "Audio/video becomes a job; text becomes a source.",
+      "urlTitle": "Import URL",
+      "urlCopy": "Save a web source to this project.",
+      "sourceTitle": "Source title",
+      "optional": "Optional"
+    },
+    "feedback": {
+      "projectCreated": "Project created.",
+      "projectDeleted": "Project deleted.",
+      "titleUpdated": "Title updated.",
+      "interviewDeleted": "Interview deleted.",
+      "jobQueued": "Job queued.",
+      "artifactGenerating": "{artifact} is generating.",
+      "artifactUpdated": "{artifact} updated.",
+      "termsConfirmed": "Terms confirmed. The job is queued again.",
+      "sourceImported": "Source imported.",
+      "interviewUploaded": "Interview uploaded and queued.",
+      "liveSaved": "Live interview saved.",
+      "artifactCopied": "Artifact copied.",
+      "finalizingLive": "Finalizing live capture."
+    },
+    "confirm": {
+      "deleteProject": "Delete \"{title}\" and its interviews, sources, and artifacts?",
+      "deleteJob": "Delete \"{title}\" and its transcript, sources, and artifacts?"
+    },
+    "errors": {
+      "projectTitleRequired": "Project title is required.",
+      "createProjectFailed": "Unable to create project.",
+      "deleteProjectFailed": "Unable to delete project.",
+      "titleRequired": "Title is required.",
+      "updateTitleFailed": "Unable to update title.",
+      "deleteInterviewFailed": "Unable to delete interview.",
+      "queueJobFailed": "Unable to queue job.",
+      "transcriptNotReady": "Transcript is not ready yet.",
+      "artifactGenerationFailed": "Artifact generation failed.",
+      "legacyFavorite": "Legacy artifacts cannot be favorited.",
+      "favoriteUpdateFailed": "Favorite update failed.",
+      "confirmTermsFailed": "Unable to confirm terms.",
+      "urlRequired": "URL is required.",
+      "sourceImportFailed": "Source import failed.",
+      "fileLimit": "Single-file limit is {limit}MB on the {plan} plan.",
+      "notAuthenticated": "Not authenticated",
+      "uploadFailed": "Upload failed.",
+      "createProjectFirst": "Create a project first.",
+      "createLiveJobFailed": "Unable to create live job."
+    }
   },
   "common": {
     "save": "Save",

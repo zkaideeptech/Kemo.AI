@@ -1,379 +1,161 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
-  ArrowLeft,
-  AudioLines,
-  Bot,
-  Check,
-  ChevronDown,
-  ClipboardList,
+  Archive,
+  BookOpen,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
   Download,
-  ExternalLink,
-  Folder,
-  FolderPlus,
-  Lightbulb,
-  Link2,
+  FileText,
+  FolderOpen,
   Loader2,
-  MessagesSquare,
-  NotebookText,
-  NotepadTextDashed,
-  Plus,
+  LogOut,
+  Mic,
   MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   Pencil,
-  ScrollText,
+  Plus,
+  RefreshCw,
   Search,
   Settings,
-  Share2,
   Sparkles,
   Star,
   Trash2,
-  User,
+  Upload,
   X,
-  type LucideIcon,
 } from "lucide-react";
 
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { LiveInterviewPanel } from "@/components/live-interview-panel";
-import { KemoMark } from "@/components/kemo-mark";
-import { NewJobForm } from "@/components/new-job-form";
 import { WorkspaceThemeSwitcher } from "@/components/workspace-theme-switcher";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  getArtifactLabel,
-  type ArtifactKind,
-  type FavoriteRow,
-  type JobRow,
-  type ProjectSearchResult,
-  type ProjectRow,
-  type SourceRow,
-  type TranscriptRow,
-  type WorkspaceArtifact,
-} from "@/lib/workspace";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { PlanTier } from "@/lib/billing/plan";
+import type {
+  ArtifactKind,
+  FavoriteRow,
+  JobRow,
+  ProjectRow,
+  SourceRow,
+  TermOccurrenceRow,
+  TranscriptRow,
+  WorkspaceArtifact,
+} from "@/lib/workspace";
+import {
+  SUPPORTED_ARTIFACT_DEFINITIONS,
+  WORKSPACE_NAV_ITEMS,
+  formatCount,
+  getArtifactDefinition,
+  type WorkspaceSection,
+} from "./notebook-workspace.model";
 
-type ClarificationQuestion = {
-  question: string;
-  context: string;
+const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
+const MEDIA_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".avi", ".webm"]);
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".csv", ".json", ".yaml", ".yml", ".srt", ".vtt"]);
+const TEXT_PREVIEW_LIMIT = 16000;
+
+type ApiResult<T> = { ok: true; data: T } | { ok: false; error?: { message?: string } };
+
+type TermDraft = {
+  confirmedText: string;
+  action: "accept" | "edit" | "reject";
 };
 
-type ParsedArtifactContent = {
-  body: string;
-  clarificationItems: ClarificationQuestion[];
-};
+type UploadState = "idle" | "working" | "done" | "error";
 
-const PRIMARY_ARTIFACT_KINDS = ["publish_script", "quick_summary", "inspiration_questions", "meeting_minutes"] as const;
-const PRIMARY_ARTIFACT_DISPLAY_ORDER = ["inspiration_questions", "quick_summary", "publish_script", "meeting_minutes"] as const;
-
-type PrimaryArtifactKind = (typeof PRIMARY_ARTIFACT_KINDS)[number];
-
-type PrimaryArtifactProgressRun = {
-  mode: "manual" | "finalizing";
-  stepIndex: number;
-};
-
-type PrimaryArtifactProgressSnapshot = {
-  label: string;
-  tone: "idle" | "draft" | "queued" | "running" | "ready";
-  stage: 0 | 1 | 2 | 3;
-  stageLabel: string;
-};
-
-const TASK_ARTIFACT_ORDER: ArtifactKind[] = [
-  "publish_script",
-  "quick_summary",
-  "inspiration_questions",
-  "key_insights",
-  "mind_map",
-  "ppt_outline",
-  "podcast_script",
-  "podcast_audio",
-  "roadshow_transcript",
-  "meeting_minutes",
-  "ic_qa",
-  "wechat_article",
-];
-
-function getArtifactOrder(kind: ArtifactKind) {
-  const index = TASK_ARTIFACT_ORDER.indexOf(kind);
-  return index === -1 ? TASK_ARTIFACT_ORDER.length : index;
+function formatDate(value: string | null | undefined, locale: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
-function extractTaggedSection(content: string, tag: string) {
-  const pattern = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[\\/${tag}\\]`, "i");
-  const match = content.match(pattern);
-  return match?.[1]?.trim() || "";
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }
 
-function parseClarificationItems(block: string) {
-  return block
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.replace(/^-+\s*/, ""))
-    .map((line) => {
-      const match = line.match(/^\u95ee\u9898\uff1a(.+?)(?:\uff5c\u7ebf\u7d22\uff1a(.+))?$/);
-      if (!match) {
-        return {
-          question: line.trim(),
-          context: "",
-        } satisfies ClarificationQuestion;
-      }
-
-      return {
-        question: match[1].trim(),
-        context: (match[2] || "").trim(),
-      } satisfies ClarificationQuestion;
-    })
-    .filter(Boolean) as ClarificationQuestion[];
+function sanitizeFileName(name: string) {
+  return name.replace(/[^\w.\-]/g, "_").replace(/_+/g, "_");
 }
 
-function parseLegacyClarificationContent(content: string): ClarificationQuestion[] {
-  const segments = content.split(/\u8bf7\u786e\u8ba4[:\uFF1A]/);
-  if (segments.length < 2) {
-    return [];
+function getFileExtension(name: string) {
+  const dotIndex = name.lastIndexOf(".");
+  return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : "";
+}
+
+function isMediaFile(file: File) {
+  return file.type.startsWith("audio/") || file.type.startsWith("video/") || MEDIA_EXTENSIONS.has(getFileExtension(file.name));
+}
+
+function isTextLikeFile(file: File) {
+  return (
+    file.type.startsWith("text/") ||
+    file.type.includes("json") ||
+    file.type.includes("xml") ||
+    file.type.includes("yaml") ||
+    TEXT_EXTENSIONS.has(getFileExtension(file.name))
+  );
+}
+
+async function buildDocumentSourceText(file: File) {
+  const summary = [`File: ${file.name}`, `Format: ${file.type || getFileExtension(file.name) || "unknown"}`, `Size: ${formatFileSize(file.size)}`].join("\n");
+  if (!isTextLikeFile(file)) {
+    return `${summary}\n\nThe file has been archived as a project source. Text extraction is not available for this format yet.`;
   }
 
-  const context = segments[0]
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(-4)
-    .join(" / ");
-  const questionLines = segments[1]
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.match(/^\d+[.\u3001]\s*(.+)$/)?.[1]?.trim() || "")
-    .filter(Boolean);
-
-  return questionLines.map((question) => ({
-    question,
-    context,
-  }));
+  const text = (await file.text().catch(() => "")).replace(/\u0000/g, "").trim();
+  return text ? `${summary}\n\n${text.slice(0, TEXT_PREVIEW_LIMIT)}` : `${summary}\n\nThe file was imported, but no readable text was found.`;
 }
 
-function parseArtifactContent(content: string): ParsedArtifactContent {
-  const clarificationBlock = extractTaggedSection(content, "\u5f85\u786e\u8ba4\u9879");
-  const bodyBlock = extractTaggedSection(content, "\u8349\u6848\u7248\u6b63\u6587");
-  const clarificationItems = clarificationBlock
-    ? parseClarificationItems(clarificationBlock)
-    : parseLegacyClarificationContent(content);
-
-  if (bodyBlock) {
-    return {
-      body: bodyBlock,
-      clarificationItems,
-    };
+async function readApi<T>(response: Response) {
+  const json = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  if (!response.ok || !json) {
+    throw new Error(response.statusText || "Request failed");
   }
-
-  const cleanedContent = content
-    .replace(/\[\u5f85\u786e\u8ba4\u9879\][\s\S]*?\[\/\u5f85\u786e\u8ba4\u9879\]/i, "")
-    .replace(/\[\u8349\u6848\u7248\u6b63\u6587\]|\[\/\u8349\u6848\u7248\u6b63\u6587\]/gi, "")
-    .replace(/\u8bf7\u786e\u8ba4[:\uFF1A][\s\S]*$/i, "")
-    .trim();
-
-  return {
-    body: cleanedContent,
-    clarificationItems,
-  };
-}
-
-function extractXmlSections(content: string, tag: string) {
-  return Array.from(content.matchAll(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*<\\/${tag}>`, "gi")))
-    .map((match) => match[1]?.trim() || "")
-    .filter(Boolean);
-}
-
-function extractLatestXmlSection(content: string, tag: string) {
-  const sections = extractXmlSections(content, tag);
-  return sections.at(-1) || "";
-}
-
-function getLiveEditorPolishedText(content: string) {
-  const segments = extractXmlSections(content, "polished_segment");
-  if (segments.length) {
-    return segments.join("\n\n");
+  if (!json.ok) {
+    throw new Error(json.error?.message || response.statusText || "Request failed");
   }
-
-  return content.trim();
+  return json.data;
 }
 
-function getLiveEditorTailText(content: string) {
-  return extractLatestXmlSection(content, "unprocessed_tail");
+function getJobTitle(job: JobRow | null, transcriptText = "", fallbackTitle: string, overviewTitle: string) {
+  if (!job) return overviewTitle;
+  const explicitTitle = job.title?.trim();
+  if (explicitTitle) return explicitTitle;
+  const fallback = transcriptText.replace(/\s+/g, " ").trim();
+  if (fallback) return `${fallback.slice(0, 42)}${fallback.length > 42 ? "..." : ""}`;
+  return fallbackTitle;
 }
 
-type LiveCoachItem = {
-  title?: string;
-  narrative?: string;
-  follow_up?: string;
-};
-
-type LiveCoachStateItem = {
-  id?: number;
-  question?: string;
-  how_to_ask?: string;
-  status?: string;
-  status_reason?: string;
-};
-
-type LiveCoachOperation = {
-  op?: string;
-  id?: number;
-  question?: string;
-  reason?: string;
-  new_status?: string;
-};
-
-type LiveCoachPayload = {
-  heartbeat_id?: number;
-  pool_a?: {
-    items?: LiveCoachItem[];
-    callback_to_pool_b?: {
-      ref_id?: number;
-      context?: string;
-      how_to_ask?: string;
-    } | null;
-  };
-  pool_b?: {
-    operations?: LiveCoachOperation[];
-    current_state?: LiveCoachStateItem[];
-  };
-  fallback_note?: string;
-};
-
-function parseLiveCoachPayload(content: string): LiveCoachPayload | null {
-  const cleaned = content
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  if (!cleaned) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(cleaned) as LiveCoachPayload;
-  } catch {
-    return null;
-  }
+function getStatusTone(status: string | null | undefined) {
+  if (status === "completed") return "ready";
+  if (status === "failed") return "error";
+  if (status === "needs_review") return "review";
+  if (status === "queued" || status === "transcribing" || status === "summarizing" || status === "extracting_terms") return "running";
+  return "idle";
 }
 
-function getLiveCoachStatusLabel(status?: string) {
-  if (status === "starred") return "★ 升权";
-  if (status === "half_resolved") return "◐ 半解决";
-  if (status === "resolved") return "✓ 已解决";
-  return "待问";
+function getArtifactText(artifact: WorkspaceArtifact | null) {
+  return artifact?.content?.trim() || artifact?.summary?.trim() || "";
 }
 
-const PRIMARY_ARTIFACT_CONFIG: Record<
-  PrimaryArtifactKind,
-  {
-    icon: LucideIcon;
-    eyebrow: string;
-    spotlight: string;
-    placeholder: string;
-  }
-> = {
-  publish_script: {
-    icon: NotebookText,
-    eyebrow: "\u4e3b\u7a3f",
-    spotlight: "\u53ef\u76f4\u63a5\u5b9a\u7a3f\u7684\u53d1\u5e03\u7a3f\u8349\u7a3f",
-    placeholder: "\u7b49\u5f85\u751f\u6210",
-  },
-  quick_summary: {
-    icon: Sparkles,
-    eyebrow: "\u6458\u8981",
-    spotlight: "\u8fd9\u8f6e\u8bbf\u8c08\u7684\u4e3b\u7ed3\u8bba\u4e0e\u91cd\u70b9",
-    placeholder: "\u7b49\u5f85\u751f\u6210",
-  },
-  inspiration_questions: {
-    icon: MessagesSquare,
-    eyebrow: "\u8ffd\u95ee",
-    spotlight: "\u4e0b\u4e00\u8f6e\u91c7\u8bbf\u8be5\u8ffd\u95ee\u4ec0\u4e48",
-    placeholder: "\u7b49\u5f85\u751f\u6210",
-  },
-  meeting_minutes: {
-    icon: ClipboardList,
-    eyebrow: "\u7eaa\u8981",
-    spotlight: "\u4f1a\u8bae\u7eaa\u8981\u4e0e\u7ed3\u6784\u5316\u603b\u7ed3",
-    placeholder: "\u7b49\u5f85\u751f\u6210",
-  },
-};
-
-function isPrimaryArtifactKind(kind: string): kind is PrimaryArtifactKind {
-  return PRIMARY_ARTIFACT_KINDS.includes(kind as PrimaryArtifactKind);
+function getDownloadPath(artifact: WorkspaceArtifact) {
+  if (artifact.isLegacy) return null;
+  return `/api/artifacts/${artifact.id}/download`;
 }
 
-const WORKSPACE_RAIL_ITEMS: Array<{
-  kind: ArtifactKind;
-  icon: LucideIcon;
-  title: string;
-  note: string;
-  accent?: boolean;
-}> = [
-  {
-    kind: "quick_summary",
-    icon: NotebookText,
-    title: "\u8def\u6f14\u6574\u7406\u7a3f",
-    note: "\u5bfc\u51fa DOCX",
-  },
-  {
-    kind: "meeting_minutes",
-    icon: ClipboardList,
-    title: "\u4f1a\u8bae\u7eaa\u8981",
-    note: "\u5bfc\u51fa DOCX",
-  },
-  {
-    kind: "inspiration_questions",
-    icon: Lightbulb,
-    title: "\u5173\u952e\u6d1e\u5bdf",
-    note: "\u4fe1\u53f7\u63d0\u70bc",
-  },
-  {
-    kind: "podcast_audio",
-    icon: AudioLines,
-    title: "AI \u64ad\u5ba2\u97f3\u9891",
-    note: "\u811a\u672c -> \u97f3\u9891",
-  },
-  {
-    kind: "publish_script",
-    icon: ScrollText,
-    title: "正式主稿",
-    note: "一键生成终版体面阅读稿",
-    accent: true,
-  },
-  {
-    kind: "wechat_article",
-    icon: NotepadTextDashed,
-    title: "公众号推文",
-    note: "自动排版与成稿",
-  },
-];
-
-const SECONDARY_SKILL_ITEMS = WORKSPACE_RAIL_ITEMS.filter(
-  (item) => !PRIMARY_ARTIFACT_DISPLAY_ORDER.includes(item.kind as PrimaryArtifactKind)
-);
+function getFavoriteUserId(favorites: FavoriteRow[], projects: ProjectRow[], jobs: JobRow[]) {
+  return favorites[0]?.user_id || projects[0]?.user_id || jobs[0]?.user_id || "";
+}
 
 export function NotebookWorkspace({
   locale,
@@ -384,6 +166,7 @@ export function NotebookWorkspace({
   artifacts,
   favorites,
   sources,
+  termOccurrences = [],
   initialJobId = null,
   initialNewInterviewOpen = false,
 }: {
@@ -395,87 +178,78 @@ export function NotebookWorkspace({
   artifacts: WorkspaceArtifact[];
   favorites: FavoriteRow[];
   sources: SourceRow[];
+  termOccurrences?: TermOccurrenceRow[];
   initialJobId?: string | null;
   initialNewInterviewOpen?: boolean;
 }) {
-  const initialJobProjectId = initialJobId
-    ? jobs.find((job) => job.id === initialJobId)?.project_id || null
-    : null;
-  const [collapsed, setCollapsed] = useState(false);
-  const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
-  const [sidebarFavoritesOpen, setSidebarFavoritesOpen] = useState(false);
-  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
-  const [centerSection, setCenterSection] = useState<"interview" | "tasks" | "sources">("tasks");
-  const [search, setSearch] = useState("");
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [newInterviewOpen, setNewInterviewOpen] = useState(initialNewInterviewOpen);
-  const [newSourceOpen, setNewSourceOpen] = useState(false);
+  const t = useTranslations();
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const initialJob = initialJobId ? jobs.find((job) => job.id === initialJobId) || null : null;
+  const initialProjectId = initialJob?.project_id || projects[0]?.id || null;
+
   const [projectState, setProjectState] = useState(projects);
   const [jobState, setJobState] = useState(jobs);
   const [artifactState, setArtifactState] = useState(artifacts);
   const [favoriteState, setFavoriteState] = useState(favorites);
   const [sourceState, setSourceState] = useState(sources);
-  const [selectedProjectId, setSelectedProjectId] = useState(initialJobProjectId || null);
-  const [selectedJobId, setSelectedJobId] = useState(initialJobId || null);
+  const [termState, setTermState] = useState(termOccurrences);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(initialJob?.id || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [selectedSkillKind, setSelectedSkillKind] = useState<ArtifactKind | null>(null);
-  const [openedSkillKinds, setOpenedSkillKinds] = useState<ArtifactKind[]>([]);
-  const [collapsedSkillKinds, setCollapsedSkillKinds] = useState<Partial<Record<ArtifactKind, boolean>>>({});
-  const [expandedArtifactIds, setExpandedArtifactIds] = useState<string[]>([]);
-  const [isLiveTranscriptExpanded, setIsLiveTranscriptExpanded] = useState(false);
-  const [swipedProjectId, setSwipedProjectId] = useState<string | null>(null);
-  const [swipedJobId, setSwipedJobId] = useState<string | null>(null);
-  const [unreadJobIds, setUnreadJobIds] = useState<Set<string>>(new Set());
-  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>(initialJobProjectId ? [initialJobProjectId] : []);
-  const [projectResults, setProjectResults] = useState<ProjectSearchResult[]>([]);
-  const [isProjectSearching, setIsProjectSearching] = useState(false);
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>(initialNewInterviewOpen ? "live" : "workspace");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [captureDialogOpen, setCaptureDialogOpen] = useState(initialNewInterviewOpen);
+  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
-  const [projectError, setProjectError] = useState<string | null>(null);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
-  const [sourceError, setSourceError] = useState<string | null>(null);
-  const [isImportingSource, setIsImportingSource] = useState(false);
-  const [liveTranscriptSnapshot, setLiveTranscriptSnapshot] = useState("");
-  const [liveCaptureStatus, setLiveCaptureStatus] = useState("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-  const [, setStudioFeedback] = useState<string | null>(null);
-  const [pendingArtifactKinds, setPendingArtifactKinds] = useState<ArtifactKind[]>([]);
-  const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({});
-  const [isLoadingClarifications, setIsLoadingClarifications] = useState(false);
-  const [isSavingClarifications, setIsSavingClarifications] = useState(false);
-  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
-  const [primaryProgressRuns, setPrimaryProgressRuns] = useState<Partial<Record<PrimaryArtifactKind, PrimaryArtifactProgressRun>>>({});
-  const [isEditingJobTitle, setIsEditingJobTitle] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [pendingArtifacts, setPendingArtifacts] = useState<string[]>([]);
+  const [termDrafts, setTermDrafts] = useState<Record<string, TermDraft>>({});
+  const [isSavingTerms, setIsSavingTerms] = useState(false);
+  const [editingJobTitle, setEditingJobTitle] = useState(false);
   const [jobTitleDraft, setJobTitleDraft] = useState("");
-  const [isSavingJobTitle, setIsSavingJobTitle] = useState(false);
-  const sidebarSearchInputRef = useRef<HTMLInputElement>(null);
-  const jobTitleInputRef = useRef<HTMLInputElement>(null);
-  const liveDraftSyncRef = useRef<{
-    inFlight: boolean;
-    lastLength: number;
-    lastRequestedAt: number;
-    timer: number | null;
-  }>({
-    inFlight: false,
-    lastLength: 0,
-    lastRequestedAt: 0,
-    timer: null,
-  });
-  const projectSwipeGestureRef = useRef<{
-    projectId: string | null;
-    startX: number;
-  }>({
-    projectId: null,
-    startX: 0,
-  });
-  const jobSwipeGestureRef = useRef<{
-    jobId: string | null;
-    startX: number;
-  }>({
-    jobId: null,
-    startX: 0,
-  });
+  const [liveTranscriptSnapshot, setLiveTranscriptSnapshot] = useState("");
+  const [liveCaptureStatus, setLiveCaptureStatus] = useState(t("workspace.live.ready"));
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; kind: string; title: string; snippet: string | null; job_id: string | null; artifact_id: string | null; source_id: string | null }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => setProjectState(projects), [projects]);
+  useEffect(() => setJobState(jobs), [jobs]);
+  useEffect(() => setArtifactState(artifacts), [artifacts]);
+  useEffect(() => setFavoriteState(favorites), [favorites]);
+  useEffect(() => setSourceState(sources), [sources]);
+  useEffect(() => setTermState(termOccurrences), [termOccurrences]);
+
+  const userId = getFavoriteUserId(favoriteState, projectState, jobState);
+
+  useEffect(() => {
+    if (!userId) return;
+    let unsubscribed = false;
+    let timeout: number | null = null;
+
+    const supabase = createSupabaseBrowserClient();
+    const channel = supabase
+      .channel(`workspace-jobs:${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs", filter: `user_id=eq.${userId}` }, () => {
+        if (unsubscribed) return;
+        if (timeout) window.clearTimeout(timeout);
+        timeout = window.setTimeout(() => router.refresh(), 500);
+      })
+      .subscribe();
+
+    return () => {
+      unsubscribed = true;
+      if (timeout) window.clearTimeout(timeout);
+      void supabase.removeChannel(channel);
+    };
+  }, [router, userId]);
 
   const jobsByProject = useMemo(() => {
     const grouped = new Map<string, JobRow[]>();
@@ -490,963 +264,526 @@ export function NotebookWorkspace({
     return grouped;
   }, [jobState, projectState]);
 
-  const selectedJob = jobState.find((job) => job.id === selectedJobId && job.project_id === selectedProjectId) || null;
-  const selectedJobPrimaryMode = selectedJob?.capture_mode || null;
-  const transcript = transcripts.find((item) => item.job_id === selectedJob?.id) || null;
+  const selectedProject = projectState.find((project) => project.id === selectedProjectId) || null;
+  const selectedProjectJobs = selectedProjectId ? jobsByProject.get(selectedProjectId) || [] : [];
+  const selectedJob = selectedJobId ? jobState.find((job) => job.id === selectedJobId) || null : null;
+  const transcript = selectedJob ? transcripts.find((item) => item.job_id === selectedJob.id) || null : null;
+  const transcriptText = selectedJob?.capture_mode === "live"
+    ? liveTranscriptSnapshot || selectedJob.live_transcript_snapshot || transcript?.transcript_text || ""
+    : transcript?.transcript_text || selectedJob?.live_transcript_snapshot || "";
   const selectedArtifacts = useMemo(
     () =>
       artifactState
         .filter((artifact) => artifact.job_id === selectedJob?.id)
-        .sort((left, right) => {
-          const kindDelta = getArtifactOrder(left.kind as ArtifactKind) - getArtifactOrder(right.kind as ArtifactKind);
-          if (kindDelta !== 0) {
-            return kindDelta;
-          }
-
-          return new Date(right.updated_at || right.created_at).getTime() - new Date(left.updated_at || left.created_at).getTime();
-        }),
+        .sort((left, right) => new Date(right.updated_at || right.created_at).getTime() - new Date(left.updated_at || left.created_at).getTime()),
     [artifactState, selectedJob?.id]
   );
-  const selectedPublishArtifact =
-    selectedArtifacts.find((artifact) => artifact.kind === "publish_script") || null;
-  const liveEditorArtifact =
-    selectedArtifacts.find((artifact) => artifact.kind === "live_meeting_editor") || null;
-  const liveCoachArtifact =
-    selectedArtifacts.find((artifact) => artifact.kind === "live_question_coach") || null;
-  const liveCoachPayload = useMemo(
-    () => parseLiveCoachPayload(liveCoachArtifact?.content || ""),
-    [liveCoachArtifact?.content]
+  const projectArtifacts = useMemo(
+    () => artifactState.filter((artifact) => !selectedProjectId || artifact.project_id === selectedProjectId),
+    [artifactState, selectedProjectId]
   );
-  const selectedTaskArtifacts = selectedArtifacts;
-  const primaryArtifactsByKind = useMemo(
-    () =>
-      PRIMARY_ARTIFACT_KINDS.reduce((collection, kind) => {
-        collection[kind] = selectedTaskArtifacts.find((artifact) => artifact.kind === kind) || null;
-        return collection;
-      }, {} as Record<PrimaryArtifactKind, WorkspaceArtifact | null>),
-    [selectedTaskArtifacts]
+  const projectSources = useMemo(
+    () => sourceState.filter((source) => source.project_id === selectedProjectId),
+    [selectedProjectId, sourceState]
   );
-  const parsedPublishArtifact = useMemo(
-    () => (selectedPublishArtifact ? parseArtifactContent(selectedPublishArtifact.content || "") : null),
-    [selectedPublishArtifact]
+  const selectedSource = selectedSourceId ? sourceState.find((source) => source.id === selectedSourceId) || null : null;
+  const previewArtifact = previewArtifactId ? artifactState.find((artifact) => artifact.id === previewArtifactId) || null : null;
+  const pendingTerms = useMemo(
+    () => termState.filter((term) => term.job_id === selectedJob?.id && term.status === "pending"),
+    [selectedJob?.id, termState]
   );
-  const projectSources = sourceState.filter((source) => source.project_id === selectedProjectId);
-  const selectedSource = projectSources.find((source) => source.id === selectedSourceId) || null;
-  const favoriteArtifactIds = new Set(
-    favoriteState.map((favorite) => favorite.artifact_id).filter(Boolean) as string[]
+  const favoriteArtifactIds = useMemo(() => new Set(favoriteState.map((favorite) => favorite.artifact_id).filter(Boolean) as string[]), [favoriteState]);
+  const favoriteJobIds = useMemo(
+    () => new Set(favoriteState.filter((favorite) => favorite.job_id && !favorite.artifact_id).map((favorite) => favorite.job_id) as string[]),
+    [favoriteState]
   );
-  const favoriteJobIds = new Set(
-    favoriteState
-      .filter((favorite) => favorite.job_id && !favorite.artifact_id)
-      .map((favorite) => favorite.job_id) as string[]
-  );
-  const previewArtifact = previewArtifactId
-    ? artifactState.find((artifact) => artifact.id === previewArtifactId) || null
-    : null;
-  const parsedPreviewArtifact = useMemo(
-    () => (previewArtifact?.kind === "publish_script" ? parseArtifactContent(previewArtifact.content || "") : null),
-    [previewArtifact]
-  );
-  const transcriptContent =
-    selectedJob?.capture_mode === "live"
-      ? liveTranscriptSnapshot || selectedJob.live_transcript_snapshot || transcript?.transcript_text || ""
-      : transcript?.transcript_text || selectedJob?.live_transcript_snapshot || "";
-  const hasStarted = Boolean(transcriptContent.trim() || Object.values(primaryArtifactsByKind).some(Boolean));
-  const hasSelectedProject = Boolean(selectedProjectId);
-  const hasSelectedJob = Boolean(selectedJob?.id);
-  const projectLockedReason = "\u8bf7\u5148\u521b\u5efa\u9879\u76ee";
-  const activePrimaryDisplayOrder = useMemo(() => {
-    if (!selectedJobPrimaryMode) return ["quick_summary"] as PrimaryArtifactKind[];
-    if (selectedJobPrimaryMode === "live") return ["quick_summary"] as PrimaryArtifactKind[];
-    return ["quick_summary", "meeting_minutes"] as PrimaryArtifactKind[];
-  }, [selectedJobPrimaryMode]);
-  const pendingArtifactKindSet = new Set(pendingArtifactKinds);
-  const canSubmitClarifications = Boolean(
-    selectedJob &&
-      parsedPublishArtifact?.clarificationItems.length &&
-      parsedPublishArtifact.clarificationItems.every((item) => (clarificationAnswers[item.question] || "").trim())
+  const projectFavoriteItems = useMemo(
+    () => favoriteState.filter((favorite) => !selectedProjectId || favorite.project_id === selectedProjectId),
+    [favoriteState, selectedProjectId]
   );
 
-  const startPrimaryProgress = useCallback((kinds: PrimaryArtifactKind[], mode: PrimaryArtifactProgressRun["mode"]) => {
-    setPrimaryProgressRuns((prev) => {
-      const next = { ...prev };
-      kinds.forEach((kind, index) => {
-        next[kind] = {
-          mode,
-          stepIndex: mode === "finalizing" ? index : 0,
-        };
-      });
-      return next;
-    });
-  }, []);
+  const completedJobs = jobState.filter((job) => job.status === "completed").length;
+  const reviewJobs = jobState.filter((job) => job.status === "needs_review").length;
+  const currentTitle = selectedJob
+    ? getJobTitle(selectedJob, transcriptText, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title"))
+    : selectedProject?.title || t("workspace.overview.title");
 
-  const clearPrimaryProgress = useCallback((kinds?: PrimaryArtifactKind[]) => {
-    setPrimaryProgressRuns((prev) => {
-      if (!kinds) {
-        return {};
-      }
-
-      const next = { ...prev };
-      kinds.forEach((kind) => {
-        delete next[kind];
-      });
-      return next;
-    });
-  }, []);
-
-  const primaryProgressByKind = useMemo(() => {
-    const snapshots = {} as Record<PrimaryArtifactKind, PrimaryArtifactProgressSnapshot>;
-
-    PRIMARY_ARTIFACT_KINDS.forEach((kind) => {
-      const artifact = primaryArtifactsByKind[kind];
-      const run = primaryProgressRuns[kind];
-
-      if (run) {
-        if (run.mode === "manual") {
-          snapshots[kind] = {
-            label: artifact ? "\u66f4\u65b0\u4e2d" : "\u751f\u6210\u4e2d",
-            tone: "running",
-            stage: 2,
-            stageLabel: "\u5904\u7406\u4e2d",
-          };
-          return;
-        }
-
-        if (run.stepIndex > 0) {
-          snapshots[kind] = {
-            label: "\u6392\u961f\u4e2d",
-            tone: "queued",
-            stage: 1,
-            stageLabel: "\u5f85\u5904\u7406",
-          };
-          return;
-        }
-
-        snapshots[kind] = {
-          label: "\u751f\u6210\u4e2d",
-          tone: "running",
-          stage: 2,
-          stageLabel: "\u5904\u7406\u4e2d",
-        };
-        return;
-      }
-
-      if (!artifact) {
-        snapshots[kind] = {
-          label: "\u5f85\u751f\u6210",
-          tone: "idle",
-          stage: 0,
-          stageLabel: "\u672a\u5f00\u59cb",
-        };
-        return;
-      }
-
-      if (artifact.status === "draft") {
-        snapshots[kind] = {
-          label: "\u5b9e\u65f6\u8349\u7a3f",
-          tone: "draft",
-          stage: 1,
-          stageLabel: "\u8349\u7a3f",
-        };
-        return;
-      }
-
-      snapshots[kind] = {
-        label: "\u5df2\u5b9a\u7a3f",
-        tone: "ready",
-        stage: 3,
-        stageLabel: "\u5df2\u5b8c\u6210",
-      };
-    });
-
-    return snapshots;
-  }, [primaryArtifactsByKind, primaryProgressRuns]);
-
-  const requestArtifact = useCallback(async (kind: ArtifactKind, transcriptOverride?: string) => {
-    if (!selectedJob) {
-      return null;
+  const statusLabel = useCallback((status: string | null | undefined) => {
+    const key = status || "unknown";
+    if (["pending", "queued", "transcribing", "extracting_terms", "needs_review", "summarizing", "completed", "failed"].includes(key)) {
+      return t(`workspace.status.${key}`);
     }
+    return status || t("workspace.status.unknown");
+  }, [t]);
 
-    if (isPrimaryArtifactKind(kind)) {
-      startPrimaryProgress([kind], "manual");
-    }
-
-    const transcriptText = transcriptOverride ?? liveTranscriptSnapshot ?? transcriptContent ?? "";
-    setPendingArtifactKinds((prev) => Array.from(new Set([...prev, kind])));
-    setStudioFeedback(`${getArtifactLabel(kind)}\u751f\u6210\u4e2d`);
-    setCenterSection("tasks");
-
-    try {
-      const res = await fetch(`/api/jobs/${selectedJob.id}/artifacts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind,
-          transcriptText,
-        }),
-      });
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        setStudioFeedback(json?.error?.message || "\u751f\u6210\u5931\u8d25");
-        return null;
-      }
-
-      const nextArtifact = json.data.artifact as WorkspaceArtifact;
-      mergeArtifactsIntoState([nextArtifact]);
-      setStudioFeedback(`${getArtifactLabel(kind)}\u5df2\u66f4\u65b0`);
-      setCenterSection("tasks");
-      return nextArtifact;
-    } catch {
-      setStudioFeedback("\u751f\u6210\u5931\u8d25");
-      return null;
-    } finally {
-      setPendingArtifactKinds((prev) => prev.filter((item) => item !== kind));
-      if (isPrimaryArtifactKind(kind)) {
-        clearPrimaryProgress([kind]);
-      }
-    }
-  }, [clearPrimaryProgress, liveTranscriptSnapshot, selectedJob, startPrimaryProgress, transcriptContent]);
+  const artifactLabel = useCallback((kind: string) => t(`workspace.artifacts.kind.${kind}.label`), [t]);
+  const artifactShortLabel = useCallback((kind: string) => t(`workspace.artifacts.kind.${kind}.short`), [t]);
+  const artifactDescription = useCallback((kind: string) => t(`workspace.artifacts.kind.${kind}.description`), [t]);
 
   useEffect(() => {
-    if (!projectState.length) {
-      setSelectedProjectId(null);
-      return;
-    }
-
-    if (!projectState.some((project) => project.id === selectedProjectId)) {
-      setSelectedProjectId(null);
+    if (!selectedProjectId && projectState[0]) {
+      setSelectedProjectId(projectState[0].id);
     }
   }, [projectState, selectedProjectId]);
 
   useEffect(() => {
-    setExpandedProjectIds((prev) => prev.filter((projectId) => projectState.some((project) => project.id === projectId)));
-  }, [projectState]);
-
-  useEffect(() => {
-    if (!selectedProjectId) return;
-    setExpandedProjectIds((prev) => (prev.includes(selectedProjectId) ? prev : [selectedProjectId, ...prev]));
-  }, [selectedProjectId]);
-
-  useEffect(() => {
-    if (collapsed) {
-      setSidebarSearchOpen(false);
-      setSwipedProjectId(null);
-    }
-  }, [collapsed]);
-
-  useEffect(() => {
-    if (!swipedProjectId) {
+    if (!selectedJob) {
+      setJobTitleDraft("");
+      setEditingJobTitle(false);
       return;
     }
-
-    const handleOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-
-      if (!target.closest(".workspace-sidebar-project-swipe-shell")) {
-        setSwipedProjectId(null);
-      }
-    };
-
-    window.addEventListener("pointerdown", handleOutsidePointerDown);
-    return () => {
-      window.removeEventListener("pointerdown", handleOutsidePointerDown);
-    };
-  }, [swipedProjectId]);
+    setJobTitleDraft(getJobTitle(selectedJob, transcriptText, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title")));
+  }, [selectedJob?.id, selectedJob, transcriptText, t]);
 
   useEffect(() => {
-    if (sidebarSearchOpen) {
-      window.requestAnimationFrame(() => {
-        sidebarSearchInputRef.current?.focus();
-      });
-    }
-  }, [sidebarSearchOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    void fetch("/api/live/audio/health", {
-      method: "GET",
-      cache: "no-store",
-    }).catch(() => {
-      // ignore warmup failures
+    if (!pendingTerms.length) return;
+    setTermDrafts((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const term of pendingTerms) {
+        if (!next[term.id]) {
+          next[term.id] = { confirmedText: term.term_text, action: "accept" };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
     });
-  }, []);
+  }, [pendingTerms]);
 
   useEffect(() => {
     if (!selectedProjectId || search.trim().length < 2) {
-      setProjectResults([]);
+      setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
-    let ignore = false;
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      setIsProjectSearching(true);
-
+      setIsSearching(true);
       try {
-        const res = await fetch(`/api/projects/${selectedProjectId}/search?q=${encodeURIComponent(search.trim())}`);
-        const json = await res.json();
-
-        if (!ignore && res.ok && json.ok) {
-          setProjectResults(json.data.results || []);
-        }
+        const response = await fetch(`/api/projects/${selectedProjectId}/search?q=${encodeURIComponent(search.trim())}`, {
+          signal: controller.signal,
+        });
+        const data = await readApi<{ results: typeof searchResults }>(response);
+        setSearchResults(data.results || []);
       } catch {
-        if (!ignore) {
-          setProjectResults([]);
-        }
+        if (!controller.signal.aborted) setSearchResults([]);
       } finally {
-        if (!ignore) {
-          setIsProjectSearching(false);
-        }
+        if (!controller.signal.aborted) setIsSearching(false);
       }
     }, 250);
 
     return () => {
-      ignore = true;
       window.clearTimeout(timer);
+      controller.abort();
     };
   }, [search, selectedProjectId]);
 
-  useEffect(() => {
-    setStudioFeedback(null);
-  }, [selectedJobId, selectedProjectId]);
+  function selectProject(projectId: string) {
+    setSelectedProjectId(projectId);
+    setSelectedJobId(null);
+    setSelectedSourceId(null);
+    setActiveSection("workspace");
+  }
 
-  useEffect(() => {
-    setSelectedSkillKind(null);
-    setOpenedSkillKinds([]);
-    setCollapsedSkillKinds({});
-    setSwipedJobId(null);
-  }, [selectedJobId, selectedProjectId]);
+  function selectJob(job: JobRow) {
+    setSelectedProjectId(job.project_id);
+    setSelectedJobId(job.id);
+    setSelectedSourceId(null);
+    setActiveSection("workspace");
+  }
 
-  useEffect(() => {
-    setIsEditingJobTitle(false);
-    setIsSavingJobTitle(false);
-    setJobTitleDraft(selectedJob?.title || "");
-  }, [selectedJob?.id, selectedJob?.title]);
+  function selectSource(source: SourceRow) {
+    setSelectedProjectId(source.project_id);
+    setSelectedSourceId(source.id);
+    if (source.job_id) setSelectedJobId(source.job_id);
+    setActiveSection("sources");
+  }
 
-  useEffect(() => {
-    if (!isEditingJobTitle) {
-      return;
+  function jumpToSearchResult(result: (typeof searchResults)[number]) {
+    if (result.source_id) {
+      const source = sourceState.find((item) => item.id === result.source_id);
+      if (source) selectSource(source);
+    } else if (result.job_id) {
+      const job = jobState.find((item) => item.id === result.job_id);
+      if (job) selectJob(job);
+    } else if (result.artifact_id) {
+      setPreviewArtifactId(result.artifact_id);
+      setActiveSection("artifacts");
     }
-
-    window.requestAnimationFrame(() => {
-      jobTitleInputRef.current?.focus();
-      jobTitleInputRef.current?.select();
-    });
-  }, [isEditingJobTitle]);
-
-  useEffect(() => {
-    liveDraftSyncRef.current.lastLength = 0;
-    liveDraftSyncRef.current.lastRequestedAt = 0;
-    liveDraftSyncRef.current.inFlight = false;
-    if (liveDraftSyncRef.current.timer !== null) {
-      window.clearTimeout(liveDraftSyncRef.current.timer);
-      liveDraftSyncRef.current.timer = null;
-    }
-    setPendingArtifactKinds([]);
-    clearPrimaryProgress();
-    setPreviewArtifactId(null);
-  }, [clearPrimaryProgress, selectedJobId]);
-
-  useEffect(() => {
-    const syncState = liveDraftSyncRef.current;
-    return () => {
-      if (syncState.timer !== null) {
-        window.clearTimeout(syncState.timer);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedJob?.id) {
-      setClarificationAnswers({});
-      return;
-    }
-
-    let ignore = false;
-    setIsLoadingClarifications(true);
-
-    void (async () => {
-      try {
-        const res = await fetch(`/api/jobs/${selectedJob.id}/clarifications`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => null);
-
-        if (!ignore && res.ok && json?.ok) {
-          const nextAnswers = Object.fromEntries(
-            (json.data?.items || []).map((item: { question?: string; answer?: string }) => [
-              item.question || "",
-              item.answer || "",
-            ])
-          ) as Record<string, string>;
-          setClarificationAnswers(nextAnswers);
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoadingClarifications(false);
-        }
-      }
-    })();
-
-    return () => {
-      ignore = true;
-    };
-  }, [selectedJob?.id]);
-
-  useEffect(() => {
-    if (selectedJob?.capture_mode !== "live" || selectedJob.status === "completed") {
-      return;
-    }
-
-    if (liveCaptureStatus.includes("\u6b63\u5728\u6574\u7406\u6700\u7ec8\u6587\u7a3f")) {
-      return;
-    }
-
-    const transcriptText = liveTranscriptSnapshot.trim();
-    if (transcriptText.length < 160) {
-      return;
-    }
-
-    const syncState = liveDraftSyncRef.current;
-    const deltaLength = transcriptText.length - syncState.lastLength;
-    const elapsedSinceLastRequest = Date.now() - syncState.lastRequestedAt;
-    const shouldRunFirstSegment = syncState.lastLength === 0 && transcriptText.length >= 160;
-    const shouldRunBySize = deltaLength >= 700;
-    const shouldRunByTime = deltaLength >= 160 && elapsedSinceLastRequest >= 60000;
-
-    if (syncState.inFlight || (!shouldRunFirstSegment && !shouldRunBySize && !shouldRunByTime)) {
-      return;
-    }
-
-    if (syncState.timer !== null) {
-      window.clearTimeout(syncState.timer);
-    }
-
-    syncState.timer = window.setTimeout(() => {
-      syncState.timer = null;
-      syncState.inFlight = true;
-      syncState.lastRequestedAt = Date.now();
-      setPendingArtifactKinds((prev) => Array.from(new Set([...prev, "live_meeting_editor", "live_question_coach"])));
-
-      void (async () => {
-        const res = await fetch(`/api/jobs/${selectedJob.id}/live`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcriptText,
-            statusText: liveCaptureStatus,
-            finalize: false,
-            includeInspiration: false,
-          }),
-        });
-        const json = await res.json().catch(() => null);
-
-        if (res.ok && json?.ok && Array.isArray(json.data?.draftArtifacts)) {
-          const nextArtifacts = json.data.draftArtifacts as WorkspaceArtifact[];
-          mergeArtifactsIntoState(nextArtifacts);
-          setStudioFeedback("\u5b9e\u65f6\u8349\u7a3f\u5df2\u66f4\u65b0");
-          syncState.lastLength = transcriptText.length;
-        }
-      })().finally(() => {
-        syncState.inFlight = false;
-        setPendingArtifactKinds((prev) =>
-          prev.filter((kind) => !["live_meeting_editor", "live_question_coach"].includes(kind))
-        );
-      });
-    }, 1200);
-
-    return () => {
-      if (syncState.timer !== null) {
-        window.clearTimeout(syncState.timer);
-        syncState.timer = null;
-      }
-    };
-  }, [liveCaptureStatus, liveTranscriptSnapshot, selectedJob?.capture_mode, selectedJob?.id, selectedJob?.status]);
-
-  useEffect(() => {
-    const projectJobs = selectedProjectId ? jobsByProject.get(selectedProjectId) || [] : [];
-    if (!selectedProjectId || !projectJobs.length) {
-      setSelectedJobId(null);
-      return;
-    }
-
-    if (!selectedJobId || !projectJobs.some((job) => job.id === selectedJobId)) {
-      setSelectedJobId(projectJobs[0]?.id || null);
-    }
-  }, [jobsByProject, selectedJobId, selectedProjectId]);
-
-  useEffect(() => {
-    const nextSources = sourceState.filter((source) => source.project_id === selectedProjectId);
-    if (!selectedProjectId || !nextSources.length) {
-      setSelectedSourceId(null);
-      return;
-    }
-
-    if (!nextSources.some((source) => source.id === selectedSourceId)) {
-      setSelectedSourceId(null);
-    }
-  }, [selectedProjectId, selectedSourceId, sourceState]);
-
-  useEffect(() => {
-    if (!hasSelectedProject && initialNewInterviewOpen) {
-      setNewInterviewOpen(false);
-      setNewProjectOpen(true);
-    }
-  }, [hasSelectedProject, initialNewInterviewOpen]);
-
-  useEffect(() => {
-    if (parsedPublishArtifact?.clarificationItems.length) {
-      setCenterSection("tasks");
-    }
-  }, [parsedPublishArtifact]);
+    setSearch("");
+  }
 
   async function createProject() {
-    if (!newProjectTitle.trim()) {
-      setProjectError("\u9879\u76ee\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a");
+    const title = newProjectTitle.trim();
+    if (!title) {
+      setError(t("workspace.errors.projectTitleRequired"));
       return;
     }
 
     setIsCreatingProject(true);
-    setProjectError(null);
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: newProjectTitle.trim(),
-        description: newProjectDescription.trim() || null,
-      }),
-    });
-    const json = await res.json();
-
-    if (!res.ok || !json.ok) {
-      setProjectError(json?.error?.message || "\u521b\u5efa\u9879\u76ee\u5931\u8d25");
+    setError(null);
+    try {
+      const data = await readApi<{ project: ProjectRow }>(
+        await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description: newProjectDescription.trim() || null }),
+        })
+      );
+      setProjectState((previous) => [data.project, ...previous.filter((project) => project.id !== data.project.id)]);
+      setSelectedProjectId(data.project.id);
+      setSelectedJobId(null);
+      setProjectDialogOpen(false);
+      setNewProjectTitle("");
+      setNewProjectDescription("");
+      setFeedback(t("workspace.feedback.projectCreated"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.createProjectFailed"));
+    } finally {
       setIsCreatingProject(false);
-      return;
     }
-
-    setProjectState((prev) => [json.data.project, ...prev]);
-    setSelectedProjectId(json.data.project.id);
-    setSelectedJobId(null);
-    setSelectedSourceId(null);
-    setCenterSection("tasks");
-    setNewProjectTitle("");
-    setNewProjectDescription("");
-    setNewProjectOpen(false);
-    setIsCreatingProject(false);
   }
 
   async function deleteProject(project: ProjectRow) {
-    const confirmed = window.confirm(`\u5220\u9664\u300c${project.title}\u300d\u4ee5\u53ca\u8be5\u9879\u76ee\u4e0b\u7684\u5168\u90e8\u5f55\u97f3\u548c\u8f93\u51fa\uff1f`);
-    if (!confirmed) {
-      return;
-    }
-
-    const res = await fetch(`/api/projects/${project.id}`, {
-      method: "DELETE",
-    });
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok || !json?.ok) {
-      window.alert(json?.error?.message || "\u5220\u9664\u9879\u76ee\u5931\u8d25");
-      return;
-    }
-
-    const remainingProjects = projectState.filter((item) => item.id !== project.id);
-    const nextProjectId = selectedProjectId === project.id ? remainingProjects[0]?.id ?? null : selectedProjectId;
-
-    setProjectState(remainingProjects);
-    setJobState((prev) => prev.filter((item) => item.project_id !== project.id));
-    setSourceState((prev) => prev.filter((item) => item.project_id !== project.id));
-    setArtifactState((prev) => prev.filter((item) => item.project_id !== project.id));
-    setFavoriteState((prev) => prev.filter((item) => item.project_id !== project.id));
-    setExpandedProjectIds((prev) => prev.filter((item) => item !== project.id));
-    setSwipedProjectId(null);
-    setSwipedJobId(null);
-
-    if (selectedProjectId === project.id) {
-      setSelectedProjectId(nextProjectId);
-      setSelectedJobId(null);
-      setSelectedSourceId(null);
-      setCenterSection("tasks");
-      setLiveTranscriptSnapshot("");
-      setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-      setSidebarSearchOpen(false);
-      setSearch("");
-      setProjectResults([]);
-      return;
-    }
-
-    if (selectedSource?.project_id === project.id) {
-      setSelectedSourceId(null);
+    if (!window.confirm(t("workspace.confirm.deleteProject", { title: project.title }))) return;
+    try {
+      await readApi<{ removed: boolean }>(await fetch(`/api/projects/${project.id}`, { method: "DELETE" }));
+      setProjectState((previous) => previous.filter((item) => item.id !== project.id));
+      setJobState((previous) => previous.filter((item) => item.project_id !== project.id));
+      setSourceState((previous) => previous.filter((item) => item.project_id !== project.id));
+      setArtifactState((previous) => previous.filter((item) => item.project_id !== project.id));
+      setFavoriteState((previous) => previous.filter((item) => item.project_id !== project.id));
+      if (selectedProjectId === project.id) {
+        const nextProject = projectState.find((item) => item.id !== project.id) || null;
+        setSelectedProjectId(nextProject?.id || null);
+        setSelectedJobId(null);
+      }
+      setFeedback(t("workspace.feedback.projectDeleted"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.deleteProjectFailed"));
     }
   }
 
-  async function importSource(url: string, title?: string, sourceType = "url") {
-    if (!selectedProjectId) {
-      setSourceError(projectLockedReason);
-      setNewProjectOpen(true);
+  async function saveJobTitle() {
+    if (!selectedJob) return;
+    const nextTitle = jobTitleDraft.trim();
+    if (!nextTitle) {
+      setError(t("workspace.errors.titleRequired"));
       return;
     }
-
-    setIsImportingSource(true);
-    setSourceError(null);
 
     try {
-      const res = await fetch(`/api/projects/${selectedProjectId}/sources`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          title,
-          sourceType,
-          jobId: selectedJob?.id || null,
-        }),
-      });
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        setSourceError(json?.error?.message || "\u5bfc\u5165\u6765\u6e90\u5931\u8d25");
-        return;
-      }
-
-      setSourceState((prev) => [json.data.source, ...prev.filter((item) => item.id !== json.data.source.id)]);
-      setSelectedSourceId(json.data.source.id);
-      setCenterSection("sources");
-      setSourceUrl("");
-      setSourceTitle("");
-      setNewSourceOpen(false);
-    } catch {
-      setSourceError("\u5bfc\u5165\u6765\u6e90\u5931\u8d25");
-    } finally {
-      setIsImportingSource(false);
+      const data = await readApi<{ job: JobRow }>(
+        await fetch(`/api/jobs/${selectedJob.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: nextTitle }),
+        })
+      );
+      setJobState((previous) => previous.map((job) => (job.id === data.job.id ? data.job : job)));
+      setEditingJobTitle(false);
+      setFeedback(t("workspace.feedback.titleUpdated"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.updateTitleFailed"));
     }
   }
 
-  function mergeArtifactsIntoState(nextArtifacts: WorkspaceArtifact[]) {
-    setArtifactState((prev) => {
-      const merged = [...prev];
-      for (const artifact of nextArtifacts) {
-        const index = merged.findIndex((item) => item.id === artifact.id);
-        if (index >= 0) {
-          merged[index] = artifact;
-        } else {
-          merged.unshift(artifact);
-        }
-      }
-      return merged;
-    });
+  async function deleteJob(job: JobRow) {
+    if (!window.confirm(t("workspace.confirm.deleteJob", { title: getJobTitle(job, "", t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title")) }))) return;
+    try {
+      await readApi<{ removed: boolean }>(await fetch(`/api/jobs/${job.id}`, { method: "DELETE" }));
+      setJobState((previous) => previous.filter((item) => item.id !== job.id));
+      setArtifactState((previous) => previous.filter((item) => item.job_id !== job.id));
+      setSourceState((previous) => previous.filter((item) => item.job_id !== job.id));
+      setFavoriteState((previous) => previous.filter((item) => item.job_id !== job.id));
+      setTermState((previous) => previous.filter((item) => item.job_id !== job.id));
+      if (selectedJobId === job.id) setSelectedJobId(null);
+      setFeedback(t("workspace.feedback.interviewDeleted"));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.deleteInterviewFailed"));
+    }
+  }
+
+  async function runJob(job: JobRow) {
+    setFeedback(t("workspace.feedback.jobQueued"));
+    try {
+      await readApi<{ queued: boolean }>(await fetch(`/api/jobs/${job.id}/run`, { method: "POST" }));
+      setJobState((previous) => previous.map((item) => (item.id === job.id ? { ...item, status: "queued" } : item)));
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.queueJobFailed"));
+    }
+  }
+
+  function mergeArtifact(artifact: WorkspaceArtifact) {
+    setArtifactState((previous) => [artifact, ...previous.filter((item) => item.id !== artifact.id)]);
   }
 
   async function generateArtifact(kind: ArtifactKind) {
-    await requestArtifact(kind);
-  }
-
-  async function submitClarifications() {
-    if (!selectedJob || !parsedPublishArtifact?.clarificationItems.length || !canSubmitClarifications) {
+    if (!selectedJob) return;
+    if (!transcriptText.trim()) {
+      setError(t("workspace.errors.transcriptNotReady"));
       return;
     }
 
-    setIsSavingClarifications(true);
-    setStudioFeedback("\u6b63\u5728\u786e\u8ba4\u5e76\u91cd\u751f\u6210\u53d1\u5e03\u7a3f");
-
+    setPendingArtifacts((previous) => [...new Set([...previous, kind])]);
+    setFeedback(t("workspace.feedback.artifactGenerating", { artifact: artifactLabel(kind) }));
     try {
-      const items = parsedPublishArtifact.clarificationItems.map((item) => ({
-        question: item.question,
-        answer: clarificationAnswers[item.question]?.trim() || "",
-        context: item.context,
-      }));
-
-      const saveRes = await fetch(`/api/jobs/${selectedJob.id}/clarifications`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-      const saveJson = await saveRes.json().catch(() => null);
-
-      if (!saveRes.ok || !saveJson?.ok) {
-        setStudioFeedback(saveJson?.error?.message || "\u786e\u8ba4\u4fe1\u606f\u4fdd\u5b58\u5931\u8d25");
-        return;
-      }
-
-      const transcriptText = liveTranscriptSnapshot || transcriptContent || "";
-      await requestArtifact("publish_script", transcriptText);
-      await Promise.all([
-        requestArtifact("quick_summary", transcriptText),
-        requestArtifact("inspiration_questions", transcriptText),
-      ]);
-      setStudioFeedback("\u786e\u8ba4\u5df2\u5199\u5165\uff0c\u53d1\u5e03\u7a3f\u4e0e\u8ffd\u95ee\u5df2\u5237\u65b0");
+      const data = await readApi<{ artifact: WorkspaceArtifact }>(
+        await fetch(`/api/jobs/${selectedJob.id}/artifacts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind, transcriptText }),
+        })
+      );
+      mergeArtifact(data.artifact);
+      setPreviewArtifactId(data.artifact.id);
+      setFeedback(t("workspace.feedback.artifactUpdated", { artifact: artifactLabel(kind) }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.artifactGenerationFailed"));
     } finally {
-      setIsSavingClarifications(false);
+      setPendingArtifacts((previous) => previous.filter((item) => item !== kind));
     }
   }
 
-  async function toggleFavorite(artifact: WorkspaceArtifact) {
-    const isFavorite = favoriteArtifactIds.has(artifact.id);
-    const previousState = [...favoriteState];
-    const tempId = `temp-art-${Date.now()}`;
+  async function generateCoreArtifacts() {
+    for (const kind of ["quick_summary", "inspiration_questions", "publish_script"] as ArtifactKind[]) {
+      await generateArtifact(kind);
+    }
+  }
 
-    // Optimistic UI update
+  async function toggleArtifactFavorite(artifact: WorkspaceArtifact) {
+    if (artifact.isLegacy) {
+      setError(t("workspace.errors.legacyFavorite"));
+      return;
+    }
+
+    const isFavorite = favoriteArtifactIds.has(artifact.id);
+    const previous = favoriteState;
     if (isFavorite) {
-      setFavoriteState((prev) => prev.filter((favorite) => favorite.artifact_id !== artifact.id));
-    } else {
-      const tempFavorite: FavoriteRow = {
-        id: tempId,
-        user_id: "",
-        project_id: artifact.project_id,
-        job_id: artifact.job_id,
-        artifact_id: artifact.id,
-        item_type: "artifact",
-        label: artifact.title,
-        excerpt: artifact.summary,
-        created_at: new Date().toISOString(),
-      };
-      setFavoriteState((prev) => [tempFavorite, ...prev]);
+      setFavoriteState((items) => items.filter((favorite) => favorite.artifact_id !== artifact.id));
     }
 
     try {
       if (isFavorite) {
-        const delRes = await fetch(`/api/favorites?artifactId=${artifact.id}`, { method: "DELETE" });
-        if (!delRes.ok) {
-          setFavoriteState(previousState);
-          const errJson = await delRes.json().catch(() => null);
-          console.error("取消收藏失败:", delRes.status, errJson);
-          window.alert(`取消收藏失败: ${errJson?.error?.message || delRes.statusText}`);
-        }
+        await readApi<{ removed: boolean }>(await fetch(`/api/favorites?artifactId=${artifact.id}`, { method: "DELETE" }));
         return;
       }
 
-      const res = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          artifactId: artifact.id,
-          projectId: artifact.project_id,
-          jobId: artifact.job_id,
-          itemType: "artifact",
-          label: artifact.title,
-          excerpt: artifact.summary,
-        }),
-      });
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        setFavoriteState(previousState);
-        console.warn("收藏失败:", res.status, json);
-        window.alert(`收藏失败: ${json?.error?.message || res.statusText || "服务器错误"}`);
-        return;
-      }
-
-      // Swap temp ID with real ID in the background
-      setFavoriteState((prev) => {
-        const cleaned = prev.filter((f) => f.id !== tempId);
-        return [json.data.favorite, ...cleaned];
-      });
-    } catch (err) {
-      setFavoriteState(previousState);
-      console.error("收藏操作异常:", err);
-      window.alert(`收藏操作异常: ${err instanceof Error ? err.message : "未知错误"}`);
+      const data = await readApi<{ favorite: FavoriteRow }>(
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            artifactId: artifact.id,
+            projectId: artifact.project_id,
+            jobId: artifact.job_id,
+            itemType: "artifact",
+            label: artifact.title,
+            excerpt: artifact.summary,
+          }),
+        })
+      );
+      setFavoriteState((items) => [data.favorite, ...items.filter((favorite) => favorite.artifact_id !== artifact.id)]);
+    } catch (caught) {
+      setFavoriteState(previous);
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.favoriteUpdateFailed"));
     }
   }
 
   async function toggleJobFavorite(job: JobRow) {
     const isFavorite = favoriteJobIds.has(job.id);
-    const previousState = [...favoriteState];
-    const tempId = `temp-job-${Date.now()}`;
-
-    const transcriptText = transcripts.find((item) => item.job_id === job.id)?.transcript_text || job.live_transcript_snapshot || "";
-    const excerpt = transcriptText.replace(/\s+/g, " ").trim().slice(0, 160) || null;
-
-    // Optimistic update
+    const previous = favoriteState;
     if (isFavorite) {
-      setFavoriteState((prev) => prev.filter((favorite) => !(favorite.job_id === job.id && !favorite.artifact_id)));
-    } else {
-      const tempFavorite: FavoriteRow = {
-        id: tempId,
-        user_id: "",
-        project_id: job.project_id,
-        job_id: job.id,
-        artifact_id: null,
-        item_type: "job",
-        label: getJobDisplayTitle(job),
-        excerpt,
-        created_at: new Date().toISOString(),
-      };
-      setFavoriteState((prev) => [tempFavorite, ...prev]);
+      setFavoriteState((items) => items.filter((favorite) => !(favorite.job_id === job.id && !favorite.artifact_id)));
     }
-    setSwipedJobId(null);
 
     try {
       if (isFavorite) {
-        const delRes = await fetch(`/api/favorites?jobId=${job.id}`, { method: "DELETE" });
-        if (!delRes.ok) {
-          setFavoriteState(previousState);
-          const errJson = await delRes.json().catch(() => null);
-          console.error("取消收藏失败:", delRes.status, errJson);
-          window.alert(`取消收藏失败: ${errJson?.error?.message || delRes.statusText}`);
-        }
+        await readApi<{ removed: boolean }>(await fetch(`/api/favorites?jobId=${job.id}`, { method: "DELETE" }));
         return;
       }
 
-      const res = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: job.project_id,
-          jobId: job.id,
-          artifactId: null,
-          itemType: "job",
-          label: getJobDisplayTitle(job),
-          excerpt,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok || !json?.ok) {
-        setFavoriteState(previousState);
-        console.warn("收藏失败:", res.status, json);
-        window.alert(`收藏失败: ${json?.error?.message || res.statusText || "服务器错误"}`);
-        return;
-      }
-
-      setFavoriteState((prev) => {
-        const cleaned = prev.filter((f) => f.id !== tempId);
-        return [json.data.favorite, ...cleaned];
-      });
-    } catch (err) {
-      setFavoriteState(previousState);
-      console.error("收藏操作异常:", err);
-      window.alert(`收藏操作异常: ${err instanceof Error ? err.message : "未知错误"}`);
+      const relatedTranscript = transcripts.find((item) => item.job_id === job.id)?.transcript_text || job.live_transcript_snapshot || "";
+      const data = await readApi<{ favorite: FavoriteRow }>(
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: job.project_id,
+            jobId: job.id,
+            itemType: "job",
+            label: getJobTitle(job, relatedTranscript, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title")),
+            excerpt: relatedTranscript.replace(/\s+/g, " ").slice(0, 180) || null,
+          }),
+        })
+      );
+      setFavoriteState((items) => [data.favorite, ...items.filter((favorite) => !(favorite.job_id === job.id && !favorite.artifact_id))]);
+    } catch (caught) {
+      setFavoriteState(previous);
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.favoriteUpdateFailed"));
     }
   }
 
-  async function deleteJob(job: JobRow) {
-    const confirmed = window.confirm(`\u5220\u9664\u300c${getJobDisplayTitle(job)}\u300d\u4ee5\u53ca\u8be5\u5f55\u97f3\u4e0b\u7684\u8f6c\u5199\u3001\u6765\u6e90\u548c\u8f93\u51fa\uff1f`);
-    if (!confirmed) {
-      return;
-    }
+  async function submitTermReview() {
+    if (!selectedJob || !pendingTerms.length) return;
 
-    const res = await fetch(`/api/jobs/${job.id}`, {
-      method: "DELETE",
-    });
-    const json = await res.json().catch(() => null);
-
-    if (!res.ok || !json?.ok) {
-      window.alert(json?.error?.message || "\u5220\u9664\u5f55\u97f3\u5931\u8d25");
-      return;
-    }
-
-    setJobState((prev) => prev.filter((item) => item.id !== job.id));
-    setArtifactState((prev) => prev.filter((item) => item.job_id !== job.id));
-    setSourceState((prev) => prev.filter((item) => item.job_id !== job.id));
-    setFavoriteState((prev) => prev.filter((item) => item.job_id !== job.id));
-    setSwipedJobId(null);
-
-    if (selectedSource?.job_id === job.id) {
-      setSelectedSourceId(null);
-    }
-
-    if (selectedJobId === job.id) {
-      setSelectedJobId(null);
-      setCenterSection("tasks");
-      setLiveTranscriptSnapshot("");
-      setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-    }
-  }
-
-  function jumpToSearchResult(result: ProjectSearchResult) {
-    if (result.source_id) {
-      setSelectedSourceId(result.source_id);
-      setCenterSection("sources");
-    }
-    if (result.job_id) {
-      setSelectedJobId(result.job_id);
-      setCenterSection("tasks");
+    setIsSavingTerms(true);
+    setError(null);
+    try {
+      await readApi<{ ok: boolean }>(
+        await fetch(`/api/jobs/${selectedJob.id}/confirm-terms`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            terms: pendingTerms.map((term) => {
+              const draft = termDrafts[term.id] || { confirmedText: term.term_text, action: "accept" as const };
+              return {
+                id: term.id,
+                termText: term.term_text,
+                confirmedText: draft.confirmedText,
+                action: draft.action,
+                context: term.context || undefined,
+              };
+            }),
+          }),
+        })
+      );
+      setTermState((previous) => previous.map((term) => (term.job_id === selectedJob.id && term.status === "pending" ? { ...term, status: "confirmed" } : term)));
+      setJobState((previous) => previous.map((job) => (job.id === selectedJob.id ? { ...job, status: "queued", needs_review: false } : job)));
+      setFeedback(t("workspace.feedback.termsConfirmed"));
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.confirmTermsFailed"));
+    } finally {
+      setIsSavingTerms(false);
     }
   }
 
-  function handleJobCreated(job: JobRow) {
-    setJobState((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
-    setSelectedProjectId(job.project_id);
-    setSelectedJobId(job.id);
-    setCenterSection("tasks");
-    setLiveTranscriptSnapshot("");
-    setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-    setNewInterviewOpen(false);
-  }
-
-  function handleSourceImported(source: SourceRow) {
-    setSourceState((prev) => [source, ...prev.filter((item) => item.id !== source.id)]);
-    setSelectedProjectId(source.project_id);
-    setSelectedSourceId(source.id);
-    setSelectedJobId(source.job_id || null);
-    setCenterSection("sources");
-    setNewInterviewOpen(false);
-  }
-
-  function handleLiveFinalized(payload: {
-    job?: unknown;
-    draftArtifacts?: unknown[];
-    transcriptText: string;
-    statusText: string;
-  }) {
-    if (payload.job) {
-      const job = payload.job as JobRow;
-      setJobState((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
-      setSelectedJobId(job.id);
-      setUnreadJobIds((prev) => {
-        const next = new Set(prev);
-        next.add(job.id);
-        return next;
-      });
-    }
-
-    if (Array.isArray(payload.draftArtifacts) && payload.draftArtifacts.length) {
-      const nextArtifacts = payload.draftArtifacts as WorkspaceArtifact[];
-      mergeArtifactsIntoState(nextArtifacts);
-      setCenterSection("tasks");
-      setStudioFeedback("\u4e3b\u7ed3\u679c\u5df2\u5b9a\u7a3f");
-    }
-
-    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind) && !["live_meeting_editor", "live_question_coach"].includes(kind)));
-    clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
-    setLiveTranscriptSnapshot(payload.transcriptText);
-    setLiveCaptureStatus(payload.statusText);
-  }
-
-  function handleLiveFinalizeStarted(payload: { jobId: string | null; transcriptText: string; statusText: string }) {
-    if (!payload.jobId) {
-      return;
-    }
-
-    setPendingArtifactKinds((prev) =>
-      Array.from(new Set([...prev, ...PRIMARY_ARTIFACT_KINDS, "live_meeting_editor", "live_question_coach"]))
-    );
-    startPrimaryProgress([...PRIMARY_ARTIFACT_KINDS], "finalizing");
-    setCenterSection("tasks");
-    setStudioFeedback("系统正在后台生成快摘与纪要。您可以随时切换查阅其他项目。");
-  }
-
-  function handleLiveFinalizeSettled(payload: { success: boolean; statusText: string }) {
-    if (payload.success) {
-      return;
-    }
-
-    setPendingArtifactKinds((prev) => prev.filter((kind) => !isPrimaryArtifactKind(kind) && !["live_meeting_editor", "live_question_coach"].includes(kind)));
-    clearPrimaryProgress([...PRIMARY_ARTIFACT_KINDS]);
-    setStudioFeedback(payload.statusText);
-  }
-
-  async function ensureLiveJob() {
+  async function importUrlSource() {
     if (!selectedProjectId) {
-      setNewProjectOpen(true);
-      return { jobId: null, statusText: projectLockedReason };
+      setProjectDialogOpen(true);
+      return;
+    }
+    if (!sourceUrl.trim()) {
+      setError(t("workspace.errors.urlRequired"));
+      return;
+    }
+
+    setUploadState("working");
+    setError(null);
+    try {
+      const data = await readApi<{ source: SourceRow }>(
+        await fetch(`/api/projects/${selectedProjectId}/sources`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: sourceUrl.trim(),
+            title: sourceTitle.trim() || null,
+            sourceType: "url_import",
+            jobId: selectedJob?.id || null,
+          }),
+        })
+      );
+      setSourceState((previous) => [data.source, ...previous.filter((source) => source.id !== data.source.id)]);
+      setSelectedSourceId(data.source.id);
+      setActiveSection("sources");
+      setSourceUrl("");
+      setSourceTitle("");
+      setUploadState("done");
+      setFeedback(t("workspace.feedback.sourceImported"));
+    } catch (caught) {
+      setUploadState("error");
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.sourceImportFailed"));
+    }
+  }
+
+  async function handleFileUpload(file: File) {
+    if (!selectedProjectId) {
+      setProjectDialogOpen(true);
+      return;
+    }
+
+    if (file.size > plan.maxFileSizeMb * 1024 * 1024) {
+      setError(t("workspace.errors.fileLimit", { limit: plan.maxFileSizeMb, plan: plan.plan }));
+      return;
+    }
+
+    setUploadState("working");
+    setError(null);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
+
+      const safeFileName = sanitizeFileName(file.name);
+      const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
+      const mimeType = file.type || "application/octet-stream";
+
+      const { error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, {
+        contentType: mimeType,
+        upsert: false,
+      });
+      if (uploadError) throw new Error(uploadError.message);
+
+      if (isMediaFile(file)) {
+        const data = await readApi<{ jobId: string; job: JobRow }>(
+          await fetch("/api/jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: file.name,
+              projectId: selectedProjectId,
+              sourceType: mimeType.startsWith("video/") ? "video_upload" : "audio_upload",
+              captureMode: "upload",
+              storagePath,
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType,
+            }),
+          })
+        );
+        setJobState((previous) => [data.job, ...previous.filter((job) => job.id !== data.job.id)]);
+        setSelectedJobId(data.job.id);
+        setActiveSection("workspace");
+        await fetch(`/api/jobs/${data.jobId}/run`, { method: "POST" }).catch(() => null);
+        setFeedback(t("workspace.feedback.interviewUploaded"));
+      } else {
+        const documentText = await buildDocumentSourceText(file);
+        const data = await readApi<{ source: SourceRow }>(
+          await fetch(`/api/projects/${selectedProjectId}/sources`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: file.name,
+              sourceType: "file_upload",
+              rawText: documentText,
+              extractedText: documentText,
+              metadata: { storage_path: storagePath, file_name: file.name, file_size: file.size, mime_type: mimeType },
+            }),
+          })
+        );
+        setSourceState((previous) => [data.source, ...previous.filter((source) => source.id !== data.source.id)]);
+        setSelectedSourceId(data.source.id);
+        setActiveSection("sources");
+        setFeedback(t("workspace.feedback.sourceImported"));
+      }
+
+      setUploadState("done");
+      setCaptureDialogOpen(false);
+    } catch (caught) {
+      setUploadState("error");
+      setError(caught instanceof Error ? caught.message : t("workspace.errors.uploadFailed"));
+    }
+  }
+
+  const ensureLiveJob = useCallback(async () => {
+    if (!selectedProjectId) {
+      setProjectDialogOpen(true);
+      return { jobId: null, statusText: t("workspace.errors.createProjectFirst") };
     }
 
     const reusableJob =
@@ -1458,1612 +795,688 @@ export function NotebookWorkspace({
         : null;
 
     if (reusableJob) {
-      return { jobId: reusableJob.id, statusText: "\u5df2\u63a5\u5165\u5f53\u524d\u5b9e\u65f6\u8bbf\u8c08" };
-    }
-
-    const title = `\u5b9e\u65f6\u8bbf\u8c08 ${new Date().toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
-
-    const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        projectId: selectedProjectId,
-        sourceType: "live_capture",
-        captureMode: "live",
-      }),
-    });
-    const json = await res.json();
-
-    if (!res.ok || !json.ok) {
-      return { jobId: null, statusText: json?.error?.message || "\u65e0\u6cd5\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
-    }
-
-    const createdJob = json.data.job as JobRow;
-    handleJobCreated(createdJob);
-    return { jobId: createdJob.id, statusText: "\u5df2\u521b\u5efa\u5b9e\u65f6\u8bbf\u8c08" };
-  }
-
-  function toggleProjectExpanded(projectId: string) {
-    setSwipedProjectId(null);
-    setExpandedProjectIds((prev) =>
-      prev.includes(projectId) ? prev.filter((item) => item !== projectId) : [...prev, projectId]
-    );
-  }
-
-  function activateProject(projectId: string) {
-    setSelectedProjectId(projectId);
-    setSelectedJobId(null);
-    setSelectedSourceId(null);
-    setCenterSection("tasks");
-    setLiveTranscriptSnapshot("");
-    setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-    setSidebarSearchOpen(false);
-    setExpandedProjectIds((prev) => (prev.includes(projectId) ? prev : [...prev, projectId]));
-    setSwipedProjectId(null);
-    setSwipedJobId(null);
-  }
-
-  function activateProjectJob(projectId: string, jobId: string) {
-    setSelectedProjectId(projectId);
-    setSelectedJobId(jobId);
-    setSelectedSourceId(null);
-    setCenterSection("tasks");
-    setLiveTranscriptSnapshot("");
-    setLiveCaptureStatus("\u51c6\u5907\u5f00\u59cb\u5b9e\u65f6\u8bbf\u8c08");
-    setSidebarSearchOpen(false);
-    setSwipedProjectId(null);
-    setSwipedJobId(null);
-  }
-
-  function openNewInterviewForProject(projectId: string) {
-    activateProject(projectId);
-    setNewInterviewOpen(true);
-  }
-
-  function openSourceStarter() {
-    if (!hasSelectedProject) {
-      setNewProjectOpen(true);
-      return;
-    }
-
-    setNewInterviewOpen(true);
-  }
-
-  function openImportSourceStarter() {
-    if (!hasSelectedProject) {
-      setNewProjectOpen(true);
-      return;
-    }
-
-    setNewSourceOpen(true);
-  }
-
-  function handleProjectSwipeStart(projectId: string, event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-
-    projectSwipeGestureRef.current = {
-      projectId,
-      startX: event.clientX,
-    };
-  }
-
-  function handleProjectSwipeEnd(projectId: string, event: ReactPointerEvent<HTMLDivElement>) {
-    const gesture = projectSwipeGestureRef.current;
-    if (gesture.projectId !== projectId) {
-      return;
-    }
-
-    const deltaX = event.clientX - gesture.startX;
-    if (deltaX <= -20) {
-      setSwipedProjectId(projectId);
-      setSwipedJobId(null);
-    } else if (deltaX >= 20) {
-      setSwipedProjectId(null);
-    }
-
-    projectSwipeGestureRef.current = {
-      projectId: null,
-      startX: 0,
-    };
-  }
-
-  function handleProjectSwipeCancel() {
-    projectSwipeGestureRef.current = {
-      projectId: null,
-      startX: 0,
-    };
-  }
-
-  function handleJobSwipeStart(jobId: string, event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-
-    jobSwipeGestureRef.current = {
-      jobId,
-      startX: event.clientX,
-    };
-  }
-
-  function handleJobSwipeEnd(jobId: string, event: ReactPointerEvent<HTMLDivElement>) {
-    const gesture = jobSwipeGestureRef.current;
-    if (gesture.jobId !== jobId) {
-      return;
-    }
-
-    const deltaX = event.clientX - gesture.startX;
-    if (deltaX <= -26) {
-      setSwipedJobId(jobId);
-      setSwipedProjectId(null);
-    } else if (deltaX >= 26) {
-      setSwipedJobId(null);
-    }
-
-    jobSwipeGestureRef.current = {
-      jobId: null,
-      startX: 0,
-    };
-  }
-
-  function handleJobSwipeCancel() {
-    jobSwipeGestureRef.current = {
-      jobId: null,
-      startX: 0,
-    };
-  }
-
-  function getJobDisplayTitle(job: JobRow) {
-    const transcriptText =
-      transcripts.find((item) => item.job_id === job.id)?.transcript_text ||
-      job.live_transcript_snapshot ||
-      "";
-    const normalized = transcriptText.replace(/\s+/g, " ").trim();
-    const summary = normalized ? `${normalized.slice(0, 28)}${normalized.length > 28 ? "\u2026" : ""}` : null;
-    const title = (job.title || "").trim();
-
-    if (title) {
-      return title;
-    }
-
-    if (summary) {
-      return summary;
-    }
-
-    return "\u672a\u547d\u540d\u8bbf\u8c08";
-  }
-
-  function getArtifactDownloadPath(artifact: WorkspaceArtifact) {
-    const metadata = artifact.metadata as Record<string, unknown> | null;
-    const metadataPath = typeof metadata?.download_path === "string" ? metadata.download_path : null;
-    if (metadataPath) return metadataPath;
-    if (artifact.kind === "roadshow_transcript" || artifact.kind === "meeting_minutes") {
-      return `/api/artifacts/${artifact.id}/download`;
-    }
-    return null;
-  }
-
-  function openArtifactPreview(artifact: WorkspaceArtifact | null) {
-    if (!artifact) {
-      return;
-    }
-
-    setPreviewArtifactId(artifact.id);
-  }
-
-  function getArtifactBody(artifact: WorkspaceArtifact | null) {
-    if (!artifact) {
-      return "";
-    }
-
-    return artifact.kind === "publish_script"
-      ? parseArtifactContent(artifact.content || "").body
-      : artifact.content || "";
-  }
-
-  function getArtifactHeadline(artifact: WorkspaceArtifact | null) {
-    if (!artifact) {
-      return "";
-    }
-
-    const candidates = [artifact.summary || "", getArtifactBody(artifact)]
-      .flatMap((text) => text.split("\n"))
-      .map((line) =>
-        line
-          .replace(/^#+\s*/, "")
-          .replace(/^[-*]\s*/, "")
-          .replace(/^\d+[.\u3001]\s*/, "")
-          .replace(/\*\*/g, "")
-          .replace(/\s+/g, " ")
-          .trim()
-      )
-      .filter(Boolean)
-      .filter((line) => !["\u603b\u89c8\uff1a", "\u91cd\u70b9\uff1a", "\u5f85\u786e\u8ba4\u9879", "\u8349\u6848\u7248\u6b63\u6587"].includes(line));
-
-    const headline = candidates.find((line) => line.length >= 8) || candidates[0] || artifact.title;
-    return headline.length > 48 ? `${headline.slice(0, 48)}\u2026` : headline;
-  }
-
-  function getArtifactUpdatedLabel(artifact: WorkspaceArtifact | null) {
-    if (!artifact) {
-      return "\u7b49\u5f85\u672c\u8f6e\u751f\u6210";
-    }
-
-    return new Date(artifact.updated_at || artifact.created_at).toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  async function shareArtifact(artifact: WorkspaceArtifact) {
-    const title = getArtifactHeadline(artifact);
-    const body = getArtifactBody(artifact).trim();
-    const text = [title, body].filter(Boolean).join("\n\n");
-
-    try {
-      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        await navigator.share({
-          title,
-          text,
-        });
-        return;
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
+      return { jobId: reusableJob.id, statusText: t("workspace.live.jobReady") };
     }
 
     try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        setStudioFeedback(`\u5df2\u590d\u5236\u300c${title}\u300d\u5185\u5bb9\uff0c\u53ef\u76f4\u63a5\u8f6c\u53d1`);
-        return;
+      const data = await readApi<{ jobId: string; job: JobRow }>(
+        await fetch("/api/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: `${t("workspace.live.defaultTitle")} ${new Date().toLocaleString(locale, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`,
+            projectId: selectedProjectId,
+            sourceType: "live_capture",
+            captureMode: "live",
+          }),
+        })
+      );
+      setJobState((previous) => [data.job, ...previous.filter((job) => job.id !== data.job.id)]);
+      setSelectedJobId(data.job.id);
+      return { jobId: data.jobId, statusText: t("workspace.live.jobCreated") };
+    } catch (caught) {
+      return { jobId: null, statusText: caught instanceof Error ? caught.message : t("workspace.errors.createLiveJobFailed") };
+    }
+  }, [locale, selectedJob, selectedProjectId, t]);
+
+  function handleLiveFinalized(payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) {
+    if (payload.job) {
+      const job = payload.job as JobRow;
+      setJobState((previous) => [job, ...previous.filter((item) => item.id !== job.id)]);
+      setSelectedJobId(job.id);
+    }
+    if (Array.isArray(payload.draftArtifacts)) {
+      for (const artifact of payload.draftArtifacts as WorkspaceArtifact[]) {
+        mergeArtifact(artifact);
       }
-    } catch {
-      // clipboard fallback continues below
     }
-
-    setStudioFeedback("\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u76f4\u63a5\u8f6c\u53d1");
+    setLiveTranscriptSnapshot(payload.transcriptText);
+    setLiveCaptureStatus(payload.statusText);
+    setFeedback(t("workspace.feedback.liveSaved"));
   }
 
-  async function saveJobTitle() {
-    if (!selectedJob) {
-      return;
-    }
-
-    const nextTitle = jobTitleDraft.trim();
-    const currentTitle = (selectedJob.title || "").trim();
-
-    if (!nextTitle) {
-      setStudioFeedback("\u6807\u9898\u4e0d\u80fd\u4e3a\u7a7a");
-      return;
-    }
-
-    if (nextTitle === currentTitle) {
-      setIsEditingJobTitle(false);
-      return;
-    }
-
-    setIsSavingJobTitle(true);
-
-    try {
-      const res = await fetch(`/api/jobs/${selectedJob.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: nextTitle }),
-      });
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok || !json?.ok) {
-        setStudioFeedback(json?.error?.message || "\u6807\u9898\u66f4\u65b0\u5931\u8d25");
-        return;
-      }
-
-      const updatedJob = json.data.job as JobRow;
-      setJobState((prev) => prev.map((job) => (job.id === updatedJob.id ? updatedJob : job)));
-      setStudioFeedback("\u6807\u9898\u5df2\u66f4\u65b0");
-      setIsEditingJobTitle(false);
-    } catch {
-      setStudioFeedback("\u6807\u9898\u66f4\u65b0\u5931\u8d25");
-    } finally {
-      setIsSavingJobTitle(false);
-    }
+  async function copyArtifact(artifact: WorkspaceArtifact) {
+    const text = getArtifactText(artifact);
+    if (!text) return;
+    await navigator.clipboard?.writeText(text).catch(() => null);
+    setFeedback(t("workspace.feedback.artifactCopied"));
   }
 
-  function renderProgressSnapshot(progress: PrimaryArtifactProgressSnapshot, key: string, compact = false) {
-    return (
-      <div className={`workspace-progress-block ${compact ? "workspace-progress-block-compact" : ""}`}>
-        {!compact ? (
-          <div className="workspace-progress-meta">
-            <span>{progress.label}</span>
-            <span>{progress.stageLabel}</span>
-          </div>
-        ) : null}
-        <div className="workspace-progress-track workspace-progress-track-steps" aria-hidden="true">
-          {[1, 2, 3].map((step) => (
-            <span
-              key={`${key}-${step}`}
-              className={[
-                "workspace-progress-step",
-                progress.stage >= step ? `workspace-progress-step-${progress.tone}` : "",
-                progress.stage === step && progress.tone !== "ready" ? "workspace-progress-step-current" : "",
-              ].filter(Boolean).join(" ")}
-            />
-          ))}
-        </div>
-      </div>
-    );
+  async function signOut() {
+    await createSupabaseBrowserClient().auth.signOut().catch(() => null);
+    window.location.href = `/${locale}/login`;
   }
 
-  function renderPrimaryProgress(kind: PrimaryArtifactKind, compact = false) {
-    return renderProgressSnapshot(primaryProgressByKind[kind], kind, compact);
-  }
-
-  function getSkillProgressSnapshot(kind: ArtifactKind): PrimaryArtifactProgressSnapshot {
-    if (isPrimaryArtifactKind(kind)) {
-      return primaryProgressByKind[kind];
-    }
-
-    const artifact = selectedArtifacts.find((candidate) => candidate.kind === kind) || null;
-    const isPending = pendingArtifactKindSet.has(kind);
-
-    if (isPending) {
-      return {
-        label: "\u751f\u6210\u4e2d",
-        tone: "running",
-        stage: 2,
-        stageLabel: "\u5904\u7406\u4e2d",
-      };
-    }
-
-    if (!artifact) {
-      return {
-        label: "\u5f85\u751f\u6210",
-        tone: "idle",
-        stage: 0,
-        stageLabel: "\u672a\u5f00\u59cb",
-      };
-    }
-
-    if (artifact.status === "draft") {
-      return {
-        label: "\u5b9e\u65f6\u8349\u7a3f",
-        tone: "draft",
-        stage: 1,
-        stageLabel: "\u8349\u7a3f",
-      };
-    }
-
-    return {
-      label: "\u5df2\u5b8c\u6210",
-      tone: "ready",
-      stage: 3,
-      stageLabel: "\u5df2\u5b8c\u6210",
-    };
-  }
-
-  function renderArtifactCard(artifact: WorkspaceArtifact) {
-    const parsedArtifact = artifact.kind === "publish_script"
-      ? parseArtifactContent(artifact.content || "")
-      : null;
-    const isRefreshing = pendingArtifactKindSet.has(artifact.kind as ArtifactKind);
-    const primaryKind = isPrimaryArtifactKind(artifact.kind) ? artifact.kind : null;
-
-    return (
-      <section key={artifact.id} className="workspace-task-card">
-        <header className="workspace-task-card-head">
-          <div className="workspace-card-title-row">
-            {isRefreshing ? (
-              <Loader2 className="workspace-card-title-icon animate-spin" />
-            ) : (
-              <Bot className="workspace-card-title-icon" />
-            )}
-            <div className="min-w-0">
-              <h4 className="workspace-heading text-[1rem]">{artifact.title}</h4>
-              <p className="workspace-muted-copy">
-                {isRefreshing ? "更新中" : artifact.status === "draft" ? "实时草稿" : artifact.status || artifact.kind}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); void shareArtifact(artifact); }}
-              className="workspace-inline-action"
-              aria-label={`转发${artifact.title}`}
-            >
-              <Share2 className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); toggleFavorite(artifact); }}
-              className="workspace-inline-action"
-              aria-label={favoriteArtifactIds.has(artifact.id) ? `取消收藏${artifact.title}` : `收藏${artifact.title}`}
-            >
-              <Star
-                className={`h-4 w-4 ${favoriteArtifactIds.has(artifact.id) ? "fill-amber-400 text-amber-500" : ""}`}
-              />
-            </button>
-          </div>
-        </header>
-
-        {primaryKind ? renderPrimaryProgress(primaryKind) : null}
-
-        {artifact.kind === "publish_script" && parsedArtifact?.clarificationItems.length ? (
-          <section className="workspace-clarification-card">
-            <div className="workspace-clarification-head">
-              <div>
-                <p className="workspace-kicker">待确认</p>
-                <h5 className="workspace-heading text-[0.96rem]">先在这里确认，再重生成正文</h5>
-              </div>
-              <span className="workspace-status-pill">{parsedArtifact.clarificationItems.length} 项</span>
-            </div>
-            <div className="workspace-clarification-grid">
-              {parsedArtifact.clarificationItems.map((item, index) => (
-                <label key={item.question} className="workspace-clarification-field">
-                  <span className="workspace-clarification-label">{index + 1}. {item.question}</span>
-                  {item.context ? (
-                    <span className="workspace-clarification-context">{item.context}</span>
-                  ) : null}
-                  <Textarea
-                    value={clarificationAnswers[item.question] || ""}
-                    onChange={(event) =>
-                      setClarificationAnswers((prev) => ({
-                        ...prev,
-                        [item.question]: event.target.value,
-                      }))
-                    }
-                    className="workspace-clarification-input"
-                    placeholder={"请补充事实、观点或待确认信息"}
-                    rows={2}
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="workspace-clarification-actions">
-              <Button
-                type="button"
-                onClick={() => void submitClarifications()}
-                disabled={!canSubmitClarifications || isSavingClarifications}
-                className="workspace-primary-button"
-              >
-                {isSavingClarifications ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {"确认并重新生成"}
-              </Button>
-              <p className="workspace-muted-copy">
-                {isLoadingClarifications ? "正在整理待确认项，请稍候" : "确认后会刷新发布稿、摘要和追问"}
-              </p>
-            </div>
-          </section>
-        ) : null}
-
-        <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-          {(artifact.kind === "publish_script" ? parsedArtifact?.body : artifact.content) || "暂无内容"}
-        </div>
-        <div className="workspace-artifact-footer">
-          <span className="workspace-muted-copy">{getArtifactUpdatedLabel(artifact)}</span>
-          <div className="flex items-center gap-2">
-            <button type="button" className="workspace-chip-button" onClick={() => openArtifactPreview(artifact)}>
-              <ExternalLink className="h-3.5 w-3.5" />
-              {"查看全文"}
-            </button>
-            {getArtifactDownloadPath(artifact) ? (
-              <a href={getArtifactDownloadPath(artifact) || undefined} className="workspace-chip-button">
-                <Download className="h-3.5 w-3.5" />
-                {"导出 docx"}
-              </a>
-            ) : null}
-          </div>
-        </div>
-
-        {artifact.audio_url ? (
-          <audio controls className="mt-2 w-full">
-            <source src={artifact.audio_url} />
-          </audio>
-        ) : null}
-      </section>
-    );
-  }
-
-  function renderLiveEditorPanel() {
-    const isRefreshing = pendingArtifactKindSet.has("live_meeting_editor");
-    const editorContent = getLiveEditorPolishedText(liveEditorArtifact?.content || "");
-    const tailContent = getLiveEditorTailText(liveEditorArtifact?.content || "");
-    const rawTranscript = transcriptContent.trim();
-    const displayContent = editorContent || (selectedJob?.status === "completed" ? rawTranscript : "");
-
-    return (
-      <section className="workspace-task-card workspace-live-editor-card">
-        <header className="workspace-task-card-head">
-          <div className="workspace-card-title-row">
-            {isRefreshing ? (
-              <Loader2 className="workspace-card-title-icon animate-spin" />
-            ) : (
-              <NotebookText className="workspace-card-title-icon" />
-            )}
-            <div className="min-w-0">
-              <h4 className="workspace-heading text-[1rem]">Live Editor</h4>
-              <p className="workspace-muted-copy">
-                {isRefreshing ? "正在按 live-meeting-editor 整理" : liveEditorArtifact ? "实时整理稿" : liveCaptureStatus}
-              </p>
-            </div>
-          </div>
-          <span className="workspace-live-editor-status">
-            {rawTranscript ? `${rawTranscript.length} 字 ASR` : "待接入 ASR"}
-          </span>
-        </header>
-
-        <div className="workspace-live-editor-body">
-          {displayContent ? (
-            <div className="workspace-live-editor-copy whitespace-pre-wrap">{displayContent}</div>
-          ) : (
-            <div className="workspace-live-empty-state">
-              <AudioLines className="h-5 w-5" />
-              <span>开始捕获后，会议内容会分段流式整理到这里。</span>
-            </div>
-          )}
-        </div>
-
-        {tailContent ? (
-          <div className="workspace-live-tail">
-            <span>tail</span>
-            <p>{tailContent}</p>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="workspace-live-raw-toggle"
-          onClick={() => setIsLiveTranscriptExpanded((prev) => !prev)}
-          disabled={!rawTranscript}
-        >
-          <ChevronDown className={`h-4 w-4 transition-transform ${isLiveTranscriptExpanded ? "-rotate-180" : ""}`} />
-          <span>{isLiveTranscriptExpanded ? "收起原始 ASR" : "查看原始 ASR"}</span>
-        </button>
-
-        {isLiveTranscriptExpanded && rawTranscript ? (
-          <div className="workspace-live-raw-box whitespace-pre-wrap">{rawTranscript}</div>
-        ) : null}
-      </section>
-    );
-  }
-
-  function renderLiveQuestionCoach() {
-    const isRefreshing = pendingArtifactKindSet.has("live_question_coach");
-    const poolAItems = liveCoachPayload?.pool_a?.items || [];
-    const poolBItems = liveCoachPayload?.pool_b?.current_state || [];
-    const operations = liveCoachPayload?.pool_b?.operations || [];
-    const callback = liveCoachPayload?.pool_a?.callback_to_pool_b || null;
-
-    if (rightRailCollapsed) {
+  function renderProjectTree() {
+    if (!projectState.length) {
       return (
-        <div className="workspace-right-rail-collapsed-body">
-          {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin text-orange-500" /> : <Lightbulb className="h-4 w-4 text-orange-500" />}
-          <span className="workspace-right-rail-collapsed-label">Coach</span>
+        <div className="kw-empty-mini">
+          <span>{t("workspace.empty.noProjects")}</span>
+          <button type="button" onClick={() => setProjectDialogOpen(true)}>{t("workspace.actions.createOne")}</button>
         </div>
       );
     }
 
+    return projectState.map((project) => {
+      const active = project.id === selectedProjectId;
+      const projectJobs = jobsByProject.get(project.id) || [];
+      return (
+        <div className="kw-project-node" key={project.id}>
+          <div className={`kw-project-row ${active && !selectedJob ? "active" : ""}`}>
+            <button type="button" onClick={() => selectProject(project.id)} className="kw-project-title">
+              <FolderOpen className="kw-project-icon" />
+              <span>{project.title}</span>
+              <small>{projectJobs.length}</small>
+            </button>
+            <button type="button" className="kw-icon-button ghost danger" title={t("workspace.actions.deleteProject")} onClick={() => void deleteProject(project)}>
+              <Trash2 />
+            </button>
+          </div>
+          <div className="kw-job-list">
+            {projectJobs.slice(0, 8).map((job) => {
+              const jobTranscript = transcripts.find((item) => item.job_id === job.id)?.transcript_text || job.live_transcript_snapshot || "";
+              return (
+                <button key={job.id} type="button" className={`kw-job-row ${selectedJobId === job.id ? "active" : ""}`} onClick={() => selectJob(job)}>
+                  <span className={`kw-status-dot ${getStatusTone(job.status)}`} />
+                  <span>{getJobTitle(job, jobTranscript, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title"))}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    });
+  }
+
+  function renderOverview() {
+    if (selectedJob) {
+      return renderJobDetail();
+    }
+
     return (
-      <div className="workspace-live-coach">
-        <div className="workspace-live-coach-head">
+      <div className="kw-page-stack">
+        <div className="kw-page-heading">
           <div>
-            <p className="workspace-kicker">Live Question Coach</p>
-            <h3 className="workspace-heading text-[1rem]">实时提问搭档</h3>
+            <p className="kw-kicker">{t("workspace.overview.kicker")}</p>
+            <h1>{selectedProject?.title || t("workspace.overview.title")}</h1>
+            <p>{selectedProject?.description || t("workspace.overview.description")}</p>
           </div>
-          <div className="workspace-live-coach-heartbeat">
-            {isRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            <span>#{liveCoachPayload?.heartbeat_id ?? 0}</span>
-          </div>
-        </div>
-
-        <section className="workspace-live-coach-section">
-          <div className="workspace-live-coach-section-title">
-            <AudioLines className="h-4 w-4" />
-            <span>本段追问</span>
-          </div>
-          {poolAItems.length ? (
-            <div className="workspace-live-coach-stack">
-              {poolAItems.map((item, index) => (
-                <article className="workspace-live-coach-a-item" key={`${item.title || "coach"}-${index}`}>
-                  <h4>{item.title || `追问 ${index + 1}`}</h4>
-                  {item.narrative ? <p>{item.narrative}</p> : null}
-                  {item.follow_up ? <blockquote>{item.follow_up}</blockquote> : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="workspace-live-coach-empty">
-              {liveCoachPayload?.fallback_note || "在听。当前片段还没有值得打断会议节奏的追问。"}
-            </div>
-          )}
-
-          {callback?.how_to_ask ? (
-            <div className="workspace-live-coach-callback">
-              <span>顺势勾回池 B{callback.ref_id ? ` #${callback.ref_id}` : ""}</span>
-              {callback.context ? <p>{callback.context}</p> : null}
-              <blockquote>{callback.how_to_ask}</blockquote>
-            </div>
-          ) : null}
-        </section>
-
-        <section className="workspace-live-coach-section workspace-live-coach-section-fill">
-          <div className="workspace-live-coach-section-title">
-            <ClipboardList className="h-4 w-4" />
-            <span>待问清单</span>
-            <em>{poolBItems.length} 条</em>
-          </div>
-
-          {operations.length ? (
-            <div className="workspace-live-coach-ops">
-              {operations.slice(0, 3).map((operation, index) => (
-                <span key={`${operation.op || "op"}-${operation.id || index}`}>
-                  {operation.op || "update"}{operation.id ? ` #${operation.id}` : ""}{operation.reason ? ` · ${operation.reason}` : ""}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          {poolBItems.length ? (
-            <div className="workspace-live-coach-b-list">
-              {poolBItems.map((item, index) => (
-                <article className={`workspace-live-coach-b-item workspace-live-coach-b-${item.status || "pending"}`} key={`${item.id || index}-${item.question || ""}`}>
-                  <div className="workspace-live-coach-b-top">
-                    <span>#{item.id || index + 1}</span>
-                    <strong>{item.question || "待问问题"}</strong>
-                  </div>
-                  {item.how_to_ask ? <p>{item.how_to_ask}</p> : null}
-                  <div className="workspace-live-coach-b-foot">
-                    <span>{getLiveCoachStatusLabel(item.status)}</span>
-                    {item.status_reason ? <em>{item.status_reason}</em> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="workspace-live-coach-empty">
-              还在建立会议上下文。待问清单会随实时访谈推进自动累积。
-            </div>
-          )}
-        </section>
-      </div>
-    );
-  }
-
-  function getSkillDisplay(kind: ArtifactKind) {
-    if (isPrimaryArtifactKind(kind)) {
-      return {
-        title: getArtifactLabel(kind),
-        icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
-      };
-    }
-
-    const item = WORKSPACE_RAIL_ITEMS.find((candidate) => candidate.kind === kind);
-    return {
-      title: item?.title || getArtifactLabel(kind),
-      icon: item?.icon || Sparkles,
-    };
-  }
-
-  function toggleSkillCard(kind: ArtifactKind, isPrimary = false) {
-    const isOpen = openedSkillKinds.includes(kind);
-
-    if (isOpen) {
-      const nextOpenedKinds = openedSkillKinds.filter((item) => item !== kind);
-      setOpenedSkillKinds(nextOpenedKinds);
-      setCollapsedSkillKinds((prev) => {
-        const next = { ...prev };
-        delete next[kind];
-        return next;
-      });
-      setSelectedSkillKind((prev) => (prev === kind ? nextOpenedKinds[nextOpenedKinds.length - 1] || null : prev));
-      return;
-    }
-
-    setSelectedSkillKind(kind);
-    setCollapsedSkillKinds((prev) => ({ ...prev, [kind]: false }));
-    setOpenedSkillKinds((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
-
-    if (isPrimary) {
-      setCenterSection("tasks");
-      return;
-    }
-
-    const hasArtifact = selectedArtifacts.some((candidate) => candidate.kind === kind);
-    if (!hasArtifact && !pendingArtifactKindSet.has(kind)) {
-      void generateArtifact(kind);
-    }
-  }
-
-  function renderStudioButton(
-    kind: ArtifactKind,
-    config: { title: string; icon: LucideIcon; isPrimary?: boolean; accent?: boolean }
-  ) {
-    const isPending = pendingArtifactKindSet.has(kind);
-    const isSelected = openedSkillKinds.includes(kind);
-    const Icon = config.icon;
-
-    return (
-      <button
-        key={`studio-btn-${kind}`}
-        type="button"
-        onClick={() => toggleSkillCard(kind, config.isPrimary)}
-        disabled={!selectedJob || isSavingClarifications}
-        className={`relative flex flex-col items-start p-3.5 rounded-xl transition-all border outline-none text-left w-full h-full ${
-          isSelected
-            ? "border-orange-200 bg-orange-50 shadow-sm ring-1 ring-orange-200/90"
-            : "border-transparent bg-slate-50/80 hover:bg-slate-100 hover:border-slate-200"
-        }`}
-      >
-        <span className="mb-2">
-          {isPending ? (
-            <Loader2 className={`h-4 w-4 animate-spin ${isSelected ? "text-orange-500" : "text-slate-500"}`} />
-          ) : (
-            <Icon className={`h-4 w-4 ${isSelected ? "text-orange-500" : "text-slate-500"}`} />
-          )}
-        </span>
-        <span className={`text-[0.8rem] font-medium block w-full truncate ${isSelected ? "text-orange-700" : "text-slate-700"}`}>
-          {config.title}
-        </span>
-      </button>
-    );
-  }
-
-  function renderSkillOutputCard(kind: ArtifactKind) {
-    const artifact = selectedArtifacts.find((candidate) => candidate.kind === kind) || null;
-    const progress = getSkillProgressSnapshot(kind);
-    const { title, icon: Icon } = getSkillDisplay(kind);
-    const isCollapsed = Boolean(collapsedSkillKinds[kind]);
-    const isCurrent = selectedSkillKind === kind;
-    const isFavorite = artifact ? favoriteArtifactIds.has(artifact.id) : false;
-    const content = artifact
-      ? getArtifactBody(artifact).trim() || artifact.summary?.trim() || artifact.content?.trim() || ""
-      : "";
-    const fallbackContent = progress.tone === "running" ? "\u6b63\u5728\u751f\u6210\u4e2d..." : "\u7b49\u5f85\u751f\u6210";
-
-    return (
-      <section
-        key={`skill-output-${kind}`}
-        className={[
-          "workspace-primary-progress-card",
-          "workspace-skill-output-card",
-          "workspace-skill-output-card-active",
-          isCurrent ? "workspace-skill-output-card-current" : "",
-        ].filter(Boolean).join(" ")}
-      >
-        <div className="workspace-primary-progress-card-head workspace-skill-output-card-head">
-          <div className="workspace-card-title-row">
-            {progress.tone === "running" ? (
-              <Loader2 className="workspace-card-title-icon animate-spin text-orange-500" />
-            ) : (
-              <Icon className="workspace-card-title-icon text-orange-500" />
-            )}
-            <h4 className="workspace-heading text-[1rem]">{title}</h4>
-          </div>
-          <div className="workspace-skill-output-card-actions">
-            <button
-              type="button"
-              className="workspace-inline-action"
-              onClick={() =>
-                setCollapsedSkillKinds((prev) => ({
-                  ...prev,
-                  [kind]: !prev[kind],
-                }))
-              }
-              aria-label={isCollapsed ? "\u5c55\u5f00\u5361\u7247" : "\u6536\u8d77\u5361\u7247"}
-              title={isCollapsed ? "\u5c55\u5f00\u5361\u7247" : "\u6536\u8d77\u5361\u7247"}
-            >
-              <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? "-rotate-90" : ""}`} />
-            </button>
-            <button
-              type="button"
-              className="workspace-inline-action"
-              onClick={() => {
-                if (artifact) {
-                  void toggleFavorite(artifact);
-                }
-              }}
-              aria-label={isFavorite ? "\u53d6\u6d88\u6536\u85cf" : "\u6536\u85cf"}
-              title={isFavorite ? "\u53d6\u6d88\u6536\u85cf" : "\u6536\u85cf"}
-              disabled={!artifact}
-            >
-              <Star className={`h-4 w-4 ${isFavorite ? "fill-amber-400 text-amber-500" : ""}`} />
-            </button>
-          </div>
-        </div>
-        {renderProgressSnapshot(progress, `skill-${kind}`, true)}
-        {!isCollapsed ? (
-          <div className="workspace-skill-output-preview">
-            {content || fallbackContent}
-          </div>
-        ) : null}
-      </section>
-    );
-  }
-
-  function renderSkillOutputCards() {
-    if (!openedSkillKinds.length) {
-      return (
-        <div className="workspace-empty-card workspace-skill-output-empty">
-          <p className="workspace-skill-output-empty-copy">
-            {hasStarted
-              ? "\u9009\u62e9\u4e00\u4e2a skill\uff0c\u8f93\u51fa\u4f1a\u663e\u793a\u5728\u8fd9\u91cc"
-              : "\u5f00\u59cb\u4e00\u6761\u6765\u6e90\u540e\uff0c\u9009\u62e9 skill \u7ee7\u7eed\u63a8\u8fdb"}
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="workspace-skill-output-stack">
-        {openedSkillKinds.map((kind) => renderSkillOutputCard(kind))}
-      </div>
-    );
-  }
-
-  function renderCenterEmptyState(mode: "project" | "source") {
-    return (
-      <div className={`workspace-center-empty-content ${mode === "project" ? "workspace-center-empty-content-project" : ""}`.trim()}>
-        <div className="flex justify-center mb-6" aria-hidden="true">
-          <KemoMark className="h-20 w-20 shadow-xl rounded-[2rem]" />
-        </div>
-        <p className="workspace-center-empty-copy">{"\u9009\u62e9\u6216\u65b0\u5efa\u6765\u6e90\u4ee5\u5f00\u59cb"}</p>
-        <div className="workspace-center-empty-actions">
-          <Button type="button" className="workspace-primary-button" onClick={openSourceStarter}>
-            {"\u65b0\u5efa\u6765\u6e90"}
-          </Button>
-          <Button type="button" variant="secondary" onClick={openImportSourceStarter}>
-            {"\u5bfc\u5165\u7f51\u9875"}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  const activeSource = selectedSource || projectSources[0] || null;
-  const displayCenterSection = centerSection === "sources" ? "sources" : "tasks";
-  const isFinalizing = liveCaptureStatus.includes("整理最终文稿") || liveCaptureStatus.includes("正在定稿");
-  const isLiveRunning = selectedJob?.capture_mode === "live" && selectedJob?.status !== "completed" && !isFinalizing;
-
-  function renderActivePrimaryTaskPanels() {
-    const isLive = selectedJob?.capture_mode === "live";
-    const kindsToDisplay: PrimaryArtifactKind[] = isLive
-      ? ["quick_summary", "publish_script"]
-      : ["publish_script", "quick_summary"];
-
-    return (
-      <div className="flex flex-col gap-4 w-full">
-        {kindsToDisplay.map((targetKind) => {
-          const config = PRIMARY_ARTIFACT_CONFIG[targetKind];
-          const artifact = selectedTaskArtifacts.find((a) => a.kind === targetKind);
-
-          return (
-            <div className="workspace-center-primary-card" key={`primary-panel-${targetKind}`}>
-              {artifact ? (
-                renderArtifactCard(artifact)
-              ) : (
-                <section className="workspace-task-card workspace-task-card-ghost">
-                  <header className="workspace-task-card-head">
-                    <div className="workspace-card-title-row">
-                      <config.icon className="workspace-card-title-icon" />
-                      <div className="min-w-0">
-                        <h4 className="workspace-heading text-[1rem]">{getArtifactLabel(targetKind)}</h4>
-                        <p className="workspace-muted-copy">{primaryProgressByKind[targetKind].label}</p>
-                      </div>
-                    </div>
-                  </header>
-                  {renderPrimaryProgress(targetKind)}
-                  <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-                    {config.placeholder}
-                  </div>
-                </section>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  const centerSectionContent =
-    displayCenterSection === "tasks" ? (
-      <div className="workspace-center-section-body">
-        {hasSelectedJob ? (
-          <div className="workspace-task-groups">
-            {selectedJob?.capture_mode === "live" ? renderLiveEditorPanel() : null}
-            {(!isLiveRunning || isFinalizing || selectedJob?.capture_mode !== "live") ? renderActivePrimaryTaskPanels() : null}
-          </div>
-        ) : (
-          <div className="workspace-center-empty-state">
-            {renderCenterEmptyState("source")}
-          </div>
-        )}
-      </div>
-    ) : (
-      <div className="workspace-center-section-body">
-        <div className="workspace-center-section-head">
-          <div className="workspace-center-section-copy">
-            <p className="workspace-kicker">{"\u6765\u6e90"}</p>
-            <h3 className="workspace-heading">{activeSource?.title || activeSource?.url || "\u6765\u6e90"}</h3>
-            <p className="workspace-muted-copy">
-              {activeSource ? activeSource.status : hasSelectedProject ? "\u8fd8\u6ca1\u6709\u6765\u6e90\u3002" : "\u7b49\u5f85\u9009\u62e9\u9879\u76ee\u3002"}
-            </p>
-          </div>
-          {activeSource?.url ? (
-            <a href={activeSource.url} target="_blank" rel="noreferrer" className="workspace-inline-action">
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          ) : null}
-        </div>
-
-        {activeSource ? (
-          <div className="grid gap-4">
-            <div className="workspace-source-meta">
-              <div className="min-w-0">
-                <p className="workspace-kicker">{"\u5f53\u524d\u6765\u6e90"}</p>
-                <h4 className="workspace-heading text-[1.05rem]">{activeSource.title || activeSource.url || "\u6765\u6e90"}</h4>
-              </div>
-              <div className="workspace-status-pill">{activeSource.status}</div>
-            </div>
-            <div className="workspace-scroll-content whitespace-pre-wrap text-sm text-slate-700">
-              {activeSource.extracted_text || activeSource.raw_text || "\u6765\u6e90\u6b63\u6587\u8fd8\u672a\u6293\u53d6\u5b8c\u6210\u3002"}
-            </div>
-          </div>
-        ) : (
-          <div className="workspace-center-empty-state">
-            {renderCenterEmptyState("source")}
-          </div>
-        )}
-      </div>
-    );
-  return (
-    <>
-      <header className="w-full flex-shrink-0 flex items-center justify-between px-6 h-[4rem]">
-        <Link href={`/${locale}/app/jobs`} className="flex items-center gap-3 group">
-          <KemoMark className="w-9 h-9 shadow-sm rounded-xl border border-slate-200 dark:border-white/5" />
-          <span className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100 group-hover:opacity-80 transition-opacity">kemo</span>
-          </span>
-        </Link>
-
-        <div className="flex items-center gap-2">
-          <WorkspaceThemeSwitcher />
-
-          <Link
-            href={`/${locale}/app/settings`}
-            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 transition-colors"
-            title={"\u7cfb\u7edf\u8bbe\u7f6e"}
-          >
-            <Settings className="w-5 h-5" />
-          </Link>
-
-          <button className="p-2 ml-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 transition-colors" title={"\u8d26\u53f7\u4e2d\u5fc3"}>
-            <User className="w-5 h-5" />
+          <button type="button" className="kw-button primary" onClick={() => setCaptureDialogOpen(true)}>
+            <Plus /> {t("workspace.actions.addMaterial")}
           </button>
         </div>
-      </header>
-      <div className={`workspace-shell ${collapsed ? "workspace-shell-sidebar-collapsed" : ""}`}>
-        <aside className={`workspace-sidebar workspace-sidebar-minimal ${collapsed ? "workspace-sidebar-collapsed" : ""}`}>
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100/10 dark:border-white/5 mb-3">
-            {!collapsed ? <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">{"\u9879\u76ee"}</span> : <span />}
-            <button
-              type="button"
-              onClick={() => setCollapsed(!collapsed)}
-              className="workspace-flat-icon-button p-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-              aria-label={collapsed ? "\u5c55\u5f00\u4fa7\u680f" : "\u6536\u8d77\u4fa7\u680f"}
-              title={collapsed ? "\u5c55\u5f00\u4fa7\u680f" : "\u6536\u8d77\u4fa7\u680f"}
-            >
-              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-            </button>
+
+        <div className="kw-metric-grid">
+          <Metric label={t("workspace.metrics.projects")} value={formatCount(projectState.length)} note={t("workspace.metrics.interviews", { count: formatCount(jobState.length) })} />
+          <Metric label={t("workspace.metrics.completed")} value={formatCount(completedJobs)} note={t("workspace.metrics.needReview", { count: reviewJobs })} tone={reviewJobs ? "review" : "ready"} />
+          <Metric label={t("workspace.metrics.artifacts")} value={formatCount(artifactState.length)} note={t("workspace.metrics.sources", { count: formatCount(sourceState.length) })} tone="ai" />
+        </div>
+
+        <section className="kw-section">
+          <div className="kw-section-head">
+            <h2>{t("workspace.recent.title")}</h2>
+            <button type="button" className="kw-link-button" onClick={() => setCaptureDialogOpen(true)}>{t("workspace.actions.add")}</button>
           </div>
-
-          {!collapsed ? (
-            <div className="flex flex-col flex-1 min-h-0 overflow-y-auto sidebar-scroll">
-              <div className="grid grid-cols-4 gap-2 mb-4 px-2">
-                <button
-                  type="button"
-                  className="flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-black/5 dark:hover:text-slate-200 dark:hover:bg-white/5 transition-all"
-                  onClick={() => setNewProjectOpen(true)}
-                  title="新建项目"
-                >
-                  <FolderPlus className="w-[1.1rem] h-[1.1rem]" />
-                </button>
-
-                <button
-                  type="button"
-                  className={`flex items-center justify-center p-2 rounded-xl transition-all ${sidebarSearchOpen ? 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20' : 'text-slate-500 hover:text-slate-800 hover:bg-black/5 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
-                  onClick={() => setSidebarSearchOpen((value) => !value)}
-                  aria-expanded={sidebarSearchOpen}
-                  title="搜索工作区"
-                >
-                  <Search className="w-[1.1rem] h-[1.1rem]" />
-                </button>
-                
-                <button
-                  type="button"
-                  className={`flex items-center justify-center p-2 rounded-xl transition-all ${sidebarFavoritesOpen ? 'text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-900/20' : 'text-slate-500 hover:text-slate-800 hover:bg-black/5 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
-                  onClick={() => setSidebarFavoritesOpen((value) => !value)}
-                  aria-expanded={sidebarFavoritesOpen}
-                  title="我的收藏"
-                >
-                  <Star className="w-[1.1rem] h-[1.1rem]" />
-                </button>
-
-                <button
-                  type="button"
-                  className="flex items-center justify-center p-2 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 transition-all"
-                  onClick={() => alert("回收站功能开发中")}
-                  title="回收站"
-                >
-                  <Trash2 className="w-[1.1rem] h-[1.1rem]" />
-                </button>
-              </div>
-
-              <div className="workspace-sidebar-stack">
-
-              
-
-                {sidebarFavoritesOpen ? (
-                  <div className="workspace-sidebar-search-panel max-h-[300px] overflow-y-auto">
-                    {favoriteState.length ? (
-                      <div className="workspace-sidebar-results">
-                        {favoriteState.map((favorite) => (
-                          <button
-                            key={favorite.id}
-                            type="button"
-                            onClick={() => {
-                              if (favorite.project_id) activateProject(favorite.project_id);
-                              if (favorite.job_id) {
-                                setTimeout(() => activateProjectJob(favorite.project_id!, favorite.job_id!), 50);
-                              }
-                            }}
-                            className="workspace-sidebar-result group flex flex-col gap-1 items-start text-left"
-                          >
-                            <span className="truncate w-full font-medium text-slate-700 dark:text-slate-300">
-                              {favorite.label || (favorite.item_type === "job" ? "访谈记录" : "内容碎片")}
-                            </span>
-                            {favorite.excerpt && (
-                              <span className="w-full text-xs text-slate-500 dark:text-slate-500 line-clamp-2">
-                                {favorite.excerpt}
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="workspace-sidebar-empty-note">{"\u6682\u65e0\u6536\u85cf\u5185\u5bb9"}</p>
-                    )}
-                  </div>
-                ) : null}
-
-                {sidebarSearchOpen ? (
-                  <div className="workspace-sidebar-search-panel">
-                    <label className="workspace-sidebar-search">
-                      <Search className="workspace-sidebar-item-icon" />
-                      <input
-                        ref={sidebarSearchInputRef}
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder={hasSelectedProject ? "\u641c\u7d22\u5f53\u524d\u9879\u76ee" : "\u8bf7\u5148\u9009\u62e9\u9879\u76ee"}
-                        disabled={!hasSelectedProject}
-                      />
-                    </label>
-
-                    {hasSelectedProject ? (
-                      search.trim().length >= 2 ? (
-                        <div className="workspace-sidebar-results">
-                          <div className="workspace-sidebar-search-status">
-                            {isProjectSearching ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Search className="h-3.5 w-3.5" />
-                            )}
-                            <span>{isProjectSearching ? "\u641c\u7d22\u4e2d" : `${projectResults.length} \u6761\u7ed3\u679c`}</span>
-                          </div>
-                          {projectResults.length ? (
-                            projectResults.map((result) => (
-                              <button
-                                key={result.id}
-                                type="button"
-                                onClick={() => jumpToSearchResult(result)}
-                                className="workspace-sidebar-result"
-                              >
-                                <span className="workspace-sidebar-result-kind">{result.kind}</span>
-                                <span className="min-w-0 flex-1 truncate">{result.title}</span>
-                              </button>
-                            ))
-                          ) : (
-                            <p className="workspace-sidebar-empty-note">{"\u9879\u76ee\u5185\u6682\u65e0\u5339\u914d\u9879"}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="workspace-sidebar-empty-note">{"\u8f93\u5165\u4e24\u4e2a\u4ee5\u4e0a\u5b57\u7b26\u540e\u4f1a\u641c\u7d22\u5f53\u524d\u9879\u76ee\u5185\u5bb9"}</p>
-                      )
-                    ) : (
-                      <p className="workspace-sidebar-empty-note">{"\u5148\u521b\u5efa\u5e76\u9009\u62e9\u4e00\u4e2a\u9879\u76ee\uff0c\u518d\u641c\u7d22\u5176\u4e2d\u7684\u8bbf\u8c08\u3001\u6765\u6e90\u548c\u8f93\u51fa"}</p>
-                    )}
-                  </div>
-                ) : null}
-
-                <div className="workspace-sidebar-project-list">
-                  {projectState.length ? (
-                    projectState.map((project) => {
-                      const isProjectExpanded = expandedProjectIds.includes(project.id);
-                      const projectJobs = jobsByProject.get(project.id) || [];
-                      const isProjectSwiped = swipedProjectId === project.id;
-
-                      return (
-                        <div
-                          key={project.id}
-                          className={`workspace-sidebar-project ${selectedProjectId === project.id ? "workspace-sidebar-project-active" : ""}`}
-                        >
-                          <div className="workspace-sidebar-project-swipe-shell">
-                            <div className="workspace-sidebar-project-head flex items-center pr-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleProjectExpanded(project.id)}
-                                className="workspace-flat-icon-button workspace-sidebar-project-toggle"
-                                aria-label={isProjectExpanded ? "收起项目" : "展开项目"}
-                                aria-expanded={isProjectExpanded}
-                              >
-                                <ChevronDown className={`h-4 w-4 transition-transform ${isProjectExpanded ? "" : "-rotate-90"}`} />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => activateProject(project.id)}
-                                className={`workspace-sidebar-item workspace-sidebar-project-button ${selectedProjectId === project.id ? "workspace-sidebar-item-active" : ""}`}
-                              >
-                                <Folder className="workspace-sidebar-item-icon" />
-                                <span className="truncate flex-1 text-left">{project.title}</span>
-                              </button>
-
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button type="button" className="workspace-flat-icon-button workspace-sidebar-project-menu-trigger ml-auto">
-                                    <MoreHorizontal className="h-4 w-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-32">
-                                  <DropdownMenuItem onClick={() => openNewInterviewForProject(project.id)}>
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    <span>新建录音</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => void deleteProject(project)} className="text-red-600 dark:text-red-400">
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    <span>删除项目</span>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-
-                          {isProjectExpanded ? (
-                            <div className="workspace-sidebar-recordings">
-                              {projectJobs.length ? (
-                                projectJobs.map((job) => {
-                                  const isJobSwiped = swipedJobId === job.id;
-                                  const isJobFavorite = favoriteJobIds.has(job.id);
-
-                                  return (
-                                    <div key={job.id} className="workspace-sidebar-recording-shell">
-                                      <div className="workspace-sidebar-recording-head group flex items-center pr-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => activateProjectJob(project.id, job.id)}
-                                          className={`workspace-sidebar-item workspace-sidebar-recording relative flex-1 min-w-0 pr-1 ${selectedJobId === job.id ? "workspace-sidebar-item-active" : ""}`}
-                                        >
-                                          {unreadJobIds.has(job.id) && (
-                                            <div className="absolute -left-0.5 top-1/2 -translate-y-1/2 w-[6px] h-[6px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] pointer-events-none" />
-                                          )}
-                                          <AudioLines className="workspace-sidebar-item-icon" />
-                                          <span className="truncate text-left">{getJobDisplayTitle(job)}</span>
-                                        </button>
-                                        
-                                        <button
-                                          type="button"
-                                          onClick={() => void toggleJobFavorite(job)}
-                                          className="workspace-flat-icon-button ml-auto mr-0.5 mt-0"
-                                          aria-label={isJobFavorite ? "取消收藏" : "收藏"}
-                                          title={isJobFavorite ? "取消收藏" : "收藏"}
-                                        >
-                                          <Star className={`h-[15px] w-[15px] ${isJobFavorite ? "fill-amber-400 text-amber-500" : "text-slate-300 dark:text-slate-600 hover:text-slate-400 dark:hover:text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"}`} />
-                                        </button>
-
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <button type="button" className="workspace-flat-icon-button workspace-sidebar-project-menu-trigger">
-                                              <MoreHorizontal className="h-4 w-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" />
-                                            </button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" className="w-32">
-                                            <DropdownMenuItem onClick={() => {
-                                              activateProjectJob(project.id, job.id);
-                                              setTimeout(() => setIsEditingJobTitle(true), 50);
-                                            }}>
-                                              <Pencil className="mr-2 h-4 w-4" />
-                                              <span>修改名字</span>
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => void deleteJob(job)} className="text-red-600 dark:text-red-400">
-                                              <Trash2 className="mr-2 h-4 w-4" />
-                                              <span>删除记录</span>
-                                            </DropdownMenuItem>
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      </div>
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <p className="workspace-sidebar-empty-note workspace-sidebar-empty-note-indented">{"\u6682\u65e0\u5f55\u97f3"}</p>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="workspace-sidebar-empty-note">{"\u5148\u65b0\u5efa\u4e00\u4e2a\u9879\u76ee\uff0c\u5f55\u97f3\u4f1a\u6309\u9879\u76ee\u5f52\u6863"}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="workspace-sidebar-footer">
-                <Link href={`/${locale}/app/settings`} className="workspace-sidebar-item workspace-sidebar-settings">
-                  <Settings className="workspace-sidebar-item-icon" />
-                  <span>{"\u8bbe\u7f6e"}</span>
-                </Link>
-              </div>
+          {selectedProjectJobs.length ? (
+            <div className="kw-record-grid">
+              {selectedProjectJobs.slice(0, 4).map((job) => {
+                const jobTranscript = transcripts.find((item) => item.job_id === job.id)?.transcript_text || job.live_transcript_snapshot || "";
+                return <JobCard key={job.id} job={job} title={getJobTitle(job, jobTranscript, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title"))} favorite={favoriteJobIds.has(job.id)} onOpen={() => selectJob(job)} onFavorite={() => void toggleJobFavorite(job)} statusLabel={statusLabel} dateLabel={formatDate(job.created_at, locale)} favoriteLabel={t("workspace.actions.favorite")} fallbackType={t("workspace.fallbacks.interview")} />;
+              })}
             </div>
-          ) : null}
-        </aside>
-
-        <main className={`workspace-main ${rightRailCollapsed ? "workspace-main-right-collapsed" : ""}`}>
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100/10 dark:border-white/5 flex-shrink-0">
-            <span className="font-semibold text-[1.05rem] tracking-tight text-[var(--color-foreground)]">{"\u5bf9\u8bdd"}</span>
-          </div>
-          <div className="workspace-main-stack px-6 overflow-hidden flex flex-col pt-4">
-            {!hasSelectedProject ? (
-              <div className="workspace-center-empty-state workspace-center-empty-state-project">
-                {renderCenterEmptyState("project")}
-              </div>
-            ) : (
-                <div className="flex-1 flex flex-col w-full max-w-[980px] mx-auto min-h-0 bg-transparent">
-                <div className="flex-shrink-0 flex flex-col gap-2 mb-4">
-                  <div className="workspace-center-board-title w-full">
-                    {displayCenterSection === "sources" ? (
-                      <>
-                        <h2 className="text-2xl font-bold tracking-tight text-[var(--color-foreground)]">{activeSource?.title || activeSource?.url || "\u6765\u6e90"}</h2>
-                        <p className="text-sm text-slate-500">{activeSource?.status || "\u5f53\u524d\u9879\u76ee\u6765\u6e90\u5185\u5bb9"}</p>
-                      </>
-                    ) : hasSelectedJob ? (
-                      isEditingJobTitle ? (
-                        <div className="workspace-editable-title-row">
-                          <Input
-                            ref={jobTitleInputRef}
-                            value={jobTitleDraft}
-                            onChange={(event) => setJobTitleDraft(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                void saveJobTitle();
-                              }
-                              if (event.key === "Escape") {
-                                event.preventDefault();
-                                setJobTitleDraft(selectedJob?.title || "");
-                                setIsEditingJobTitle(false);
-                              }
-                            }}
-                            className="workspace-title-input w-full"
-                            placeholder={"\u8f93\u5165\u6587\u6863\u4e3b\u9898"}
-                            disabled={isSavingJobTitle}
-                          />
-                          <div className="workspace-title-edit-actions">
-                            <button
-                              type="button"
-                              onClick={() => void saveJobTitle()}
-                              className="workspace-inline-action"
-                              disabled={isSavingJobTitle}
-                            >
-                              {isSavingJobTitle ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setJobTitleDraft(selectedJob?.title || "");
-                                setIsEditingJobTitle(false);
-                              }}
-                              className="workspace-inline-action"
-                              disabled={isSavingJobTitle}
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="workspace-editable-title-row group">
-                          <h2 className="text-[1.35rem] font-bold tracking-tight text-[var(--color-foreground)]">
-                            {selectedJob?.title || "\u672a\u547d\u540d\u6587\u6863"}
-                          </h2>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setJobTitleDraft(selectedJob?.title || "");
-                              setIsEditingJobTitle(true);
-                            }}
-                            className="workspace-inline-action workspace-title-edit-trigger workspace-title-edit-trigger-visible"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )
-                    ) : (
-                      <div className="h-8" />
-                    )}
-                  </div>
-                </div>
-
-                {hasSelectedJob && selectedJob?.capture_mode === "live" && (
-                  <div className="workspace-live-media-bar flex-shrink-0 mb-4 pb-4 border-b border-slate-100 dark:border-white/5">
-                    <LiveInterviewPanel
-                      key={selectedProjectId || "workspace-live"}
-                      onTranscriptChange={setLiveTranscriptSnapshot}
-                      onStatusChange={setLiveCaptureStatus}
-                      onEnsureJob={ensureLiveJob}
-                      onFinalizeStarted={handleLiveFinalizeStarted}
-                      onFinalizeSettled={handleLiveFinalizeSettled}
-                      onFinalized={handleLiveFinalized}
-                      disabled={!hasSelectedProject}
-                      disabledReason={projectLockedReason}
-                      isCompleted={selectedJob?.status === "completed"}
-                      compact
-                    />
-                  </div>
-                )}
-
-                <div className="flex-1 w-full overflow-y-auto px-1">{centerSectionContent}</div>
-              </div>
-            )}
-          </div>
-        </main>
-
-        <aside
-          className={`workspace-col-right workspace-glass-panel relative flex flex-col pt-6 pb-4 px-4 ${rightRailCollapsed ? "workspace-right-rail-collapsed" : ""}`}
-        >
-          {!hasSelectedProject ? (
-            <>
-              <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100/10 dark:border-white/5 mb-2">
-                {!rightRailCollapsed ? (
-                  <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">
-                    {selectedJob?.capture_mode === "live" ? "question coach" : "skill"}
-                  </span>
-                ) : <span />}
-                <button
-                  type="button"
-                  className="workspace-inline-action transition-opacity hover:opacity-100 opacity-60"
-                  onClick={() => setRightRailCollapsed((prev) => !prev)}
-                  aria-label={rightRailCollapsed ? "\u5c55\u5f00\u53f3\u4fa7\u680f" : "\u6298\u53e0\u53f3\u4fa7\u680f"}
-                  title={rightRailCollapsed ? "\u5c55\u5f00\u53f3\u4fa7\u680f" : "\u6298\u53e0\u53f3\u4fa7\u680f"}
-                >
-                  {rightRailCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-                </button>
-              </div>
-              {rightRailCollapsed ? (
-                <div className="workspace-right-rail-collapsed-body">
-                  <span className="workspace-right-rail-collapsed-label text-slate-400 text-xs">{"\u5c55\u5f00"}</span>
-                </div>
-              ) : (
-                <div className="workspace-empty-card flex-1 flex items-center justify-center">
-                  <p className="text-sm text-slate-500 dark:text-slate-400 opacity-80">{"\u5c1a\u672a\u5efa\u7acb\u9879\u76ee\u5e93"}</p>
-                </div>
-              )}
-            </>
           ) : (
-            <>
-              <div className="flex justify-between items-center px-5 py-4 border-b border-slate-100/10 dark:border-white/5 mb-2">
-                {!rightRailCollapsed ? (
-                  <span className="font-semibold text-[1.05rem] text-slate-800 dark:text-slate-200 tracking-tight">
-                    {selectedJob?.capture_mode === "live" ? "question coach" : "skill"}
-                  </span>
-                ) : <span />}
-                <button
-                  type="button"
-                  className="workspace-inline-action transition-opacity hover:opacity-100 opacity-60"
-                  onClick={() => setRightRailCollapsed((prev) => !prev)}
-                  aria-label={rightRailCollapsed ? "\u5c55\u5f00\u53f3\u4fa7\u680f" : "\u6298\u53e0\u53f3\u4fa7\u680f"}
-                  title={rightRailCollapsed ? "\u5c55\u5f00\u53f3\u4fa7\u680f" : "\u6298\u53e0\u53f3\u4fa7\u680f"}
-                >
-                  {rightRailCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-                </button>
-              </div>
-              {rightRailCollapsed ? (
-                <div className="workspace-right-rail-collapsed-body mt-2 flex flex-col gap-3 overflow-y-auto sidebar-scroll pb-4 flex-1 items-center">
-                  {selectedJob?.capture_mode === "live" ? (
-                    renderLiveQuestionCoach()
-                  ) : (
-                    <>
-                      {activePrimaryDisplayOrder.map((kind) =>
-                        renderStudioButton(kind, {
-                          title: getArtifactLabel(kind),
-                          icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
-                          isPrimary: true,
-                        })
-                      )}
-                      {SECONDARY_SKILL_ITEMS.map((item) =>
-                        renderStudioButton(item.kind, {
-                          title: item.title,
-                          icon: item.icon,
-                          accent: item.accent,
-                        })
-                      )}
-                    </>
-                  )}
+            <EmptyState title={t("workspace.empty.noInterviewsTitle")} copy={t("workspace.empty.noInterviewsCopy")} action={t("workspace.actions.addMaterial")} onAction={() => setCaptureDialogOpen(true)} />
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderJobDetail() {
+    if (!selectedJob) return null;
+    const isPendingRun = ["pending", "failed"].includes(selectedJob.status);
+    const canGenerate = Boolean(transcriptText.trim());
+
+    return (
+      <div className="kw-page-stack">
+        <div className="kw-job-hero">
+          <div className="kw-breadcrumbs">
+            <button type="button" onClick={() => setSelectedJobId(null)}>{t("workspace.nav.workspace")}</button>
+            <ChevronRight />
+            <span>{selectedProject?.title || t("workspace.context.project")}</span>
+          </div>
+          <div className="kw-job-title-row">
+            <div>
+              {editingJobTitle ? (
+                <div className="kw-title-edit">
+                  <input value={jobTitleDraft} onChange={(event) => setJobTitleDraft(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void saveJobTitle()} />
+                  <button type="button" className="kw-button primary" onClick={() => void saveJobTitle()}>{t("common.save")}</button>
+                  <button type="button" className="kw-button ghost" onClick={() => setEditingJobTitle(false)}>{t("common.cancel")}</button>
                 </div>
               ) : (
-                <div className="workspace-right-stream flex-1 flex flex-col overflow-y-auto pr-1 pb-4 sidebar-scroll">
-                  {selectedJob?.capture_mode === "live" ? (
-                    renderLiveQuestionCoach()
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-2 gap-3 mb-6">
-                        {activePrimaryDisplayOrder.map((kind) =>
-                          renderStudioButton(kind, {
-                            title: getArtifactLabel(kind),
-                            icon: PRIMARY_ARTIFACT_CONFIG[kind].icon,
-                            isPrimary: true,
-                          })
-                        )}
-                        {SECONDARY_SKILL_ITEMS.map((item) =>
-                          renderStudioButton(item.kind, {
-                            title: item.title,
-                            icon: item.icon,
-                            accent: item.accent,
-                          })
-                        )}
-                      </div>
-                      {renderSkillOutputCards()}
-                    </>
-                  )}
-                </div>
+                <h1>{currentTitle}</h1>
               )}
-            </>
-          )}
-        </aside>
-      </div>
-      <Dialog open={Boolean(previewArtifact)} onOpenChange={(open) => {
-        if (!open) {
-          setPreviewArtifactId(null);
-        }
-      }}>
-        <DialogContent className="max-w-5xl border-0 bg-transparent p-0 shadow-none">
-          {previewArtifact ? (
-            <div className="workspace-preview-shell">
-              <DialogHeader className="workspace-preview-header">
-                <div className="workspace-preview-title">
-                  <DialogTitle className="workspace-heading text-[1.4rem]">{getArtifactHeadline(previewArtifact)}</DialogTitle>
-                  <DialogDescription className="workspace-muted-copy">{getArtifactUpdatedLabel(previewArtifact)}</DialogDescription>
-                </div>
-              </DialogHeader>
-              <div className="workspace-scroll-content workspace-preview-scroll whitespace-pre-wrap text-sm text-slate-700">
-                {(previewArtifact.kind === "publish_script" ? parsedPreviewArtifact?.body : previewArtifact.content) || "\u6682\u65e0\u5185\u5bb9"}
+              <p>{selectedJob.guest_name || selectedJob.source_type || t("workspace.fallbacks.interviewRecord")} · {formatDate(selectedJob.created_at, locale)}</p>
+            </div>
+            <div className="kw-action-row">
+              <StatusPill status={selectedJob.status} label={statusLabel(selectedJob.status)} />
+              <button type="button" className="kw-icon-button" title={t("workspace.actions.rename")} onClick={() => setEditingJobTitle(true)}><Pencil /></button>
+              <button type="button" className={`kw-icon-button ${favoriteJobIds.has(selectedJob.id) ? "active" : ""}`} title={t("workspace.actions.favorite")} onClick={() => void toggleJobFavorite(selectedJob)}><Star /></button>
+              <button type="button" className="kw-icon-button danger" title={t("workspace.actions.delete")} onClick={() => void deleteJob(selectedJob)}><Trash2 /></button>
+            </div>
+          </div>
+        </div>
+
+        {selectedJob.error_message ? <div className="kw-alert error">{selectedJob.error_message}</div> : null}
+
+        {pendingTerms.length ? renderTermReview() : null}
+
+        <section className="kw-split">
+          <div className="kw-card kw-transcript-card">
+            <div className="kw-card-head">
+              <div>
+                <p className="kw-kicker">{t("workspace.transcript.kicker")}</p>
+                <h2>{transcriptText ? t("workspace.transcript.readyTitle") : t("workspace.transcript.waitingTitle")}</h2>
               </div>
-              {previewArtifact.audio_url ? (
-                <audio controls className="w-full">
-                  <source src={previewArtifact.audio_url} />
-                </audio>
+              {isPendingRun ? (
+                <button type="button" className="kw-button secondary" onClick={() => void runJob(selectedJob)}>
+                  <RefreshCw /> {t("workspace.actions.queue")}
+                </button>
               ) : null}
             </div>
+            {transcriptText ? (
+              <pre className="kw-transcript">{transcriptText}</pre>
+            ) : (
+              <EmptyState title={t("workspace.transcript.emptyTitle")} copy={t("workspace.transcript.emptyCopy")} action={isPendingRun ? t("workspace.actions.queueJob") : undefined} onAction={isPendingRun ? () => void runJob(selectedJob) : undefined} />
+            )}
+          </div>
+
+          <div className="kw-card">
+            <div className="kw-card-head">
+              <div>
+                <p className="kw-kicker">{t("workspace.artifacts.kicker")}</p>
+                <h2>{t("workspace.artifacts.generateTitle")}</h2>
+              </div>
+              <button type="button" className="kw-button primary" disabled={!canGenerate || pendingArtifacts.length > 0} onClick={() => void generateCoreArtifacts()}>
+                <Sparkles /> {t("workspace.actions.coreSet")}
+              </button>
+            </div>
+            <div className="kw-artifact-actions">
+              {SUPPORTED_ARTIFACT_DEFINITIONS.map((definition) => {
+                const artifact = selectedArtifacts.find((item) => item.kind === definition.kind);
+                const pending = pendingArtifacts.includes(definition.kind);
+                return (
+                  <button key={definition.kind} type="button" className={`kw-artifact-action ${definition.accent}`} disabled={!canGenerate || pending} onClick={() => artifact ? setPreviewArtifactId(artifact.id) : void generateArtifact(definition.kind)}>
+                    <span>{artifactShortLabel(definition.kind)}</span>
+                    <small>{pending ? t("workspace.actions.generating") : artifact ? t("workspace.actions.open") : t("workspace.actions.generate")}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderTermReview() {
+    return (
+      <section className="kw-card kw-review-card">
+        <div className="kw-card-head">
+          <div>
+            <p className="kw-kicker">Term Review</p>
+            <h2>Confirm extracted terminology</h2>
+          </div>
+          <button type="button" className="kw-button primary" disabled={isSavingTerms} onClick={() => void submitTermReview()}>
+            {isSavingTerms ? <Loader2 className="spin" /> : <CheckCircle2 />} Confirm terms
+          </button>
+        </div>
+        <div className="kw-term-list">
+          {pendingTerms.map((term) => {
+            const draft = termDrafts[term.id] || { confirmedText: term.term_text, action: "accept" as const };
+            return (
+              <div className="kw-term-row" key={term.id}>
+                <div>
+                  <strong>{term.term_text}</strong>
+                  {term.context ? <p>{term.context}</p> : null}
+                </div>
+                <input
+                  value={draft.confirmedText}
+                  disabled={draft.action === "reject"}
+                  onChange={(event) => setTermDrafts((current) => ({ ...current, [term.id]: { ...draft, confirmedText: event.target.value, action: "edit" } }))}
+                />
+                <select value={draft.action} onChange={(event) => setTermDrafts((current) => ({ ...current, [term.id]: { ...draft, action: event.target.value as TermDraft["action"] } }))}>
+                  <option value="accept">Accept</option>
+                  <option value="edit">Edit</option>
+                  <option value="reject">Reject</option>
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  function renderLive() {
+    return (
+      <div className="kw-live-mode">
+        <section className="kw-live-main">
+          <div className="kw-live-header">
+            <div>
+              <p className="kw-kicker">{t("workspace.live.kicker")}</p>
+              <h1>{selectedJob?.capture_mode === "live" ? getJobTitle(selectedJob, transcriptText, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title")) : t("workspace.live.title")}</h1>
+              <p>{liveCaptureStatus}</p>
+            </div>
+            <span className="kw-live-dot">{t("workspace.live.badge")}</span>
+          </div>
+          <div className="kw-live-panel-shell">
+            <LiveInterviewPanel
+              key={selectedJob?.id || selectedProjectId || "live"}
+              compact
+              disabled={!selectedProjectId}
+              disabledReason={t("workspace.errors.createProjectFirst")}
+              isCompleted={selectedJob?.capture_mode === "live" && selectedJob.status === "completed"}
+              onEnsureJob={ensureLiveJob}
+              onTranscriptChange={setLiveTranscriptSnapshot}
+              onStatusChange={setLiveCaptureStatus}
+              onFinalized={handleLiveFinalized}
+              onFinalizeStarted={() => setFeedback(t("workspace.feedback.finalizingLive"))}
+              onFinalizeSettled={(payload) => {
+                if (!payload.success) setError(payload.statusText);
+              }}
+            />
+          </div>
+          <div className="kw-card">
+            <div className="kw-card-head">
+              <div>
+                <p className="kw-kicker">{t("workspace.live.transcriptKicker")}</p>
+                <h2>{liveTranscriptSnapshot ? t("workspace.live.currentCapture") : t("workspace.live.noTranscript")}</h2>
+              </div>
+            </div>
+            {liveTranscriptSnapshot ? <pre className="kw-transcript">{liveTranscriptSnapshot}</pre> : <p className="kw-muted">{t("workspace.live.startHint")}</p>}
+          </div>
+        </section>
+        <aside className="kw-live-coach">
+          <h2>{t("workspace.live.questionCoach")}</h2>
+          {selectedArtifacts.filter((artifact) => artifact.kind === "inspiration_questions" || artifact.kind === "live_question_coach").slice(0, 3).map((artifact) => (
+            <button key={artifact.id} type="button" className="kw-coach-card" onClick={() => setPreviewArtifactId(artifact.id)}>
+              <span>{artifact.title}</span>
+              <p>{artifact.summary || getArtifactText(artifact).slice(0, 180)}</p>
+            </button>
+          ))}
+          {!selectedArtifacts.some((artifact) => artifact.kind === "inspiration_questions" || artifact.kind === "live_question_coach") ? (
+            <div className="kw-empty-mini"><span>{t("workspace.live.questionCoachEmpty")}</span></div>
           ) : null}
-        </DialogContent>
-      </Dialog>
+        </aside>
+      </div>
+    );
+  }
 
-      <Dialog open={newInterviewOpen} onOpenChange={(open) => {
-        if (open && !hasSelectedProject) {
-          setNewProjectOpen(true);
-          return;
-        }
-        setNewInterviewOpen(open);
-      }}>
-        <DialogContent className="max-w-3xl border-0 bg-transparent p-0 shadow-none">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{"\u65b0\u5efa\u5f55\u97f3\u6216\u6765\u6e90"}</DialogTitle>
-          </DialogHeader>
-          <NewJobForm
-            embedded
-            plan={plan}
-            projectId={selectedProjectId}
-            onCreated={handleJobCreated}
-            onImportedSource={handleSourceImported}
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={newSourceOpen} onOpenChange={setNewSourceOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{"\u5bfc\u5165\u7f51\u9875\u6765\u6e90"}</DialogTitle>
-            <DialogDescription>
-              {"\u7c98\u8d34\u7f51\u9875\u94fe\u63a5\uff0c\u6293\u53d6\u5185\u5bb9\u5e76\u5f52\u6863\u5230\u5f53\u524d\u9879\u76ee\u3002"}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="source-url">URL</label>
-              <Input
-                id="source-url"
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder="https://example.com/article"
-              />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="source-title">{"\u6765\u6e90\u6807\u9898\uff08\u53ef\u9009\uff09"}</label>
-              <Input
-                id="source-title"
-                value={sourceTitle}
-                onChange={(event) => setSourceTitle(event.target.value)}
-                placeholder={"\u53ef\u7559\u7a7a\uff0c\u7cfb\u7edf\u4f1a\u81ea\u52a8\u63d0\u53d6\u6807\u9898"}
-              />
-            </div>
-            {sourceError ? <p className="text-sm text-rose-600">{sourceError}</p> : null}
-            <Button
-              onClick={() => importSource(sourceUrl, sourceTitle, "url")}
-              disabled={isImportingSource || !sourceUrl.trim()}
-              className="workspace-primary-button"
-            >
-              {isImportingSource ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-              {"\u5bfc\u5165\u6765\u6e90"}
-            </Button>
+  function renderSources() {
+    return (
+      <div className="kw-page-stack">
+        <div className="kw-page-heading">
+          <div>
+            <p className="kw-kicker">{t("workspace.sources.kicker")}</p>
+            <h1>{t("workspace.sources.title")}</h1>
+            <p>{t("workspace.sources.connected", { count: projectSources.length, project: selectedProject?.title || t("workspace.context.thisProject") })}</p>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{"\u65b0\u5efa\u9879\u76ee"}</DialogTitle>
-            <DialogDescription>{"\u5148\u521b\u5efa\u4e00\u4e2a\u9879\u76ee\uff0c\u518d\u628a\u5f55\u97f3\u3001\u6765\u6e90\u548c\u8f93\u51fa\u5f52\u6863\u8fdb\u6765\u3002"}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="project-title">{"\u9879\u76ee\u540d\u79f0"}</label>
-              <Input
-                id="project-title"
-                value={newProjectTitle}
-                onChange={(event) => setNewProjectTitle(event.target.value)}
-                placeholder={"\u4f8b\u5982\uff1a\u65b0\u54c1\u53d1\u5e03\u4f1a"}
-              />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-700" htmlFor="project-description">{"\u9879\u76ee\u8bf4\u660e\uff08\u53ef\u9009\uff09"}</label>
-              <Input
-                id="project-description"
-                value={newProjectDescription}
-                onChange={(event) => setNewProjectDescription(event.target.value)}
-                placeholder={"\u8bb0\u5f55\u8bbf\u8c08\u5bf9\u8c61\u3001\u76ee\u6807\u6216\u80cc\u666f"}
-              />
-            </div>
-            {projectError ? <p className="text-sm text-rose-600">{projectError}</p> : null}
-            <Button onClick={createProject} disabled={isCreatingProject} className="workspace-primary-button">
-              {isCreatingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
-              {"\u521b\u5efa\u9879\u76ee"}
-            </Button>
+          <button type="button" className="kw-button primary" onClick={() => setCaptureDialogOpen(true)}><Upload /> {t("workspace.actions.import")}</button>
+        </div>
+        <div className="kw-split">
+          <div className="kw-list-panel">
+            {projectSources.length ? projectSources.map((source) => (
+              <button key={source.id} type="button" className={`kw-source-row ${selectedSourceId === source.id ? "active" : ""}`} onClick={() => selectSource(source)}>
+                <BookOpen />
+                <span>{source.title || source.url || t("workspace.sources.importedSource")}</span>
+                <small>{source.domain || source.source_type}</small>
+              </button>
+            )) : <EmptyState title={t("workspace.sources.emptyTitle")} copy={t("workspace.sources.emptyCopy")} action={t("workspace.actions.importSource")} onAction={() => setCaptureDialogOpen(true)} />}
           </div>
-        </DialogContent>
-      </Dialog>
+          <div className="kw-card">
+            <div className="kw-card-head">
+              <div>
+                <p className="kw-kicker">{selectedSource?.source_type || t("workspace.sources.preview")}</p>
+                <h2>{selectedSource?.title || t("workspace.sources.selectSource")}</h2>
+              </div>
+              {selectedSource?.status ? <span className={`kw-mini-status ${selectedSource.status}`}>{selectedSource.status}</span> : null}
+            </div>
+            {selectedSource ? (
+              <pre className="kw-source-preview">{selectedSource.extracted_text || selectedSource.raw_text || selectedSource.url || t("workspace.sources.noContent")}</pre>
+            ) : (
+              <p className="kw-muted">{t("workspace.sources.helper")}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-      {pendingArtifactKinds.length || isSavingClarifications ? <div className="workspace-loading-bar" /> : null}
-    </>
+  function renderArtifacts() {
+    const visibleArtifacts = selectedJob ? selectedArtifacts : projectArtifacts;
+    return (
+      <div className="kw-page-stack">
+        <div className="kw-page-heading">
+          <div>
+            <p className="kw-kicker">{t("workspace.artifacts.explorerKicker")}</p>
+            <h1>{selectedJob ? getJobTitle(selectedJob, transcriptText, t("workspace.fallbacks.untitledInterview"), t("workspace.overview.title")) : t("workspace.artifacts.allTitle")}</h1>
+            <p>{t("workspace.artifacts.generatedOutputs", { count: visibleArtifacts.length })}</p>
+          </div>
+          {selectedJob ? <button type="button" className="kw-button primary" disabled={!transcriptText.trim()} onClick={() => void generateCoreArtifacts()}><Sparkles /> {t("workspace.actions.generate")}</button> : null}
+        </div>
+        {visibleArtifacts.length ? (
+          <div className="kw-artifact-grid">
+            {visibleArtifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} favorite={favoriteArtifactIds.has(artifact.id)} pending={pendingArtifacts.includes(artifact.kind)} onOpen={() => setPreviewArtifactId(artifact.id)} onFavorite={() => void toggleArtifactFavorite(artifact)} label={artifactShortLabel(artifact.kind)} description={artifactDescription(artifact.kind)} dateLabel={formatDate(artifact.updated_at || artifact.created_at, locale)} favoriteLabel={t("workspace.actions.favorite")} />)}
+          </div>
+        ) : (
+          <EmptyState title={t("workspace.artifacts.emptyTitle")} copy={selectedJob ? t("workspace.artifacts.emptyJobCopy") : t("workspace.artifacts.emptyProjectCopy")} />
+        )}
+      </div>
+    );
+  }
+
+  function renderFavorites() {
+    return (
+      <div className="kw-page-stack">
+        <div className="kw-page-heading">
+          <div>
+            <p className="kw-kicker">{t("workspace.favorites.kicker")}</p>
+            <h1>{t("workspace.favorites.title")}</h1>
+            <p>{t("workspace.favorites.savedItems", { count: projectFavoriteItems.length })}</p>
+          </div>
+        </div>
+        {projectFavoriteItems.length ? (
+          <div className="kw-favorite-list">
+            {projectFavoriteItems.map((favorite) => (
+              <button key={favorite.id} type="button" className="kw-favorite-row" onClick={() => {
+                if (favorite.job_id) {
+                  const job = jobState.find((item) => item.id === favorite.job_id);
+                  if (job) selectJob(job);
+                }
+                if (favorite.artifact_id) setPreviewArtifactId(favorite.artifact_id);
+              }}>
+                <Star />
+                <span>{favorite.label || t("workspace.favorites.savedItem")}</span>
+                <small>{favorite.excerpt || favorite.item_type}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title={t("workspace.favorites.emptyTitle")} copy={t("workspace.favorites.emptyCopy")} />
+        )}
+      </div>
+    );
+  }
+
+  function renderActiveSection() {
+    if (activeSection === "live") return renderLive();
+    if (activeSection === "sources") return renderSources();
+    if (activeSection === "artifacts") return renderArtifacts();
+    if (activeSection === "favorites") return renderFavorites();
+    return renderOverview();
+  }
+
+  return (
+    <div className="kemo-workspace">
+      <aside className="kw-sidebar">
+        <div className="kw-brand">
+          <div className="kw-brand-mark">K</div>
+          <div>
+            <strong>Kemo.AI</strong>
+            <span>{t("workspace.brand.subtitle")}</span>
+          </div>
+        </div>
+        <button type="button" className="kw-button primary full" onClick={() => setCaptureDialogOpen(true)}>
+          <Plus /> {t("workspace.actions.newResearchMaterial")}
+        </button>
+        <nav className="kw-nav" aria-label={t("workspace.nav.aria")}>
+          {WORKSPACE_NAV_ITEMS.map((item) => {
+            if (item.id === "settings") {
+              return (
+                <Link key={item.id} href={`/${locale}/app/settings`} className="kw-nav-item">
+                  <Settings className="kw-nav-lucide" /> {t(`workspace.nav.${item.id}`)}
+                </Link>
+              );
+            }
+            return (
+              <button key={item.id} type="button" className={`kw-nav-item ${activeSection === item.id ? "active" : ""}`} onClick={() => setActiveSection(item.id)}>
+                <span className="kw-material">{item.icon}</span> {t(`workspace.nav.${item.id}`)}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="kw-sidebar-search">
+          <Search />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={selectedProjectId ? t("workspace.search.placeholder") : t("workspace.search.selectProject")} disabled={!selectedProjectId} />
+        </div>
+        {searchResults.length || isSearching ? (
+          <div className="kw-search-popover">
+            {isSearching ? <span>{t("workspace.search.searching")}</span> : null}
+            {searchResults.map((result) => (
+              <button key={`${result.kind}-${result.id}`} type="button" onClick={() => jumpToSearchResult(result)}>
+                <strong>{result.title}</strong>
+                <small>{result.kind}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="kw-project-tree">{renderProjectTree()}</div>
+      </aside>
+
+      <div className="kw-main">
+        <header className="kw-topbar">
+          <div>
+            <p className="kw-kicker">{selectedProject?.title || t("workspace.empty.noProjectSelected")}</p>
+            <h2>{currentTitle}</h2>
+          </div>
+          <div className="kw-topbar-actions">
+            <button type="button" className="kw-button secondary" onClick={() => setProjectDialogOpen(true)}><Plus /> {t("workspace.actions.project")}</button>
+            <button type="button" className="kw-icon-button" title={t("workspace.actions.refresh")} onClick={() => router.refresh()}><RefreshCw /></button>
+            <LanguageSwitcher />
+            <WorkspaceThemeSwitcher />
+            <button type="button" className="kw-icon-button" title={t("workspace.actions.signOut")} onClick={() => void signOut()}><LogOut /></button>
+          </div>
+        </header>
+
+        <main className="kw-canvas">
+          <section className="kw-content">{renderActiveSection()}</section>
+          <aside className="kw-context-rail">
+            <div className="kw-rail-card">
+              <p className="kw-kicker">{t("workspace.context.kicker")}</p>
+              <h3>{selectedJob ? t("workspace.context.interview") : t("workspace.context.project")}</h3>
+              <dl>
+                <div><dt>{t("workspace.context.status")}</dt><dd>{selectedJob ? statusLabel(selectedJob.status) : t("workspace.metrics.interviews", { count: selectedProjectJobs.length })}</dd></div>
+                <div><dt>{t("workspace.context.sources")}</dt><dd>{projectSources.length}</dd></div>
+                <div><dt>{t("workspace.context.artifacts")}</dt><dd>{projectArtifacts.length}</dd></div>
+              </dl>
+            </div>
+            <div className="kw-rail-card">
+              <p className="kw-kicker">{t("workspace.plan.kicker")}</p>
+              <h3>{plan.plan}</h3>
+              <p>{t("workspace.plan.limitNote", { limit: plan.maxFileSizeMb })}</p>
+            </div>
+            {pendingTerms.length ? (
+              <div className="kw-rail-card accent">
+                <p className="kw-kicker">{t("workspace.review.blocker")}</p>
+                <h3>{t("workspace.review.pendingTerms", { count: pendingTerms.length })}</h3>
+                <button type="button" className="kw-button primary full" onClick={() => setActiveSection("workspace")}>{t("workspace.review.reviewNow")}</button>
+              </div>
+            ) : null}
+          </aside>
+        </main>
+      </div>
+
+      {(feedback || error) ? (
+        <div className={`kw-toast ${error ? "error" : ""}`}>
+          <span>{error || feedback}</span>
+          <button type="button" onClick={() => { setFeedback(null); setError(null); }}><X /></button>
+        </div>
+      ) : null}
+
+      {projectDialogOpen ? (
+        <Modal title={t("workspace.projectDialog.title")} closeLabel={t("common.close")} onClose={() => setProjectDialogOpen(false)}>
+          <div className="kw-form-stack">
+            <label>{t("workspace.projectDialog.titleLabel")}<input value={newProjectTitle} onChange={(event) => setNewProjectTitle(event.target.value)} placeholder={t("workspace.projectDialog.titlePlaceholder")} /></label>
+            <label>{t("workspace.projectDialog.descriptionLabel")}<textarea value={newProjectDescription} onChange={(event) => setNewProjectDescription(event.target.value)} placeholder={t("workspace.projectDialog.descriptionPlaceholder")} /></label>
+            <button type="button" className="kw-button primary full" disabled={isCreatingProject} onClick={() => void createProject()}>{isCreatingProject ? <Loader2 className="spin" /> : <Plus />} {t("workspace.projectDialog.create")}</button>
+          </div>
+        </Modal>
+      ) : null}
+
+      {captureDialogOpen ? (
+        <Modal title={t("workspace.captureDialog.title")} closeLabel={t("common.close")} onClose={() => setCaptureDialogOpen(false)}>
+          <div className="kw-capture-grid">
+            <button type="button" onClick={() => { setActiveSection("live"); setCaptureDialogOpen(false); }}><Mic /><strong>{t("workspace.captureDialog.liveTitle")}</strong><span>{t("workspace.captureDialog.liveCopy")}</span></button>
+            <button type="button" onClick={() => fileInputRef.current?.click()}><Upload /><strong>{t("workspace.captureDialog.uploadTitle")}</strong><span>{t("workspace.captureDialog.uploadCopy")}</span></button>
+            <button type="button" onClick={() => setActiveSection("sources")}><BookOpen /><strong>{t("workspace.captureDialog.urlTitle")}</strong><span>{t("workspace.captureDialog.urlCopy")}</span></button>
+          </div>
+          <div className="kw-form-stack">
+            <label>{t("workspace.captureDialog.sourceTitle")}<input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder={t("workspace.captureDialog.optional")} /></label>
+            <label>URL<input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://..." /></label>
+            <button type="button" className="kw-button secondary full" disabled={uploadState === "working"} onClick={() => void importUrlSource()}>{uploadState === "working" ? <Loader2 className="spin" /> : <BookOpen />} {t("workspace.actions.importUrl")}</button>
+          </div>
+          <input ref={fileInputRef} className="hidden" type="file" accept="audio/*,video/*,.txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx" onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = "";
+            if (file) void handleFileUpload(file);
+          }} />
+        </Modal>
+      ) : null}
+
+      {previewArtifact ? (
+        <Modal title={previewArtifact.title} closeLabel={t("common.close")} wide onClose={() => setPreviewArtifactId(null)}>
+          <div className="kw-preview-layout">
+            <article className="kw-preview-document">
+              <p className="kw-kicker">{artifactLabel(previewArtifact.kind)}</p>
+              <h2>{previewArtifact.title}</h2>
+              {previewArtifact.audio_url ? <audio controls src={previewArtifact.audio_url} className="kw-audio" /> : null}
+              <pre>{getArtifactText(previewArtifact) || t("workspace.artifacts.noContent")}</pre>
+            </article>
+            <aside className="kw-preview-meta">
+              <StatusPill status={previewArtifact.status} label={statusLabel(previewArtifact.status)} />
+              <p>{previewArtifact.summary || artifactDescription(previewArtifact.kind)}</p>
+              <button type="button" className="kw-button secondary full" onClick={() => void copyArtifact(previewArtifact)}><Copy /> {t("common.copy")}</button>
+              {getDownloadPath(previewArtifact) ? <a className="kw-button primary full" href={getDownloadPath(previewArtifact) || "#"}><Download /> {t("workspace.actions.downloadDocx")}</a> : null}
+              <button type="button" className={`kw-button secondary full ${favoriteArtifactIds.has(previewArtifact.id) ? "active" : ""}`} onClick={() => void toggleArtifactFavorite(previewArtifact)}><Star /> {favoriteArtifactIds.has(previewArtifact.id) ? t("workspace.actions.favorited") : t("workspace.actions.favorite")}</button>
+            </aside>
+          </div>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+function Metric({ label, value, note, tone = "default" }: { label: string; value: string; note: string; tone?: "default" | "ready" | "review" | "ai" }) {
+  return (
+    <div className={`kw-metric ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{note}</small>
+    </div>
+  );
+}
+
+function StatusPill({ status, label }: { status: string | null | undefined; label: string }) {
+  return <span className={`kw-status-pill ${getStatusTone(status)}`}>{label}</span>;
+}
+
+function EmptyState({ title, copy, action, onAction }: { title: string; copy: string; action?: string; onAction?: () => void }) {
+  return (
+    <div className="kw-empty-state">
+      <Archive />
+      <h3>{title}</h3>
+      <p>{copy}</p>
+      {action && onAction ? <button type="button" className="kw-button primary" onClick={onAction}>{action}</button> : null}
+    </div>
+  );
+}
+
+function JobCard({
+  job,
+  title,
+  favorite,
+  onOpen,
+  onFavorite,
+  statusLabel,
+  dateLabel,
+  favoriteLabel,
+  fallbackType,
+}: {
+  job: JobRow;
+  title: string;
+  favorite: boolean;
+  onOpen: () => void;
+  onFavorite: () => void;
+  statusLabel?: (status: string | null | undefined) => string;
+  dateLabel?: string;
+  favoriteLabel: string;
+  fallbackType: string;
+}) {
+  return (
+    <div className="kw-record-card">
+      <button type="button" className="kw-record-open" onClick={onOpen}>
+        <div>
+          <StatusPill status={job.status} label={statusLabel?.(job.status) || ""} />
+          <MoreHorizontal />
+        </div>
+        <h3>{title}</h3>
+        <p>{job.guest_name || job.source_type || job.capture_mode || fallbackType}</p>
+        <small>{dateLabel}</small>
+      </button>
+      <button type="button" className={`kw-icon-button ${favorite ? "active" : ""}`} onClick={onFavorite} title={favoriteLabel}><Star /></button>
+    </div>
+  );
+}
+
+function ArtifactCard({
+  artifact,
+  favorite,
+  pending,
+  onOpen,
+  onFavorite,
+  label,
+  description,
+  dateLabel,
+  favoriteLabel,
+}: {
+  artifact: WorkspaceArtifact;
+  favorite: boolean;
+  pending: boolean;
+  onOpen: () => void;
+  onFavorite: () => void;
+  label: string;
+  description: string;
+  dateLabel: string;
+  favoriteLabel: string;
+}) {
+  const definition = getArtifactDefinition(artifact.kind);
+  return (
+    <div className={`kw-artifact-card ${definition.accent}`}>
+      <button type="button" onClick={onOpen}>
+        <div>
+          <span>{label}</span>
+          {pending ? <Loader2 className="spin" /> : <FileText />}
+        </div>
+        <h3>{artifact.title}</h3>
+        <p>{artifact.summary || getArtifactText(artifact).slice(0, 180) || description}</p>
+        <small>{dateLabel}</small>
+      </button>
+      <button type="button" className={`kw-icon-button ${favorite ? "active" : ""}`} onClick={onFavorite} title={favoriteLabel}><Star /></button>
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, wide = false, closeLabel }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; closeLabel: string }) {
+  return (
+    <div className="kw-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className={`kw-modal ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <h2>{title}</h2>
+          <button type="button" className="kw-icon-button" onClick={onClose} title={closeLabel}><X /></button>
+        </header>
+        {children}
+      </section>
+    </div>
   );
 }

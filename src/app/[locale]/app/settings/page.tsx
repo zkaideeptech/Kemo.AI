@@ -52,8 +52,8 @@ export default async function SettingsPage({
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("nav.settings") || "个人中心"}</h1>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">管理你的仪表盘、个人资料、安全信息和偏好设置。</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("settings.title")}</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("settings.subtitle")}</p>
         </div>
       </div>
 

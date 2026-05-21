@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Mic, Chrome, Users, Square, Upload } from "lucide-react";
-
 import { Button } from "@/components/ui/button";
+import { KemoLiveIcon, type KemoLiveIconName } from "@/components/kemo-live-icons";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -38,25 +37,25 @@ const CAPTURE_MODE_OPTIONS: Array<{
   mode: CaptureMode;
   label: string;
   description: string;
-  icon: typeof Mic;
+  icon: KemoLiveIconName;
 }> = [
   {
     mode: "mic",
     label: "面对面",
     description: "使用本机麦克风，适合线下面谈和单人记录。",
-    icon: Mic,
+    icon: "mic",
   },
   {
     mode: "system",
     label: "会议 App",
     description: "捕获会议软件或电脑系统声音，适合飞书、Meet、Zoom。",
-    icon: Users,
+    icon: "people",
   },
   {
     mode: "tab",
     label: "浏览器页面",
     description: "选择任意已打开标签页，例如 YouTube、播客或网页直播。",
-    icon: Chrome,
+    icon: "tab",
   },
 ];
 
@@ -290,7 +289,6 @@ export function LiveInterviewPanel({
   onFinalizeSettled,
   onFinalized,
   afterRecorderSlot,
-  onRequestUpload,
   disabled = false,
   disabledReason = "请先创建项目",
   compact = false,
@@ -303,7 +301,6 @@ export function LiveInterviewPanel({
   onFinalizeSettled?: (payload: { success: boolean; statusText: string }) => void;
   onFinalized?: (payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) => void;
   afterRecorderSlot?: ReactNode;
-  onRequestUpload?: () => void;
   disabled?: boolean;
   disabledReason?: string;
   compact?: boolean;
@@ -1196,13 +1193,8 @@ export function LiveInterviewPanel({
   const startButtonDisabled = disabled || isStarting || isStopping;
   const stopButtonDisabled = isStopping;
   const sourceSummary = getSourceSummary({ captureMode });
-  const captureModeLabel = getCaptureModeLabel(captureMode);
   const transcriptToggleLabel = transcriptExpanded ? "收起转写" : "查看转写";
   const recorderTimeLabel = formatElapsedTime(elapsedSeconds);
-  const recorderPrimaryLine = isRunning ? `${recorderTimeLabel} Recording meeting` : "准备开始实时录音";
-  const recorderSecondaryLine = isRunning
-    ? `当前来源 · ${captureModeLabel}`
-    : "选择来源后开始，本轮会自动创建实时访谈并同步转写。";
 
   return (
     <section className={`workspace-panel workspace-live-panel ${compact ? "workspace-live-compact" : ""} ${disabled ? "workspace-panel-disabled" : ""}`}>
@@ -1219,15 +1211,10 @@ export function LiveInterviewPanel({
         </div>
       </div>
 
-      <div className={`flex items-center gap-7 mb-2 overflow-x-auto py-2 px-1 ${compact ? "opacity-80 hover:opacity-100 transition-opacity" : ""}`}>
+      <div className={`workspace-live-control-row ${compact ? "workspace-live-control-row-compact" : ""}`}>
+        <div className="workspace-live-source-switch" aria-label="选择会议来源">
         {CAPTURE_MODE_OPTIONS.map((option) => {
-          const Icon = option.icon;
           const isActive = captureMode === option.mode;
-          const getActiveClasses = (mode: string) => {
-            if (mode === "mic") return "bg-[#0070f3] text-white border-[#0070f3] shadow-[0_4px_14px_0_rgb(0,118,255,0.39)] scale-110";
-            if (mode === "system") return "bg-[#eb367f] text-white border-[#eb367f] shadow-[0_4px_14px_0_rgb(235,54,127,0.39)] scale-110";
-            return "bg-[#ff5b4f] text-white border-[#ff5b4f] shadow-[0_4px_14px_0_rgb(255,91,79,0.39)] scale-110";
-          };
 
           return (
             <button
@@ -1236,17 +1223,16 @@ export function LiveInterviewPanel({
               onClick={() => setCaptureMode(option.mode)}
               disabled={disabled || isRunning || isStarting || isStopping}
               title={disabled ? disabledReason : option.description}
-              className={`flex justify-center items-center h-12 w-12 shrink-0 rounded-full outline-none transition-all duration-300 border ${
-                isActive 
-                  ? getActiveClasses(option.mode)
-                  : "bg-white text-slate-500 border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 hover:text-slate-800 dark:bg-[#171717] dark:border-white/10 dark:hover:border-white/20 hover:scale-110"
-              }`}
+              aria-pressed={isActive}
+              className={`workspace-live-source-option workspace-live-source-option-${option.mode} ${isActive ? "active" : ""}`}
             >
-              <Icon className="h-5 w-5" />
+              <KemoLiveIcon name={option.icon} className="workspace-live-source-option-icon" />
+              <span>{option.label}</span>
             </button>
           );
         })}
-        <div className="w-[1px] h-6 bg-slate-200 dark:bg-slate-700 mx-4" />
+        </div>
+        <div className="workspace-live-control-divider" />
         {isCompleted ? (
           <span className="text-sm font-semibold text-[#0068d6] bg-[#ebf5ff] dark:bg-[#003d7a]/30 dark:text-[#66b3ff] px-5 py-2.5 rounded-full whitespace-nowrap shrink-0 shadow-[0_0_0_1px_rgba(0,104,214,0.1)]">
             录音已整理结束
@@ -1254,30 +1240,30 @@ export function LiveInterviewPanel({
         ) : !isRunning ? (
           <Button
             onClick={startLive}
-            className="rounded-full shadow-[0_4px_14px_0_rgb(0,118,255,0.39)] hover:shadow-[0_6px_20px_rgba(0,118,255,0.23)] hover:-translate-y-0.5 transition-all text-sm h-12 px-8 font-[600] text-white bg-[#0070f3] hover:bg-[#0060df] whitespace-nowrap shrink-0 border-0"
+            className="workspace-live-start-button"
             disabled={startButtonDisabled}
           >
-            {isStarting ? "正在连接..." : "开始捕获"}
+            {isStarting ? "正在连接..." : "开始处理"}
           </Button>
         ) : (
           <div className="flex items-center gap-4">
             <Button
               onClick={pauseLive}
               variant="secondary"
-              className="rounded-full shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.04)] hover:shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all text-sm h-12 px-6 font-[500] whitespace-nowrap shrink-0 border-0 bg-white hover:bg-slate-50 dark:bg-slate-900"
+              className="workspace-live-secondary-button"
               disabled={stopButtonDisabled || pendingAction === "pausing"}
             >
-              <Square className="h-4 w-4 mr-2" />
+              <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
               {pendingAction === "pausing" ? "暂停中..." : "暂停录制"}
             </Button>
             <Button
               onClick={stopLive}
               variant="destructive"
-              className="rounded-full shadow-[0_4px_14px_0_rgb(255,91,79,0.39)] hover:shadow-[0_6px_20px_rgba(255,91,79,0.23)] hover:-translate-y-0.5 transition-all text-sm h-12 px-6 font-[600] whitespace-nowrap shrink-0 bg-[#ff5b4f] hover:bg-[#ff4536] text-white border-0"
+              className="workspace-live-danger-button"
               disabled={stopButtonDisabled}
             >
-              <Square className="h-4 w-4 mr-2" />
-              {isStopping ? "正在停止..." : "结束并整理"}
+              <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
+                {isStopping ? "正在停止..." : "结束处理"}
             </Button>
           </div>
         )}
@@ -1310,7 +1296,7 @@ export function LiveInterviewPanel({
                 className="rounded-full shadow-md text-xs h-8 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700"
                 disabled={startButtonDisabled}
               >
-                {isStarting ? "正在连接…" : "开始捕获"}
+                {isStarting ? "正在连接…" : "开始处理"}
               </Button>
             ) : (
               <Button
@@ -1319,7 +1305,7 @@ export function LiveInterviewPanel({
                 className="rounded-full shadow-md text-xs h-8 px-4 font-semibold shrink-0"
                 disabled={stopButtonDisabled}
               >
-                <Square className="h-3.5 w-3.5 mr-1" />
+                <KemoLiveIcon name="stop" className="h-3.5 w-3.5 mr-1" />
                 {isStopping ? "正在停止…" : "结束并整理"}
               </Button>
             )}

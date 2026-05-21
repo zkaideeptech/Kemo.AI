@@ -29,6 +29,7 @@ export type FavoriteRow = Database["public"]["Tables"]["favorites"]["Row"];
 export type SourceRow = Database["public"]["Tables"]["sources"]["Row"];
 export type TranscriptRow = Database["public"]["Tables"]["transcripts"]["Row"];
 export type MemoRow = Database["public"]["Tables"]["memos"]["Row"];
+export type TermOccurrenceRow = Database["public"]["Tables"]["term_occurrences"]["Row"];
 export type WorkspaceArtifact = ArtifactRow & {
   isLegacy?: boolean;
 };
