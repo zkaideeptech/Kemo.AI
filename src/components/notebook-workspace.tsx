@@ -54,7 +54,7 @@ function LocaleSegmentedControl({ locale }: { locale: string }) {
         中文
       </Link>
       <Link className={locale === "en" ? "active" : ""} href={nextPath("en")} aria-current={locale === "en" ? "true" : undefined}>
-        EN
+        English
       </Link>
     </div>
   );
@@ -1864,6 +1864,7 @@ export function NotebookWorkspace({
           <span className="material-symbols-outlined">add</span>
           {copy.newProject}
         </button>
+        <LocaleSegmentedControl locale={locale} />
         <div className="kw-designer-nav-list">
           {navItems.map((item) => item.href ? (
             <Link className={`kw-designer-nav-item ${activeSection === item.id ? "active" : ""}`} href={item.href} key={item.id}>
@@ -1881,7 +1882,6 @@ export function NotebookWorkspace({
           ))}
         </div>
         <div className="kw-designer-footer-nav">
-          <LocaleSegmentedControl locale={locale} />
           {footerNavItems.map((item) => (
             <button className={`kw-designer-nav-item ${activeSection === item.id ? "active" : ""}`} type="button" key={item.id} onClick={() => setActiveSection(item.id)}>
               <span className="material-symbols-outlined">{item.icon}</span>
