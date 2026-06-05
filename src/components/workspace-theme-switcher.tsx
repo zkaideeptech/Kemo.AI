@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { useTranslations } from "next-intl";
 import { Monitor, Moon, SunMedium } from "lucide-react";
 
 const STORAGE_KEY = "kemo-ui-mode";
@@ -12,9 +13,9 @@ const MODES: Array<{
   label: string;
   icon: typeof Monitor;
 }> = [
-  { id: "system", label: "系统", icon: Monitor },
-  { id: "light", label: "浅色", icon: SunMedium },
-  { id: "dark", label: "深色", icon: Moon },
+  { id: "system", label: "system", icon: Monitor },
+  { id: "light", label: "light", icon: SunMedium },
+  { id: "dark", label: "dark", icon: Moon },
 ];
 
 function applyWorkspaceMode(mode: WorkspaceUiMode) {
@@ -44,22 +45,15 @@ function applyWorkspaceMode(mode: WorkspaceUiMode) {
 }
 
 function getWorkspaceModeSnapshot() {
-  if (typeof window === "undefined") {
-    return "system" as WorkspaceUiMode;
-  }
-
+  if (typeof window === "undefined") return "system" as WorkspaceUiMode;
   const storedMode = window.localStorage.getItem(STORAGE_KEY);
-  if (storedMode === "dark" || storedMode === "light" || storedMode === "system") {
-    return storedMode;
-  }
-
+  if (storedMode === "dark" || storedMode === "light" || storedMode === "system") return storedMode;
   return "system";
 }
 
 function subscribeToWorkspaceModeChange(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
   window.addEventListener(THEME_CHANGE_EVENT, onStoreChange);
-
   return () => {
     window.removeEventListener("storage", onStoreChange);
     window.removeEventListener(THEME_CHANGE_EVENT, onStoreChange);
@@ -67,29 +61,23 @@ function subscribeToWorkspaceModeChange(onStoreChange: () => void) {
 }
 
 export function WorkspaceThemeSwitcher() {
-  const mode = useSyncExternalStore(
-    subscribeToWorkspaceModeChange,
-    getWorkspaceModeSnapshot,
-    () => "system"
-  );
+  const t = useTranslations();
+  const mode = useSyncExternalStore(subscribeToWorkspaceModeChange, getWorkspaceModeSnapshot, () => "system");
 
   return (
-    <div className="workspace-ui-switcher" aria-label="UI 切换">
+    <div className="workspace-ui-switcher" aria-label={t("workspace.theme.aria")}>
       {MODES.map((item) => {
         const Icon = item.icon;
         const isActive = mode === item.id;
-
         return (
           <button
             key={item.id}
             type="button"
             className={`workspace-ui-switcher-button ${isActive ? "workspace-ui-switcher-button-active" : ""}`}
             aria-pressed={isActive}
-            aria-label={item.label}
-            title={item.label}
-            onClick={() => {
-              applyWorkspaceMode(item.id);
-            }}
+            aria-label={t(`workspace.theme.${item.id}`)}
+            title={t(`workspace.theme.${item.id}`)}
+            onClick={() => applyWorkspaceMode(item.id)}
           >
             <Icon className="h-4 w-4" />
           </button>

@@ -72,7 +72,7 @@ Baseline command:
 npm run qa:baseline
 ```
 
-Run this before and after changes that touch app routing, provider connectivity, job processing, auth, storage, or i18n behavior. It packages the current build plus required environment connectivity as the regression baseline.
+Run this before and after changes that touch app routing, provider connectivity, job processing, auth, storage, live artifacts, or i18n behavior. It packages the live question coach regression check, current build, and required environment connectivity as the regression baseline.
 
 For frontend behavior changes, also start the local app and verify the affected screen in a browser when practical.
 
@@ -81,6 +81,9 @@ For bug fixes, verification must include the original failing path or a close re
 ## Skill Routing
 
 - Bug fixes: use the debugging/root-cause workflow before editing.
+- Reported product bugs and live artifact regressions must pass the two core skill gates before baseline packaging:
+  1. `gstack-investigate` intent: reproduce the symptom, trace the data/rendering path, and state the root cause before editing.
+  2. `agent-training-loop` intent: define objective, validation set, search space, and stop conditions, then run at least one reproduce -> detect -> execute -> check cycle with a generalization check.
 - Large features or architecture changes: use CEO review and engineering review planning before implementation.
 - UI-heavy work: use the frontend design rules and verify visually.
 - Release or PR work: run the ship/review style checklist before final handoff.

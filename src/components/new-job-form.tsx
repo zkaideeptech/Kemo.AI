@@ -1,33 +1,17 @@
 /**
  * @file new-job-form.tsx
- * @description 上传文件 / 导入 URL 的统一入口
+ * @description 上传文件 / 导入 URL / 发起实时记录的统一入口
  */
 
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import {
-  CheckCircle2,
-  Link2,
-  Loader2,
-  Upload,
-  XCircle,
-  Mic,
-  ArrowLeft
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, Link2, Loader2, Mic, Upload, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { PlanTier } from "@/lib/billing/plan";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { JobRow, SourceRow } from "@/lib/workspace";
@@ -37,37 +21,11 @@ type SuccessKind = "job" | "source" | null;
 
 const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
 const TEXT_PREVIEW_LIMIT = 16000;
-const MEDIA_EXTENSIONS = new Set([
-  ".mp3",
-  ".wav",
-  ".m4a",
-  ".aac",
-  ".flac",
-  ".ogg",
-  ".mp4",
-  ".mov",
-  ".mkv",
-  ".avi",
-  ".webm",
-  ".mpg",
-  ".mpeg",
-]);
-const TEXT_EXTENSIONS = new Set([
-  ".txt",
-  ".md",
-  ".markdown",
-  ".csv",
-  ".json",
-  ".yaml",
-  ".yml",
-  ".srt",
-  ".vtt",
-]);
+const MEDIA_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".avi", ".webm", ".mpg", ".mpeg"]);
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".csv", ".json", ".yaml", ".yml", ".srt", ".vtt"]);
 
 function sanitizeFileName(name: string) {
-  return name
-    .replace(/[^\w.\-]/g, "_")
-    .replace(/_+/g, "_");
+  return name.replace(/[^\w.\-]/g, "_").replace(/_+/g, "_");
 }
 
 function getFileExtension(name: string) {
@@ -76,48 +34,25 @@ function getFileExtension(name: string) {
 }
 
 function formatFileSize(bytes: number) {
-  if (bytes >= 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${bytes} B`;
 }
 
 function isMediaFile(file: File) {
-  if (file.type.startsWith("audio/") || file.type.startsWith("video/")) {
-    return true;
-  }
-
+  if (file.type.startsWith("audio/") || file.type.startsWith("video/")) return true;
   return MEDIA_EXTENSIONS.has(getFileExtension(file.name));
 }
 
 function isTextLikeFile(file: File) {
-  if (file.type.startsWith("text/")) {
-    return true;
-  }
-
-  if (
-    file.type.includes("json") ||
-    file.type.includes("xml") ||
-    file.type.includes("yaml")
-  ) {
-    return true;
-  }
-
+  if (file.type.startsWith("text/")) return true;
+  if (file.type.includes("json") || file.type.includes("xml") || file.type.includes("yaml")) return true;
   return TEXT_EXTENSIONS.has(getFileExtension(file.name));
 }
 
 async function buildDocumentSourceText(file: File) {
-  const fileSummary = [
-    `文件名：${file.name}`,
-    `格式：${file.type || getFileExtension(file.name) || "未知"}`,
-    `大小：${formatFileSize(file.size)}`,
-  ].join("\n");
+  const fileSummary = [`文件名：${file.name}`, `格式：${file.type || getFileExtension(file.name) || "未知"}`, `大小：${formatFileSize(file.size)}`].join("\n");
 
   if (!isTextLikeFile(file)) {
     return `${fileSummary}\n\n文件已归档到项目来源，当前版本暂不做正文提取。`;
@@ -159,15 +94,9 @@ export function NewJobForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (uploadState !== "success" || onCreated || onImportedSource) {
-      return;
-    }
+    if (uploadState !== "success" || onCreated || onImportedSource) return;
     const timer = window.setTimeout(() => {
-      if (successKind === "job" && redirectId) {
-        router.push(`/${locale}/app/jobs?job=${redirectId}`);
-      } else {
-        router.push(`/${locale}/app/jobs`);
-      }
+      router.push(successKind === "job" && redirectId ? `/${locale}/app/jobs?job=${redirectId}` : `/${locale}/app/jobs`);
     }, 1800);
     return () => window.clearTimeout(timer);
   }, [locale, onCreated, onImportedSource, redirectId, router, successKind, uploadState]);
@@ -179,31 +108,34 @@ export function NewJobForm({
   }, [inputType]);
 
   async function startLive() {
-    if (!projectId) return setError("请先创建并选中一个项目");
+    if (!projectId) {
+      setError(t("workspace.errors.createProjectFirst"));
+      return;
+    }
+
     setUploadState("uploading");
     setError(null);
+
     try {
-      const res = await fetch(`/api/jobs`, {
+      const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: "实时记录",
+          title: t("workspace.live.defaultTitle"),
           projectId,
           captureMode: "live",
           sourceType: "live_audio",
         }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error?.message || "创建失败");
+      if (!res.ok || !json?.ok) throw new Error(json?.error?.message || t("workspace.errors.createLiveJobFailed"));
 
-      const newJobId = json.data.jobId as string;
-      const createdJob = json.data.job as JobRow | undefined;
       setSuccessKind("job");
-      setRedirectId(newJobId);
+      setRedirectId(json.data.jobId as string);
       setUploadState("success");
-      if (createdJob) onCreated?.(createdJob);
+      if (json.data.job) onCreated?.(json.data.job as JobRow);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "创建失败");
+      setError(caughtError instanceof Error ? caughtError.message : t("workspace.errors.createLiveJobFailed"));
       setUploadState("error");
     }
   }
@@ -211,8 +143,11 @@ export function NewJobForm({
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = ""; // reset
-    if (!projectId) return setError("请先创建并选中一个项目");
+    e.target.value = "";
+    if (!projectId) {
+      setError(t("workspace.errors.createProjectFirst"));
+      return;
+    }
 
     setUploadState("uploading");
     setError(null);
@@ -220,22 +155,19 @@ export function NewJobForm({
     try {
       const supabase = createSupabaseBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
 
       const safeFileName = sanitizeFileName(file.name);
       const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
       const mimeType = file.type || "application/octet-stream";
       const mediaFile = isMediaFile(file);
 
-      const { error: storageError } = await supabase.storage
-        .from(AUDIO_BUCKET)
-        .upload(storagePath, file, { contentType: mimeType, upsert: false });
-
-      if (storageError) throw new Error(storageError.message || "上传失败");
+      const { error: storageError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, { contentType: mimeType, upsert: false });
+      if (storageError) throw new Error(storageError.message || t("workspace.errors.uploadFailed"));
 
       if (mediaFile) {
         const sourceType = mimeType.startsWith("video/") ? "video_upload" : "audio_upload";
-        const res = await fetch(`/api/jobs`, {
+        const res = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -252,16 +184,14 @@ export function NewJobForm({
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) {
           await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {});
-          throw new Error(json?.error?.message || "处理失败");
+          throw new Error(json?.error?.message || t("workspace.errors.uploadFailed"));
         }
 
-        const newJobId = json.data.jobId;
-        const createdJob = json.data.job;
         setSuccessKind("job");
-        setRedirectId(newJobId);
+        setRedirectId(json.data.jobId as string);
         setUploadState("success");
-        if (createdJob) onCreated?.(createdJob);
-        fetch(`/api/jobs/${newJobId}/run`, { method: "POST" }).catch(() => {});
+        if (json.data.job) onCreated?.(json.data.job as JobRow);
+        fetch(`/api/jobs/${json.data.jobId}/run`, { method: "POST" }).catch(() => {});
         return;
       }
 
@@ -274,166 +204,216 @@ export function NewJobForm({
           sourceType: "file_upload",
           rawText: documentText,
           extractedText: documentText,
-          metadata: { storage_path: storagePath, file_name: file.name, file_size: file.size, mime_type: mimeType },
+          metadata: {
+            storage_path: storagePath,
+            file_name: file.name,
+            file_size: file.size,
+            mime_type: mimeType,
+          },
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {});
-        throw new Error(json?.error?.message || "导入失败");
+        throw new Error(json?.error?.message || t("workspace.errors.sourceImportFailed"));
       }
 
-      const source = json.data.source;
       setSuccessKind("source");
-      setRedirectId(source.id);
+      setRedirectId((json.data.source as SourceRow).id);
       setUploadState("success");
-      onImportedSource?.(source);
+      onImportedSource?.(json.data.source as SourceRow);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传失败");
+      setError(err instanceof Error ? err.message : t("workspace.errors.uploadFailed"));
       setUploadState("error");
     }
   }
 
   async function submitUrl() {
-    if (!projectId) return setError("请先创建并选中一个项目");
-    if (!url.trim()) return setError("请输入链接");
+    if (!projectId) {
+      setError(t("workspace.errors.createProjectFirst"));
+      return;
+    }
+    if (!url.trim()) {
+      setError(t("workspace.errors.urlRequired"));
+      return;
+    }
+
+    const nextUrl = url.trim();
     try {
-      new URL(/^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`);
+      new URL(/^https?:\/\//i.test(nextUrl) ? nextUrl : `https://${nextUrl}`);
     } catch {
-      return setError("请输入有效的 URL 地址");
+      setError(t("workspace.errors.urlRequired"));
+      return;
     }
 
     setUploadState("uploading");
     setError(null);
+
     try {
       const supabase = createSupabaseBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
 
       const res = await fetch(`/api/projects/${projectId}/sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: null, url: url.trim(), sourceType: "url_import" }),
+        body: JSON.stringify({ title: null, url: nextUrl, sourceType: "url_import" }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error?.message || "导入链接失败");
+      if (!res.ok || !json?.ok) throw new Error(json?.error?.message || t("workspace.errors.sourceImportFailed"));
 
-      const source = json.data.source;
       setSuccessKind("source");
-      setRedirectId(source.id);
+      setRedirectId((json.data.source as SourceRow).id);
       setUploadState("success");
-      onImportedSource?.(source);
+      onImportedSource?.(json.data.source as SourceRow);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "导入失败");
+      setError(err instanceof Error ? err.message : t("workspace.errors.sourceImportFailed"));
       setUploadState("error");
     }
   }
 
-  if (uploadState === "success") {
-    const successTitle = successKind === "job" ? "素材已转接" : "来源已导入";
-    return (
-      <Card className="bg-transparent border-0 shadow-none">
-        <CardContent className="flex flex-col items-center gap-4 py-8">
-          <CheckCircle2 className="h-16 w-16 text-emerald-500" />
-          <h2 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">{successTitle}</h2>
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (uploadState === "error") {
-    return (
-      <Card className="bg-transparent border-0 shadow-none">
-        <CardContent className="flex flex-col items-center gap-4 py-8">
-          <XCircle className="h-16 w-16 text-rose-500" />
-          <h2 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">操作失败</h2>
-          <p className="text-sm text-rose-500 dark:text-rose-400 font-medium">{error}</p>
-          <Button variant="secondary" onClick={() => { setUploadState("idle"); setError(null); }}>重试</Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (uploadState === "uploading") {
-    return (
-      <Card className="bg-transparent border-0 shadow-none">
-        <CardContent className="flex flex-col items-center gap-4 py-8 text-slate-800 dark:text-white">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <h2 className="text-xl font-bold tracking-tight">处理中...</h2>
-        </CardContent>
-      </Card>
-    );
-  }
+  const statusTitle =
+    uploadState === "success"
+      ? successKind === "job"
+        ? t("new.successJob")
+        : t("new.successSource")
+      : uploadState === "error"
+        ? t("new.errorTitle")
+        : t("new.title");
 
   return (
-    <Card className="bg-card border-border shadow-2xl overflow-hidden text-card-foreground w-full max-w-lg mx-auto">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg font-medium text-slate-800 dark:text-slate-200">添加来源</CardTitle>
-        <CardDescription className="text-slate-500 dark:text-slate-400 text-sm">
-          点击以直接开启新记录，或导入你的离线灵感。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pb-6">
-        {inputType === "selection" ? (
-          <div className="grid grid-cols-3 gap-3">
+    <section className={embedded ? "w-full" : "mx-auto w-full max-w-2xl"}>
+      <div className="rounded-[10px] border border-border/70 bg-background/90 p-5 text-foreground shadow-none">
+        <div className="border-b border-border/60 pb-4">
+          <p className="text-xs text-muted-foreground">
+            {t("new.plan")} · {t(`plan.${plan.plan}`)}
+          </p>
+          <h2 className="mt-2 text-[22px] font-semibold leading-tight">{t("new.title")}</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("new.subtitle")}</p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            {t("workspace.plan.limitNote", { limit: plan.maxFileSizeMb })}
+          </p>
+        </div>
+
+        {uploadState === "success" ? (
+          <div className="grid min-h-56 place-items-center px-2 py-8 text-center">
+            <div className="grid place-items-center gap-4">
+              <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">{statusTitle}</h3>
+                <p className="text-sm text-muted-foreground">{t("new.autoRedirect")}</p>
+              </div>
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          </div>
+        ) : uploadState === "error" ? (
+          <div className="grid min-h-56 place-items-center px-2 py-8 text-center">
+            <div className="grid place-items-center gap-4">
+              <XCircle className="h-12 w-12 text-rose-600" />
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">{statusTitle}</h3>
+                <p className="max-w-md text-sm leading-6 text-muted-foreground">{error}</p>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setUploadState("idle");
+                  setError(null);
+                }}
+              >
+                {t("new.retry")}
+              </Button>
+            </div>
+          </div>
+        ) : uploadState === "uploading" ? (
+          <div className="grid min-h-56 place-items-center px-2 py-8 text-center">
+            <div className="grid place-items-center gap-4">
+              <Loader2 className="h-10 w-10 animate-spin text-foreground" />
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">{t("new.uploading")}</h3>
+                <p className="text-sm text-muted-foreground">{t("new.autoRedirect")}</p>
+              </div>
+            </div>
+          </div>
+        ) : inputType === "selection" ? (
+          <div className="grid gap-3 pt-5 sm:grid-cols-3">
             <button
-               type="button"
-               onClick={startLive}
-               className="flex flex-col items-center justify-center gap-3 p-4 rounded-xl border border-border bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors group"
+              type="button"
+              onClick={startLive}
+              disabled={!projectId}
+              className="group flex min-h-32 flex-col items-start justify-between rounded-[10px] border border-border/70 bg-background p-4 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-               <div className="h-10 w-10 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center group-hover:bg-rose-500/20 group-hover:scale-110 transition-all">
-                 <Mic className="h-5 w-5" />
-               </div>
-               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">实时录音</span>
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-muted/30 text-foreground transition-colors group-hover:bg-background">
+                <Mic className="h-4 w-4" />
+              </span>
+              <span className="space-y-1">
+                <strong className="block text-sm font-semibold">{t("workspace.captureDialog.liveTitle")}</strong>
+                <span className="block text-xs leading-5 text-muted-foreground">{t("workspace.captureDialog.liveCopy")}</span>
+              </span>
             </button>
 
             <button
-               type="button"
-               onClick={() => fileInputRef.current?.click()}
-               className="flex flex-col items-center justify-center gap-3 p-4 rounded-xl border border-border bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors group"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!projectId}
+              className="group flex min-h-32 flex-col items-start justify-between rounded-[10px] border border-border/70 bg-background p-4 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-               <div className="h-10 w-10 rounded-full bg-blue-500/10 text-blue-500 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-500/20 group-hover:scale-110 transition-all">
-                 <Upload className="h-5 w-5" />
-               </div>
-               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">上传文件</span>
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-muted/30 text-foreground transition-colors group-hover:bg-background">
+                <Upload className="h-4 w-4" />
+              </span>
+              <span className="space-y-1">
+                <strong className="block text-sm font-semibold">{t("workspace.captureDialog.uploadTitle")}</strong>
+                <span className="block text-xs leading-5 text-muted-foreground">{t("workspace.captureDialog.uploadCopy")}</span>
+              </span>
             </button>
 
             <button
-               type="button"
-               onClick={() => setInputType("url")}
-               className="flex flex-col items-center justify-center gap-3 p-4 rounded-xl border border-border bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors group"
+              type="button"
+              onClick={() => setInputType("url")}
+              disabled={!projectId}
+              className="group flex min-h-32 flex-col items-start justify-between rounded-[10px] border border-border/70 bg-background p-4 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
-               <div className="h-10 w-10 rounded-full bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500/20 group-hover:scale-110 transition-all">
-                 <Link2 className="h-5 w-5" />
-               </div>
-               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">导入链接</span>
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-border/70 bg-muted/30 text-foreground transition-colors group-hover:bg-background">
+                <Link2 className="h-4 w-4" />
+              </span>
+              <span className="space-y-1">
+                <strong className="block text-sm font-semibold">{t("workspace.captureDialog.urlTitle")}</strong>
+                <span className="block text-xs leading-5 text-muted-foreground">{t("workspace.captureDialog.urlCopy")}</span>
+              </span>
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-center gap-2">
-               <button type="button" onClick={() => setInputType("selection")} className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors">
-                 <ArrowLeft className="h-5 w-5" />
-               </button>
-               <span className="text-sm font-medium">输入网址</span>
+          <div className="space-y-4 pt-5">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setInputType("selection")}
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-border/70 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {t("new.back")}
+              </button>
+              <span className="text-sm text-muted-foreground">{t("workspace.captureDialog.urlCopy")}</span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 ref={urlInputRef}
                 type="url"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submitUrl()}
+                onChange={(event) => setUrl(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") submitUrl();
+                }}
                 placeholder="https://..."
-                className="bg-transparent border-border text-slate-800 dark:text-white h-12 flex-1 focus-visible:ring-1 focus-visible:ring-emerald-500"
+                className="h-11 flex-1 border-border/70 bg-background text-foreground focus-visible:ring-1 focus-visible:ring-ring"
               />
-              <Button onClick={submitUrl} className="h-12 px-6 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg">
-                导入
+              <Button onClick={submitUrl} className="h-11 px-5">
+                {t("workspace.actions.import")}
               </Button>
             </div>
           </div>
         )}
+
         <input
           type="file"
           ref={fileInputRef}
@@ -441,8 +421,13 @@ export function NewJobForm({
           accept="audio/*,video/*,.txt,.md,.markdown,.csv,.json,.pdf,.doc,.docx"
           onChange={handleFileSelect}
         />
-        {error && <p className="mt-4 text-sm text-center text-rose-500">{error}</p>}
-      </CardContent>
-    </Card>
+
+        {uploadState === "idle" && !projectId ? (
+          <p className="mt-4 text-xs text-muted-foreground">{t("workspace.errors.createProjectFirst")}</p>
+        ) : error ? (
+          <p className="mt-4 text-sm text-rose-600">{error}</p>
+        ) : null}
+      </div>
+    </section>
   );
 }

@@ -52,50 +52,38 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-md">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("register.title")}</CardTitle>
+    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t("appName")}</p>
+        <h1 className="font-serif text-3xl tracking-tight">{t("register.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("register.subtitle")}</p>
+      </div>
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-medium">{t("register.title")}</CardTitle>
           <CardDescription>{t("register.subtitle")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={signUp} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="email">{t("login.email")}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">{t("login.password")}</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={t("register.passwordPlaceholder")}
-              />
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("register.passwordPlaceholder")} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="confirmPassword">{t("register.confirmPassword")}</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder={t("register.confirmPasswordPlaceholder")}
-              />
+              <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t("register.confirmPasswordPlaceholder")} />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" disabled={loading}>
               {loading ? t("register.signingUp") : t("login.signUp")}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              {t("register.hasAccount")}{" "}
+              {t("register.haveAccount")}{" "}
               <Link href={`/${locale}/login`} className="text-primary hover:underline">
                 {t("nav.login")}
               </Link>

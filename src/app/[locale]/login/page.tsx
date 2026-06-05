@@ -40,39 +40,34 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-md">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("login.title")}</CardTitle>
+    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
+      <div className="space-y-2">
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t("appName")}</p>
+        <h1 className="font-serif text-3xl tracking-tight">{t("login.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
+      </div>
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base font-medium">{t("login.signIn")}</CardTitle>
           <CardDescription>{t("login.subtitle")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={signIn} className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="email">{t("login.email")}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">{t("login.password")}</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" disabled={loading}>
               {loading ? t("login.signingIn") : t("login.signIn")}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              还没有账号？{" "}
+              {t("login.noAccount")}{" "}
               <Link href={`/${locale}/register`} className="text-primary hover:underline">
                 {t("login.signUp")}
               </Link>

@@ -219,7 +219,7 @@ function buildFallbackLiveCoachDraft(previousContent: string, transcriptText: st
       },
       fallback_note: transcriptText.trim()
         ? "Live Question Coach 暂不可用，本轮未生成追问建议。"
-        : "等待实时 ASR 输入。",
+        : "等待实时转写输入。",
     },
     null,
     2

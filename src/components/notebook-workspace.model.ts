@@ -1,11 +1,13 @@
 import type { ArtifactKind } from "@/lib/workspace";
 
 export type WorkspaceSection =
-  | "workspace"
+  | "projects"
+  | "jobs"
   | "live"
   | "sources"
   | "artifacts"
   | "favorites"
+  | "help"
   | "settings";
 
 export type ArtifactDefinition = {
@@ -22,11 +24,13 @@ export const WORKSPACE_NAV_ITEMS: Array<{
   label: string;
   icon: string;
 }> = [
-  { id: "workspace", label: "Workspace", icon: "folder_open" },
+  { id: "projects", label: "Projects", icon: "folder_open" },
+  { id: "jobs", label: "Jobs", icon: "work_outline" },
   { id: "live", label: "Live Capture", icon: "mic" },
   { id: "sources", label: "Sources", icon: "book_2" },
   { id: "artifacts", label: "Artifacts", icon: "summarize" },
   { id: "favorites", label: "Favorites", icon: "star" },
+  { id: "help", label: "Help", icon: "help_outline" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 

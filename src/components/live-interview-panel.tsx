@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { KemoLiveIcon, type KemoLiveIconName } from "@/components/kemo-live-icons";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -16,6 +16,12 @@ const GATEWAY_CONNECT_TIMEOUT_MS = 12000;
 const GATEWAY_CONNECT_RETRY_BASE_MS = 180;
 const LIVE_WAV_FILE_NAME = "live_capture.wav";
 const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "audio";
+const VISIBLE_WAVE_BAR_COUNT = 10;
+const SILENT_WAVE_LEVEL = 0.08;
+
+function createSilentWaveLevels() {
+  return Array.from({ length: VISIBLE_WAVE_BAR_COUNT }, () => SILENT_WAVE_LEVEL);
+}
 
 type ExtendedDisplayMediaStreamOptions = DisplayMediaStreamOptions & {
   preferCurrentTab?: boolean;
@@ -58,8 +64,6 @@ const CAPTURE_MODE_OPTIONS: Array<{
     icon: "tab",
   },
 ];
-
-const RECORDER_BAR_LEVELS = [0.9, 0.72, 0.56, 0.78, 0.38, 0.34, 0.66, 0.82, 0.61, 0.44, 0.5, 0.7, 0.3, 0.36, 0.42, 0.58, 0.74, 0.28];
 
 function mergeChunks(chunks: Uint8Array[]) {
   const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
@@ -152,6 +156,33 @@ function floatToPcm16Chunk(inputBuffer: AudioBuffer, sourceSampleRate: number) {
   return new Uint8Array(pcm16.buffer);
 }
 
+function getAudioLevel(inputBuffer: AudioBuffer) {
+  let sumSquares = 0;
+  let sampleCount = 0;
+
+  for (let channel = 0; channel < inputBuffer.numberOfChannels; channel += 1) {
+    const channelData = inputBuffer.getChannelData(channel);
+    for (let index = 0; index < channelData.length; index += 1) {
+      const sample = channelData[index];
+      sumSquares += sample * sample;
+      sampleCount += 1;
+    }
+  }
+
+  if (!sampleCount) return SILENT_WAVE_LEVEL;
+
+  const rms = Math.sqrt(sumSquares / sampleCount);
+  return Math.max(SILENT_WAVE_LEVEL, Math.min(1, Math.pow(rms * 8, 0.72)));
+}
+
+function getPublicStatusText(statusText: string) {
+  return statusText
+    .replace(/阿里实时\s*ASR|阿里\s*ASR|实时\s*ASR|ASR/gi, "实时转写")
+    .replace(/Realtime\s+ASR/gi, "实时转写")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getSourceSummary({
   captureMode,
 }: {
@@ -216,23 +247,6 @@ type GatewaySocketMessage = {
   message?: string;
 };
 
-function describeTrackSettings(track: MediaStreamTrack | undefined) {
-  if (!track) {
-    return null;
-  }
-
-  const settings = track.getSettings();
-  const detailParts = [
-    typeof settings.sampleRate === "number" ? `${settings.sampleRate}Hz` : null,
-    typeof settings.channelCount === "number" ? `${settings.channelCount}ch` : null,
-    typeof settings.echoCancellation === "boolean" ? `AEC ${settings.echoCancellation ? "on" : "off"}` : null,
-    typeof settings.noiseSuppression === "boolean" ? `NS ${settings.noiseSuppression ? "on" : "off"}` : null,
-    typeof settings.autoGainControl === "boolean" ? `AGC ${settings.autoGainControl ? "on" : "off"}` : null,
-  ].filter(Boolean);
-
-  return detailParts.length ? detailParts.join(" · ") : null;
-}
-
 function createCaptureAudioContext() {
   try {
     return new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
@@ -288,6 +302,8 @@ export function LiveInterviewPanel({
   onFinalizeStarted,
   onFinalizeSettled,
   onFinalized,
+  onDraftSynced,
+  onRuntimeStateChange,
   afterRecorderSlot,
   disabled = false,
   disabledReason = "请先创建项目",
@@ -300,6 +316,8 @@ export function LiveInterviewPanel({
   onFinalizeStarted?: (payload: { jobId: string | null; transcriptText: string; statusText: string }) => void;
   onFinalizeSettled?: (payload: { success: boolean; statusText: string }) => void;
   onFinalized?: (payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) => void;
+  onDraftSynced?: (payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string }) => void;
+  onRuntimeStateChange?: (payload: { isRunning: boolean; pendingAction: "starting" | "stopping" | "pausing" | null; elapsedSeconds: number }) => void;
   afterRecorderSlot?: ReactNode;
   disabled?: boolean;
   disabledReason?: string;
@@ -314,10 +332,16 @@ export function LiveInterviewPanel({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pendingAction, setPendingAction] = useState<"starting" | "stopping" | "pausing" | null>(null);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [waveLevels, setWaveLevels] = useState<number[]>(createSilentWaveLevels);
 
   const activeJobIdRef = useRef<string | null>(null);
   const liveTextRef = useRef("");
+  const statusRef = useRef(status);
   const liveStartedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onRuntimeStateChange?.({ isRunning, pendingAction, elapsedSeconds });
+  }, [elapsedSeconds, isRunning, onRuntimeStateChange, pendingAction]);
   const elapsedTimerRef = useRef<number | null>(null);
   const tracksRef = useRef<MediaStreamTrack[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -332,6 +356,10 @@ export function LiveInterviewPanel({
   const gatewayReadyRef = useRef(false);
   const finishFallbackTimerRef = useRef<number | null>(null);
   const finalizePromiseRef = useRef<Promise<void> | null>(null);
+  const draftSyncTimerRef = useRef<number | null>(null);
+  const draftSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const draftSyncQueuedRef = useRef<{ jobId: string; transcriptText: string } | null>(null);
+  const lastDraftSyncTextRef = useRef("");
   const audioUploadPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
@@ -341,6 +369,7 @@ export function LiveInterviewPanel({
 
   useEffect(() => {
     onStatusChange?.(status);
+    statusRef.current = status;
   }, [onStatusChange, status]);
 
   useEffect(() => {
@@ -348,6 +377,7 @@ export function LiveInterviewPanel({
       stopFlushLoop();
       closeGatewaySocket();
       clearFinishFallbackTimer();
+      clearDraftSyncTimer();
       stopElapsedTimer();
     };
   }, []);
@@ -396,24 +426,7 @@ export function LiveInterviewPanel({
       setLiveText(nextTranscript);
     }
     if (typeof data.statusText === "string" && data.statusText) {
-      setStatus(data.statusText);
-    }
-    if (data.debug && typeof data.debug === "object") {
-      const debug = data.debug as { wsState?: string; closeCode?: number | null; closeReason?: string | null };
-      const debugText = [
-        debug.wsState ? `ASR ${debug.wsState}` : null,
-        debug.closeCode ? `close ${debug.closeCode}` : null,
-        debug.closeReason ? debug.closeReason : null,
-      ]
-        .filter(Boolean)
-        .join(" / ");
-
-      if (debugText) {
-        setCaptureDetails((current) => {
-          const base = current.split(" · ")[0];
-          return `${base} · ${debugText}`;
-        });
-      }
+      setStatus(getPublicStatusText(data.statusText));
     }
   }
 
@@ -434,7 +447,7 @@ export function LiveInterviewPanel({
 
     const json = await res.json();
     if (!res.ok || !json.ok) {
-      throw new Error(json?.error?.message || "实时 ASR 会话准备失败");
+      throw new Error(getPublicStatusText(json?.error?.message || "实时转写会话准备失败"));
     }
 
     if (json.data?.snapshot) {
@@ -512,6 +525,15 @@ export function LiveInterviewPanel({
 
     window.clearTimeout(finishFallbackTimerRef.current);
     finishFallbackTimerRef.current = null;
+  }
+
+  function clearDraftSyncTimer() {
+    if (draftSyncTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(draftSyncTimerRef.current);
+    draftSyncTimerRef.current = null;
   }
 
   function stopElapsedTimer() {
@@ -598,6 +620,133 @@ export function LiveInterviewPanel({
     }
   }
 
+  const submitLiveInterview = useCallback(async (jobId: string, transcriptText: string, statusText: string, finalize = true) => {
+    const finalTranscript = transcriptText.trim();
+    if (!finalTranscript) {
+      return null;
+    }
+
+    if (finalize) {
+      if (audioUploadPromiseRef.current) {
+        await audioUploadPromiseRef.current.catch(() => {});
+      }
+
+      if (draftSyncPromiseRef.current) {
+        await draftSyncPromiseRef.current.catch(() => {});
+      }
+    }
+
+    const response = await fetch(`/api/jobs/${jobId}/live`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcriptText: finalTranscript,
+        statusText,
+        finalize,
+      }),
+    });
+    const json = await response.json().catch(() => null);
+
+    if (!response.ok || !json?.ok) {
+      throw new Error(json?.error?.message || (finalize ? "最终文稿保存失败" : "实时草稿同步失败"));
+    }
+
+    const savedTranscriptText =
+      typeof json.data?.transcript?.transcript_text === "string" && json.data.transcript.transcript_text.trim()
+        ? json.data.transcript.transcript_text
+        : finalTranscript;
+
+    return {
+      job: json.data.job,
+      draftArtifacts: json.data.draftArtifacts,
+      transcriptText: savedTranscriptText,
+    };
+  }, []);
+
+  const scheduleDraftSync = useCallback((jobId: string, transcriptText: string, statusText: string) => {
+    const trimmedTranscript = transcriptText.trim();
+    if (!trimmedTranscript || !runningRef.current || finalizePromiseRef.current) {
+      return;
+    }
+
+    if (trimmedTranscript === lastDraftSyncTextRef.current) {
+      return;
+    }
+
+    if (draftSyncPromiseRef.current) {
+      draftSyncQueuedRef.current = { jobId, transcriptText: trimmedTranscript };
+      return;
+    }
+
+    if (draftSyncTimerRef.current !== null) {
+      draftSyncQueuedRef.current = { jobId, transcriptText: trimmedTranscript };
+      return;
+    }
+
+    draftSyncTimerRef.current = window.setTimeout(() => {
+      draftSyncTimerRef.current = null;
+      const queuedDraft = draftSyncQueuedRef.current;
+      draftSyncQueuedRef.current = null;
+      const nextDraft = queuedDraft || { jobId, transcriptText: trimmedTranscript };
+
+      if (
+        !runningRef.current ||
+        finalizePromiseRef.current ||
+        activeJobIdRef.current !== nextDraft.jobId ||
+        nextDraft.transcriptText === lastDraftSyncTextRef.current
+      ) {
+        return;
+      }
+
+      draftSyncPromiseRef.current = submitLiveInterview(nextDraft.jobId, nextDraft.transcriptText, statusRef.current || statusText, false)
+        .then((result) => {
+          if (!result) {
+            return;
+          }
+
+          lastDraftSyncTextRef.current = result.transcriptText;
+          if (result.transcriptText !== liveTextRef.current) {
+            setLiveText(result.transcriptText);
+          }
+
+          onDraftSynced?.({
+            job: result.job,
+            draftArtifacts: result.draftArtifacts,
+            transcriptText: result.transcriptText,
+          });
+        })
+        .catch((error) => {
+          if (error instanceof Error) {
+            const publicMessage = getPublicStatusText(error.message);
+            setCaptureDetails((current) => current.includes(publicMessage) ? current : `${current} · ${publicMessage}`);
+          }
+        })
+        .finally(() => {
+          draftSyncPromiseRef.current = null;
+          const pendingDraft = draftSyncQueuedRef.current;
+          draftSyncQueuedRef.current = null;
+
+          if (pendingDraft && runningRef.current && !finalizePromiseRef.current && activeJobIdRef.current === pendingDraft.jobId) {
+            scheduleDraftSync(pendingDraft.jobId, pendingDraft.transcriptText, statusRef.current);
+          }
+        });
+    }, 2400);
+  }, [onDraftSynced, submitLiveInterview]);
+
+  useEffect(() => {
+    if (!runningRef.current || pendingAction || !activeJobIdRef.current) {
+      clearDraftSyncTimer();
+      return;
+    }
+
+    const trimmedTranscript = liveText.trim();
+    if (trimmedTranscript.length < 24 || trimmedTranscript === lastDraftSyncTextRef.current) {
+      return;
+    }
+
+    scheduleDraftSync(activeJobIdRef.current, trimmedTranscript, statusRef.current);
+  }, [liveText, pendingAction, scheduleDraftSync]);
+
   async function finalizeLiveInterview(jobId: string, transcriptText: string, statusText: string, finalize = true) {
     const finalTranscript = transcriptText.trim();
     if (!finalTranscript || finalizePromiseRef.current) {
@@ -605,6 +754,11 @@ export function LiveInterviewPanel({
     }
 
     finalizePromiseRef.current = (async () => {
+      clearDraftSyncTimer();
+      if (draftSyncPromiseRef.current) {
+        await draftSyncPromiseRef.current.catch(() => {});
+      }
+
       if (audioUploadPromiseRef.current) {
         await audioUploadPromiseRef.current.catch(() => {});
       }
@@ -685,7 +839,7 @@ export function LiveInterviewPanel({
 
     if (message.type === "session.ready") {
       gatewayReadyRef.current = true;
-      setStatus("实时采集中：音频已接入阿里 ASR");
+      setStatus("实时采集中：音频已接入");
       flushAudio();
       return;
     }
@@ -706,7 +860,7 @@ export function LiveInterviewPanel({
     }
 
     if (message.type === "session.error") {
-      setStatus(message.message || "实时 ASR 发生错误");
+      setStatus(getPublicStatusText(message.message || "实时转写发生错误"));
     }
   }
 
@@ -761,15 +915,15 @@ export function LiveInterviewPanel({
               }
 
               if (message.type === "session.error") {
-                fail(message.message || "实时 ASR 连接失败");
+                fail(getPublicStatusText(message.message || "实时转写连接失败"));
               }
             } catch {
-              fail("实时 ASR 返回了无效消息");
+              fail("实时转写返回了无效消息");
             }
           };
 
           socket.onerror = () => {
-            fail("实时 ASR 连接失败");
+            fail("实时转写连接失败");
           };
 
           socket.onclose = () => {
@@ -778,14 +932,14 @@ export function LiveInterviewPanel({
               gatewaySocketRef.current = null;
             }
             if (!settled) {
-              fail("实时 ASR 连接已关闭");
+              fail("实时转写连接已关闭");
             }
           };
         });
 
         return;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error("实时 ASR 连接失败");
+        lastError = error instanceof Error ? new Error(getPublicStatusText(error.message)) : new Error("实时转写连接失败");
         closeGatewaySocket();
         const retryDelay = Math.min(1000, GATEWAY_CONNECT_RETRY_BASE_MS * 2 ** attempt);
         attempt += 1;
@@ -796,7 +950,7 @@ export function LiveInterviewPanel({
       }
     }
 
-    throw lastError || new Error("实时 ASR 连接失败");
+    throw lastError || new Error("实时转写连接失败");
   }
 
   function teardownAudioGraph() {
@@ -841,7 +995,7 @@ export function LiveInterviewPanel({
       });
 
     if (storageError) {
-      throw new Error(storageError.message || "实时录音上传失败");
+      throw new Error("实时录音保存失败");
     }
 
     const res = await fetch(`/api/jobs/${jobId}/live/audio-asset`, {
@@ -861,7 +1015,7 @@ export function LiveInterviewPanel({
       await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {
         // ignore cleanup failure
       });
-      throw new Error(json?.error?.message || "实时录音保存失败");
+      throw new Error("实时录音保存失败");
     }
   }
 
@@ -879,6 +1033,10 @@ export function LiveInterviewPanel({
     pcmChunksRef.current = [];
     recordedPcmChunksRef.current = [];
     audioUploadPromiseRef.current = null;
+    setWaveLevels(createSilentWaveLevels());
+    lastDraftSyncTextRef.current = "";
+    draftSyncQueuedRef.current = null;
+    clearDraftSyncTimer();
     setLiveText("");
     setElapsedSeconds(0);
     setStatus("正在启动实时访谈");
@@ -954,10 +1112,7 @@ export function LiveInterviewPanel({
         : captureMode === "system"
           ? (displayAudioTracks.length ? `会议/系统音频 ${displayAudioTracks.length} 轨` : "会议音频未接入")
           : (displayAudioTracks.length ? `浏览器页面音频 ${displayAudioTracks.length} 轨` : "浏览器页面音频未接入");
-      const activeTrackSettings = usingMic
-        ? describeTrackSettings(micAudioTracks[0])
-        : describeTrackSettings(displayAudioTracks[0]);
-      setCaptureDetails(activeTrackSettings ? `${detailText} · ${activeTrackSettings}` : detailText);
+      setCaptureDetails(detailText);
 
       const displayTrackSet = new Set(displayAudioTracks);
       cleanupTracks.forEach((track) => {
@@ -977,7 +1132,7 @@ export function LiveInterviewPanel({
       if (usingDisplayAudio && !displayAudioTracks.length) {
         setStatus("没有捕获到音频。请重新选择捕获源并务必勾选“分享音频”。");
       } else {
-        setStatus("权限已获取，正在连接阿里实时 ASR");
+        setStatus("权限已获取，正在连接实时转写");
       }
 
       if (!audioTracks.length) {
@@ -994,6 +1149,12 @@ export function LiveInterviewPanel({
         const pcmBytes = floatToPcm16Chunk(event.inputBuffer, audioContext.sampleRate);
         pcmChunksRef.current.push(pcmBytes);
         recordedPcmChunksRef.current.push(pcmBytes);
+        const audioLevel = getAudioLevel(event.inputBuffer);
+        setWaveLevels((levels) => {
+          const nextLevels = levels.slice(-VISIBLE_WAVE_BAR_COUNT + 1);
+          nextLevels.push(audioLevel);
+          return nextLevels;
+        });
       };
 
       const sourceNodes: MediaStreamAudioSourceNode[] = [];
@@ -1028,7 +1189,7 @@ export function LiveInterviewPanel({
       } else if (usingDisplayAudio && !displayAudioTracks.length) {
         setStatus("实时采集中，但当前没有捕获到系统/标签页音轨。");
       } else {
-        setStatus(`已开始采集 ${getCaptureModeLabel(captureMode)}，正在连接阿里 ASR`);
+        setStatus(`已开始采集 ${getCaptureModeLabel(captureMode)}，正在连接实时转写`);
       }
 
       const gatewaySession = await gatewaySessionPromise;
@@ -1049,8 +1210,9 @@ export function LiveInterviewPanel({
       tracksRef.current = [];
       closeGatewaySocket();
       activeJobIdRef.current = null;
+      setWaveLevels(createSilentWaveLevels());
       setCaptureDetails("启动失败");
-      setStatus(error instanceof Error ? error.message : "无法启动实时访谈");
+      setStatus(error instanceof Error ? getPublicStatusText(error.message) : "无法启动实时访谈");
     } finally {
       setPendingAction(null);
     }
@@ -1066,6 +1228,7 @@ export function LiveInterviewPanel({
     setCaptureDetails("正在收尾当前转写");
     setTranscriptExpanded(false);
     clearFinishFallbackTimer();
+    clearDraftSyncTimer();
     const jobId = activeJobIdRef.current;
     const finalSnapshotFallback = liveText.trim();
     const recordedChunks = recordedPcmChunksRef.current.slice();
@@ -1081,9 +1244,9 @@ export function LiveInterviewPanel({
       flushAllAudio();
 
       if (jobId && recordedChunks.length) {
-        audioUploadPromiseRef.current = uploadLiveAudioAsset(jobId, recordedChunks).catch((error) => {
+        audioUploadPromiseRef.current = uploadLiveAudioAsset(jobId, recordedChunks).catch(() => {
           setStatus((current) => {
-            const suffix = error instanceof Error ? error.message : "实时录音保存失败";
+            const suffix = "实时录音保存失败";
             return current.includes("录音保存失败") ? current : `${current}（${suffix}）`;
           });
         });
@@ -1121,6 +1284,7 @@ export function LiveInterviewPanel({
     } finally {
       setIsRunning(false);
       setCaptureDetails("未开始采集");
+      setWaveLevels(createSilentWaveLevels());
       setPendingAction(null);
       liveStartedAtRef.current = null;
       if (!jobId) {
@@ -1141,6 +1305,7 @@ export function LiveInterviewPanel({
     setCaptureDetails("保存当前进度");
     setTranscriptExpanded(false);
     clearFinishFallbackTimer();
+    clearDraftSyncTimer();
 
     const jobId = activeJobIdRef.current;
     const finalSnapshotFallback = liveText.trim();
@@ -1181,6 +1346,7 @@ export function LiveInterviewPanel({
     } finally {
       setIsRunning(false);
       setCaptureDetails("未开始采集");
+      setWaveLevels(createSilentWaveLevels());
       setPendingAction(null);
       liveStartedAtRef.current = null;
       activeJobIdRef.current = null;
@@ -1241,6 +1407,7 @@ export function LiveInterviewPanel({
           <Button
             onClick={startLive}
             className="workspace-live-start-button"
+            data-kemo-live-action="start"
             disabled={startButtonDisabled}
           >
             {isStarting ? "正在连接..." : "开始处理"}
@@ -1251,6 +1418,7 @@ export function LiveInterviewPanel({
               onClick={pauseLive}
               variant="secondary"
               className="workspace-live-secondary-button"
+              data-kemo-live-action="pause"
               disabled={stopButtonDisabled || pendingAction === "pausing"}
             >
               <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
@@ -1260,6 +1428,7 @@ export function LiveInterviewPanel({
               onClick={stopLive}
               variant="destructive"
               className="workspace-live-danger-button"
+              data-kemo-live-action="stop"
               disabled={stopButtonDisabled}
             >
               <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
@@ -1272,14 +1441,13 @@ export function LiveInterviewPanel({
       {isRunning ? (
         <div className="workspace-live-running-visual">
           <div className="workspace-live-waveform workspace-live-running-waveform" aria-hidden="true">
-            {RECORDER_BAR_LEVELS.slice(0, 10).map((level, index) => (
+            {waveLevels.map((level, index) => (
               <span
                 key={`visible-wave-bar-${index}`}
                 className="workspace-live-running-wave-bar"
                 style={{
-                  height: `${6 + level * 10}px`,
-                  animationDelay: `-${index * 110}ms`,
-                  animationDuration: `${0.92 + (index % 4) * 0.17 + level * 0.35}s`,
+                  height: `${6 + level * 18}px`,
+                  opacity: 0.38 + level * 0.62,
                 }}
               />
             ))}
@@ -1287,49 +1455,6 @@ export function LiveInterviewPanel({
           <span className="workspace-live-running-timer">{recorderTimeLabel}</span>
         </div>
       ) : null}
-
-      <div className="hidden">
-        <div className={`flex items-center gap-3 w-full max-w-lg ${isRunning ? "" : ""}`}>
-            {!isRunning ? (
-              <Button
-                onClick={startLive}
-                className="rounded-full shadow-md text-xs h-8 px-4 font-semibold text-white bg-blue-600 hover:bg-blue-700"
-                disabled={startButtonDisabled}
-              >
-                {isStarting ? "正在连接…" : "开始处理"}
-              </Button>
-            ) : (
-              <Button
-                onClick={stopLive}
-                variant="destructive"
-                className="rounded-full shadow-md text-xs h-8 px-4 font-semibold shrink-0"
-                disabled={stopButtonDisabled}
-              >
-                <KemoLiveIcon name="stop" className="h-3.5 w-3.5 mr-1" />
-                {isStopping ? "正在停止…" : "结束并整理"}
-              </Button>
-            )}
-            
-            {isRunning && (
-              <div className="flex items-center gap-2 overflow-hidden px-2">
-                <div className="workspace-live-waveform flex items-center justify-center h-4 gap-[2px] opacity-70" aria-hidden="true" style={{ width: "80px" }}>
-                  {RECORDER_BAR_LEVELS.slice(0, 10).map((level, index) => (
-                    <span
-                      key={`wave-bar-${index}`}
-                      className="bg-red-500 rounded-full animate-pulse"
-                      style={{
-                        width: "3px",
-                        height: `${6 + level * 10}px`,
-                        animationDelay: `${index * 80}ms`,
-                      }}
-                    />
-                  ))}
-                </div>
-                <span className="text-xs font-medium text-slate-500 truncate whitespace-nowrap bg-slate-100 rounded-full px-2 py-0.5">{recorderTimeLabel}</span>
-              </div>
-            )}
-        </div>
-      </div>
 
       {afterRecorderSlot ? (
         <div className="workspace-live-after-recorder">

@@ -10,7 +10,8 @@
     "jobs": "任务列表",
     "login": "登录",
     "logout": "退出",
-    "settings": "个人设置"
+    "settings": "个人设置",
+    "user": "用户"
   },
   "login": {
     "title": "欢迎回来",
@@ -20,7 +21,8 @@
     "signIn": "登录",
     "signUp": "注册",
     "signingIn": "登录中...",
-    "error": "登录失败"
+    "error": "登录失败",
+    "noAccount": "还没有账号？"
   },
   "register": {
     "title": "注册",
@@ -31,7 +33,7 @@
     "passwordPlaceholder": "至少 6 位",
     "confirmPasswordPlaceholder": "再次输入密码",
     "signingUp": "注册中...",
-    "hasAccount": "已有账号？"
+    "haveAccount": "已有账号？"
   },
   "new": {
     "title": "创建任务",
@@ -41,7 +43,7 @@
     "submit": "创建任务",
     "plan": "当前套餐",
     "limit": "单文件限制",
-    "limitNote": "免费版单文件最多 50MB，超出请压缩/切片或升级 Pro。",
+    "limitNote": "Free 版支持单个文件 50MB 以内。需要更大文件和优先处理，可申请 Pro+。",
     "uploading": "上传中...",
     "missingFile": "请选择音频文件",
     "uploadSuccess": "上传成功",
@@ -49,7 +51,11 @@
     "autoRedirect": "正在自动跳转到任务详情...",
     "goToJob": "立即查看",
     "retry": "重试",
-    "backToJobs": "返回任务列表"
+    "backToJobs": "返回任务列表",
+    "back": "返回",
+    "successJob": "素材已转入队列",
+    "successSource": "来源已导入",
+    "errorTitle": "操作失败"
   },
   "jobs": {
     "title": "任务列表",
@@ -90,7 +96,8 @@
   },
   "plan": {
     "free": "免费版",
-    "pro": "专业版"
+    "pro": "专业版",
+    "proPlus": "Pro+"
   },
   "settings": {
     "title": "个人中心",
@@ -161,6 +168,12 @@
   "workspace": {
     "brand": {
       "subtitle": "研究工作台"
+    },
+    "theme": {
+      "aria": "工作台主题",
+      "system": "系统",
+      "light": "浅色",
+      "dark": "深色"
     },
     "nav": {
       "aria": "工作台导航",
@@ -244,7 +257,14 @@
     },
     "plan": {
       "kicker": "套餐",
-      "limitNote": "单文件上限：{limit}MB。Supabase Storage 为项目级存储。"
+      "limitNote": "Free 版支持上传 {limit}MB 以内的单个文件。Pro+ 可解锁更大文件与优先处理。",
+      "freeCard": {
+        "title": "Free 版",
+        "description": "适合先体验访谈转写、资料整理和成果生成的核心流程。",
+        "included": "支持上传 {limit}MB 以内的单个文件。",
+        "proPlusHint": "Pro+ 可解锁更大文件、更多处理额度与优先处理。",
+        "cta": "尽快申请到 Pro+"
+      }
     },
     "review": {
       "blocker": "确认阻塞",
@@ -272,6 +292,11 @@
       "emptyProjectCopy": "请选择带有转写文本的访谈来生成成果。",
       "noContent": "暂无内容。",
       "kind": {
+        "live_meeting_editor": {
+          "label": "实时笔记",
+          "short": "笔记",
+          "description": "从实时转写持续生成的可读会话笔记。"
+        },
         "publish_script": {
           "label": "发布脚本",
           "short": "脚本",
@@ -281,6 +306,11 @@
           "label": "快速摘要",
           "short": "摘要",
           "description": "用于快速了解本次访谈的精简综合。"
+        },
+        "key_insights": {
+          "label": "关键洞察",
+          "short": "洞察",
+          "description": "从素材中提取可行动的信号、判断和主题。"
         },
         "inspiration_questions": {
           "label": "问题教练",
@@ -301,6 +331,26 @@
           "label": "路演转写稿",
           "short": "路演稿",
           "description": "适合展示或分享的长篇清洁转写稿。"
+        },
+        "podcast_script": {
+          "label": "播客脚本",
+          "short": "播客",
+          "description": "基于研究素材改写成的双人播客脚本。"
+        },
+        "podcast_audio": {
+          "label": "播客音频",
+          "short": "音频",
+          "description": "基于播客脚本生成的音频。"
+        },
+        "mind_map": {
+          "label": "思维导图",
+          "short": "导图",
+          "description": "结构化呈现主题、分支和关系。"
+        },
+        "ppt_outline": {
+          "label": "PPT 大纲",
+          "short": "PPT",
+          "description": "基于研究素材生成的可制作为幻灯片的大纲。"
         },
         "ic_qa": {
           "label": "IC Q&A",
@@ -327,6 +377,8 @@
       "noTranscript": "还没有实时转写",
       "startHint": "开始采集后，转写文本会流入当前工作台。",
       "questionCoach": "问题教练",
+      "questionCoachDraftTitle": "实时问题建议",
+      "questionCoachPending": "继续采集中，问题建议稍后更新。",
       "questionCoachEmpty": "有转写稿后即可生成问题教练成果。"
     },
     "sources": {
@@ -365,7 +417,7 @@
     "captureDialog": {
       "title": "添加研究素材",
       "liveTitle": "实时采集",
-      "liveCopy": "使用实时 ASR 工作流。",
+      "liveCopy": "使用实时转写工作流。",
       "uploadTitle": "上传文件",
       "uploadCopy": "音视频会成为任务，文本会成为资料。",
       "urlTitle": "导入 URL",
@@ -413,5 +465,14 @@
       "createProjectFirst": "请先创建项目。",
       "createLiveJobFailed": "无法创建实时任务。"
     }
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "loading": "加载中",
+    "error": "错误",
+    "copy": "复制",
+    "copied": "已复制",
+    "close": "关闭"
   }
 }

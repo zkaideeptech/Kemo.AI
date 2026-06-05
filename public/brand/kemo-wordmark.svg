@@ -1,0 +1,23 @@
+<svg width="760" height="184" viewBox="0 0 760 184" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="760" height="184" rx="28" fill="#F8F9FA"/>
+  <svg x="32" y="28" width="128" height="128" viewBox="0 0 512 512">
+    <defs>
+      <linearGradient id="ink" x1="72" y1="64" x2="440" y2="448" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#000610"/>
+        <stop offset="1" stop-color="#000320"/>
+      </linearGradient>
+      <linearGradient id="signal" x1="130" y1="126" x2="395" y2="394" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#4FACFF"/>
+        <stop offset="0.48" stop-color="#3838FF"/>
+        <stop offset="1" stop-color="#001361"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" rx="96" fill="url(#ink)"/>
+    <path d="M170 132H226V245L326 132H394L281 257L404 388H330L226 272V388H170V132Z" fill="url(#signal)"/>
+    <path d="M140 140H188V388H140V140Z" fill="#F8F9FA" fill-opacity="0.88"/>
+    <circle cx="392" cy="132" r="15" fill="#4FACFF"/>
+    <circle cx="404" cy="388" r="12" fill="#10B981"/>
+  </svg>
+  <text x="192" y="91" fill="#000320" font-family="Inter, Arial, sans-serif" font-size="58" font-weight="700" letter-spacing="-1">Kemo.AI</text>
+  <text x="196" y="128" fill="#454651" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="500">Research Workbench</text>
+</svg>

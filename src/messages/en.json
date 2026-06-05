@@ -10,7 +10,8 @@
     "jobs": "Jobs",
     "login": "Login",
     "logout": "Logout",
-    "settings": "Settings"
+    "settings": "Settings",
+    "user": "User"
   },
   "login": {
     "title": "Welcome back",
@@ -20,7 +21,8 @@
     "signIn": "Sign in",
     "signUp": "Sign up",
     "signingIn": "Signing in...",
-    "error": "Unable to sign in"
+    "error": "Unable to sign in",
+    "noAccount": "No account yet?"
   },
   "register": {
     "title": "Sign up",
@@ -31,7 +33,7 @@
     "passwordPlaceholder": "At least 6 characters",
     "confirmPasswordPlaceholder": "Enter password again",
     "signingUp": "Signing up...",
-    "hasAccount": "Already have an account?"
+    "haveAccount": "Already have an account?"
   },
   "new": {
     "title": "Create a job",
@@ -41,7 +43,7 @@
     "submit": "Create job",
     "plan": "Current plan",
     "limit": "Single file limit",
-    "limitNote": "Free plan max 50MB. Compress/slice or upgrade to Pro.",
+    "limitNote": "Free supports one file up to 50MB. Apply for Pro+ when you need larger files and priority processing.",
     "uploading": "Uploading...",
     "missingFile": "Please select an audio file",
     "uploadSuccess": "Upload successful",
@@ -49,7 +51,11 @@
     "autoRedirect": "Redirecting to job details...",
     "goToJob": "View now",
     "retry": "Retry",
-    "backToJobs": "Back to jobs"
+    "backToJobs": "Back to jobs",
+    "back": "Back",
+    "successJob": "Material queued",
+    "successSource": "Source imported",
+    "errorTitle": "Action failed"
   },
   "jobs": {
     "title": "Jobs",
@@ -90,7 +96,8 @@
   },
   "plan": {
     "free": "Free",
-    "pro": "Pro"
+    "pro": "Pro",
+    "proPlus": "Pro+"
   },
   "settings": {
     "title": "Account center",
@@ -149,9 +156,24 @@
       "themeHint": "Follow the system setting or choose light / dark manually"
     }
   },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading",
+    "error": "Error",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close"
+  },
   "workspace": {
     "brand": {
       "subtitle": "Research Workspace"
+    },
+    "theme": {
+      "aria": "Workspace theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
     },
     "nav": {
       "aria": "Workspace navigation",
@@ -235,7 +257,14 @@
     },
     "plan": {
       "kicker": "Plan",
-      "limitNote": "Single-file limit: {limit}MB. Supabase Storage is project-level."
+      "limitNote": "Free supports one file up to {limit}MB. Pro+ unlocks larger files and priority processing.",
+      "freeCard": {
+        "title": "Free",
+        "description": "A simple way to try the core flow: transcript, source organization, and generated outputs.",
+        "included": "Upload one file up to {limit}MB.",
+        "proPlusHint": "Pro+ unlocks larger files, higher processing allowance, and priority processing.",
+        "cta": "Apply for Pro+"
+      }
     },
     "review": {
       "blocker": "Review Blocker",
@@ -263,6 +292,11 @@
       "emptyProjectCopy": "Select an interview with transcript text to generate outputs.",
       "noContent": "No content.",
       "kind": {
+        "live_meeting_editor": {
+          "label": "Live Notes",
+          "short": "Notes",
+          "description": "Readable notes continuously generated from the live transcript."
+        },
         "publish_script": {
           "label": "Publish Script",
           "short": "Script",
@@ -272,6 +306,11 @@
           "label": "Quick Summary",
           "short": "Summary",
           "description": "Compact synthesis for catching up on the session quickly."
+        },
+        "key_insights": {
+          "label": "Key Insights",
+          "short": "Insights",
+          "description": "Actionable signals, judgments, and themes extracted from the material."
         },
         "inspiration_questions": {
           "label": "Question Coach",
@@ -292,6 +331,26 @@
           "label": "Roadshow Transcript",
           "short": "Roadshow",
           "description": "Clean long-form transcript prepared for presentation or sharing."
+        },
+        "podcast_script": {
+          "label": "Podcast Script",
+          "short": "Podcast",
+          "description": "Two-host podcast script adapted from the research material."
+        },
+        "podcast_audio": {
+          "label": "Podcast Audio",
+          "short": "Audio",
+          "description": "Generated audio based on the podcast script."
+        },
+        "mind_map": {
+          "label": "Mind Map",
+          "short": "Map",
+          "description": "Structured map of themes, branches, and relationships."
+        },
+        "ppt_outline": {
+          "label": "PPT Outline",
+          "short": "PPT",
+          "description": "Slide-ready outline generated from the research material."
         },
         "ic_qa": {
           "label": "IC Q&A",
@@ -318,6 +377,8 @@
       "noTranscript": "No live transcript yet",
       "startHint": "Start capture to stream transcript text into this workspace.",
       "questionCoach": "Question Coach",
+      "questionCoachDraftTitle": "Live question coach",
+      "questionCoachPending": "Question suggestions will update as the live transcript grows.",
       "questionCoachEmpty": "Generate question coach output after a transcript exists."
     },
     "sources": {
@@ -356,7 +417,7 @@
     "captureDialog": {
       "title": "Add Research Material",
       "liveTitle": "Live capture",
-      "liveCopy": "Use the real-time ASR workflow.",
+      "liveCopy": "Use the live transcription workflow.",
       "uploadTitle": "Upload file",
       "uploadCopy": "Audio/video becomes a job; text becomes a source.",
       "urlTitle": "Import URL",

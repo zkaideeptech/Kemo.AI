@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
-    "qa:baseline": "npm run build && node scripts/verify-baseline-env.mjs",
+    "test:regression": "tsx scripts/verify-live-question-coach-baseline.ts",
+    "qa:baseline": "npm run test:regression && npm run build && node scripts/verify-baseline-env.mjs",
     "start": "next start",
     "lint": "eslint",
     "asr:gateway": "tsx scripts/live-asr-gateway.ts",
