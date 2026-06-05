@@ -7331,11 +7331,47 @@ body:has(.workspace-app-shell) main.relative.z-10 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
-  margin: -12px 4px 20px;
+  margin: 0 4px 20px;
   border: 1px solid var(--outline-variant);
   border-radius: 999px;
   background: var(--surface-container-lowest);
   padding: 3px;
+}
+
+.kw-sidebar-control-row {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -12px 4px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 999px;
+  background: var(--surface-container-lowest);
+  padding: 3px 3px 3px 12px;
+}
+
+.kw-sidebar-control-row > span {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.kw-sidebar-control-row .workspace-ui-switcher {
+  background: transparent;
+  box-shadow: none;
+  color: var(--on-surface);
+}
+
+.kw-sidebar-control-row .workspace-ui-switcher-button {
+  width: 28px;
+  height: 28px;
+}
+
+.kw-sidebar-control-row .workspace-ui-switcher-button-active {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: none;
 }
 
 .kw-language-segment a {

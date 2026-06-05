@@ -26,6 +26,7 @@ import {
 
 import { LiveInterviewPanel } from "@/components/live-interview-panel";
 import { KemoMark } from "@/components/kemo-mark";
+import { WorkspaceThemeSwitcher } from "@/components/workspace-theme-switcher";
 import { formatLiveQuestionCoachPreview } from "@/lib/live/questionCoachPreview";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { PlanTier } from "@/lib/billing/plan";
@@ -70,6 +71,7 @@ const WORKSPACE_COPY = {
     workspaceKicker: "Kemo.AI Research Workspace",
     brandSubtitle: "Research Workbench",
     newProject: "New Project",
+    theme: "Theme",
     navProjects: "Projects",
     navJobs: "Jobs",
     navSources: "Sources",
@@ -171,6 +173,7 @@ const WORKSPACE_COPY = {
     workspaceKicker: "Kemo.AI 研究工作台",
     brandSubtitle: "研究工作台",
     newProject: "新建项目",
+    theme: "主题",
     navProjects: "项目",
     navJobs: "任务",
     navSources: "资料来源",
@@ -1864,6 +1867,10 @@ export function NotebookWorkspace({
           <span className="material-symbols-outlined">add</span>
           {copy.newProject}
         </button>
+        <div className="kw-sidebar-control-row">
+          <span>{copy.theme}</span>
+          <WorkspaceThemeSwitcher />
+        </div>
         <LocaleSegmentedControl locale={locale} />
         <div className="kw-designer-nav-list">
           {navItems.map((item) => item.href ? (
