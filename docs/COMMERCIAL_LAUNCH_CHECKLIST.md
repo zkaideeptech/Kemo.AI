@@ -27,7 +27,7 @@
 - API contract consistency for app routes.
 - Secret exposure scan and obvious unsafe logging/TODO checks.
 - Deployment prerequisites and environment readiness notes.
-- Skill wake-up reliability for `gstack-investigate` and `agent-training-loop`.
+- Business prompt skill wake-up reliability for interview-record processing and realtime interview processing.
 - API, ASR, and parsing-model stability gates.
 
 ### Out Of Scope Unless A Gate Fails
@@ -50,7 +50,7 @@ The product is acceptable for commercial launch when:
 - Loading, empty, error, and disabled states are explicit on core flows.
 - API routes preserve the documented `{ ok, data/error }` shape.
 - API clients surface safe `{ ok:false,error.message }` messages before falling back to HTTP status text.
-- Required bug/regression skills are invoked directly or accounted for as workflow intents.
+- Required Kemo business prompt skills are loaded from disk and routed to the correct artifact kinds.
 - ASR and parsing-model provider reachability are checked with baseline/provider probes when environment credentials allow it.
 - No browser-facing code references server-only secrets.
 - No obvious debug logs, TODO/FIXME/HACK, or local-only paths remain in touched production code.
@@ -75,7 +75,7 @@ The product is acceptable for commercial launch when:
 | G13 Responsive smoke | desktop and mobile viewport workspace smoke | No major overlap or unusable controls | Pass | Found mobile layout bug, fixed; mobile content width now usable with no horizontal overflow |
 | G14 Interaction smoke | nav sections, artifact preview, theme/lang buttons | Works or disabled state is clear | Pass | Project/source/help/favorites empty states, theme persistence, language switch verified |
 | G15 Launch risk list | manual synthesis | Risks documented with next action | Pass | Open risks reduced to operational migration/logging/payment-session follow-up items |
-| G16 Skill wake-up gate | inspect run log and project rules | Two required bug/regression skills are invoked or manually applied | Pass | Added persistent rules requiring `gstack-investigate` and `agent-training-loop` intent reporting for qualifying Kemo tasks |
+| G16 Business prompt skill wake-up gate | inspect `llmProvider` routing and prompt files | Interview-record and realtime-interview prompt skills are loaded and routed by artifact kind | Pass | `00-interview-editor` powers `publish_script`; `03-live-meeting-editor` and `04-live-question-coach` power live artifacts |
 | G17 Provider stability gate | `npm run qa:baseline`; ASR-specific probe when needed | API, ASR env, and parsing model reachable or blocker documented | Pass | Baseline verified Supabase, storage, OpenAI-compatible model listing, DashScope generation, Tavily, and Firecrawl; ASR-specific probe remains required for ASR changes |
 
 ## 4. Core User Flow Checklist
@@ -142,7 +142,7 @@ Use this section to record blockers discovered during this run.
 - Found and fixed a mobile layout blocker: the new 280px fixed sidebar left only 110px content width on a 390px viewport. Added responsive rules so the sidebar becomes a top block and content uses full mobile width.
 - Fixed API contract drift in `/api/cron/worker`, changing raw `NextResponse.json({ ok: true, ... })` responses to `jsonOk({ ... })` and `jsonError(...)`.
 - Added workspace and project rules so API clients must surface safe `{ ok:false,error.message }` messages before HTTP status text.
-- Added Kemo stability gates for the two required bug/regression skills plus API, ASR, and parsing-model provider checks.
+- Added Kemo stability gates for the required business prompt skills plus API, ASR, and parsing-model provider checks.
 - Added support ticket persistence:
   - schema/RLS for `support_tickets`;
   - `POST /api/support/tickets`;

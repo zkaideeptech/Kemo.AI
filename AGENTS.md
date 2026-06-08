@@ -81,7 +81,7 @@ For frontend behavior changes, also start the local app and verify the affected 
 
 For bug fixes, verification must include the original failing path or a close reproduction.
 
-## Skill Routing
+## Workflow Routing
 
 - Bug fixes: use the debugging/root-cause workflow before editing.
 - Reported product bugs and live artifact regressions must pass the two core skill gates before baseline packaging:
@@ -94,11 +94,19 @@ For bug fixes, verification must include the original failing path or a close re
 
 If an installed gstack skill is only a bootstrap placeholder, apply the corresponding workflow intent from the global protocol and this file.
 
+## Business Prompt Skill Routing
+
+- Kemo's business "skills" are the prompt files under `skills/`, not the developer workflow skills.
+- Interview-record processing must keep invoking `skills/00-interview-editor/SKILL.md` for `publish_script` and downstream interview-record outputs.
+- Realtime interview processing must keep invoking both `skills/03-live-meeting-editor/SKILL.md` and `skills/04-live-question-coach/SKILL.md` for `live_meeting_editor` and `live_question_coach`.
+- If a task touches prompt routing, live artifacts, interview artifact generation, `src/lib/providers/llmProvider.ts`, `src/app/api/jobs/[id]/live/route.ts`, or `src/app/api/jobs/[id]/artifacts/route.ts`, verify these prompt files are loaded from disk and mapped to the correct artifact kinds.
+- Do not describe `gstack-investigate` or `agent-training-loop` as the user's two business skills; they are development workflows, not Kemo product prompts.
+
 ## Kemo Stability Gates
 
 For work that can affect commercial readiness, run or explicitly account for these checks:
 
-- Skill reliability: confirm the `gstack-investigate` and `agent-training-loop` intents were used for bugs, regressions, broken UI/API behavior, and live artifact issues.
+- Business prompt reliability: confirm `00-interview-editor` still powers interview-record processing, and `03-live-meeting-editor` plus `04-live-question-coach` still power realtime interview output.
 - API stability: verify core API routes preserve `{ ok, data/error }`, parse non-2xx errors into useful user feedback, and do not leave loading states stuck.
 - ASR stability: verify DashScope ASR configuration and reachability with `npm run qa:baseline`; for ASR-specific changes, also run `npx tsx scripts/test-asr.ts` when credentials and network allow it.
 - Model stability: verify the configured OpenAI-compatible model appears in `/models` through `npm run qa:baseline`; for prompt/provider changes, run a representative generation path or document the provider-side blocker.

@@ -10,13 +10,18 @@ These rules are portable with the `Kemo.AI` repository and should be read before
 - Server routes should return diagnosable, non-secret error messages through the project response helper instead of raw framework responses.
 - Every user-triggered API action needs loading, success, and error feedback. Errors must reset pending/loading state.
 
-## Skill Invocation Reliability
+## Business Prompt Skill Reliability
 
-- For Kemo product bugs, regressions, broken UI/API behavior, and live artifact issues, confirm the two required workflow intents were invoked directly or applied manually:
-  - `gstack-investigate`: reproduce the symptom, trace the data/rendering path, and state the root cause before editing.
-  - `agent-training-loop`: define objective, validation set, search space, and stop conditions, then run at least one reproduce -> detect -> execute -> check cycle.
-- If either skill is unavailable or only a bootstrap placeholder in the current host, apply the workflow intent manually and state that fallback explicitly.
-- Final reports for qualifying tasks should say whether these two gates were used or why the task did not qualify.
+- Kemo's business prompt skills are product capabilities, not developer workflow skills.
+- Interview-record processing must reliably invoke the interview editor prompt skill:
+  - `skills/00-interview-editor/SKILL.md`
+  - artifact path: `publish_script` and downstream interview-record outputs.
+- Realtime interview processing must reliably invoke both live prompt skills:
+  - `skills/03-live-meeting-editor/SKILL.md`
+  - `skills/04-live-question-coach/SKILL.md`
+  - artifact paths: `live_meeting_editor` and `live_question_coach`.
+- Any work touching `src/lib/providers/llmProvider.ts`, `src/app/api/jobs/[id]/live/route.ts`, `src/app/api/jobs/[id]/artifacts/route.ts`, or live artifact UI must verify that these prompt skills are still loaded from disk and routed by artifact kind.
+- Final reports for qualifying Kemo work should state whether the interview-record skill and realtime-interview skills were checked, and which command or browser/API path proved the routing.
 
 ## Provider Stability
 
