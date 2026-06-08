@@ -1,0 +1,57 @@
+
+> app@0.1.0 dev
+> next dev --webpack --hostname 127.0.0.1 --port 3000
+
+▲ Next.js 16.1.6 (webpack)
+- Local:         http://127.0.0.1:3000
+- Network:       http://127.0.0.1:3000
+- Environments: .env.local
+
+✓ Starting...
+✓ Ready in 1916ms
+ GET /zh/login 200 in 3.0s (compile: 2.8s, proxy.ts: 12ms, render: 179ms)
+ GET /zh/login 200 in 99ms (compile: 16ms, proxy.ts: 12ms, render: 71ms)
+ GET /zh/register 200 in 1375ms (compile: 1164ms, proxy.ts: 74ms, render: 137ms)
+ GET /zh/app/jobs 200 in 3.2s (compile: 1129ms, proxy.ts: 697ms, render: 1386ms)
+ GET /en/app/jobs 200 in 1470ms (compile: 21ms, proxy.ts: 461ms, render: 988ms)
+ GET /zh/app/settings 200 in 2.5s (compile: 1042ms, proxy.ts: 433ms, render: 979ms)
+ GET /zh/app/jobs 200 in 1314ms (compile: 22ms, proxy.ts: 429ms, render: 863ms)
+ GET /zh/app/jobs 200 in 896ms (compile: 67ms, proxy.ts: 718ms, render: 110ms)
+ GET /zh/app/jobs 200 in 1164ms (compile: 13ms, proxy.ts: 274ms, render: 877ms)
+ GET /zh/app/jobs 200 in 2.1s (compile: 17ms, proxy.ts: 586ms, render: 1523ms)
+ POST /api/projects 201 in 1444ms (compile: 734ms, proxy.ts: 301ms, render: 409ms)
+ GET /zh/app/jobs 200 in 1123ms (compile: 53ms, proxy.ts: 957ms, render: 113ms)
+ GET /zh/app/jobs 200 in 379ms (compile: 13ms, proxy.ts: 316ms, render: 50ms)
+ GET /zh/app/jobs 200 in 1098ms (compile: 12ms, proxy.ts: 1032ms, render: 54ms)
+ GET /zh/app/jobs 200 in 1005ms (compile: 195ms, proxy.ts: 488ms, render: 323ms)
+ GET /zh/app/jobs 200 in 484ms (compile: 12ms, proxy.ts: 409ms, render: 62ms)
+ GET /zh/app/jobs 200 in 902ms (compile: 74ms, proxy.ts: 650ms, render: 178ms)
+ GET /zh/app/jobs 200 in 660ms (compile: 50ms, proxy.ts: 481ms, render: 129ms)
+ GET /zh/app/jobs 200 in 424ms (compile: 42ms, proxy.ts: 289ms, render: 93ms)
+ GET /zh/app/jobs 200 in 550ms (compile: 11ms, proxy.ts: 491ms, render: 48ms)
+ GET /zh/app/jobs 200 in 598ms (compile: 12ms, proxy.ts: 518ms, render: 68ms)
+ GET /zh/app/jobs 200 in 497ms (compile: 15ms, proxy.ts: 414ms, render: 69ms)
+ GET /zh/app/jobs 200 in 1476ms (compile: 11ms, proxy.ts: 441ms, render: 1025ms)
+ POST /api/support/tickets 500 in 1824ms (compile: 864ms, proxy.ts: 595ms, render: 364ms)
+ GET /zh/app/jobs 200 in 752ms (compile: 58ms, proxy.ts: 578ms, render: 116ms)
+ POST /api/support/tickets 201 in 1614ms (compile: 387ms, proxy.ts: 531ms, render: 696ms)
+ GET /zh/app/jobs 200 in 1034ms (compile: 44ms, proxy.ts: 912ms, render: 78ms)
+ GET /zh/app/jobs 200 in 1492ms (compile: 14ms, proxy.ts: 445ms, render: 1033ms)
+ GET /zh/app/jobs 200 in 418ms (compile: 13ms, proxy.ts: 323ms, render: 82ms)
+ GET /zh/app/jobs 200 in 851ms (compile: 94ms, proxy.ts: 530ms, render: 227ms)
+ GET /zh/app/jobs 200 in 459ms (compile: 15ms, proxy.ts: 383ms, render: 61ms)
+ GET /zh/app/jobs 200 in 830ms (compile: 69ms, proxy.ts: 635ms, render: 125ms)
+ GET /zh/app/jobs 200 in 553ms (compile: 36ms, proxy.ts: 424ms, render: 93ms)
+ GET /zh/app/jobs 200 in 363ms (compile: 12ms, proxy.ts: 299ms, render: 53ms)
+ GET /zh/app/jobs 200 in 1373ms (compile: 13ms, proxy.ts: 295ms, render: 1066ms)
+ POST /api/stripe/checkout 500 in 1105ms (compile: 927ms, proxy.ts: 165ms, render: 13ms)
+ GET /zh/app/jobs 200 in 754ms (compile: 63ms, proxy.ts: 577ms, render: 113ms)
+ GET /zh/app/jobs 200 in 1236ms (compile: 17ms, proxy.ts: 292ms, render: 927ms)
+ POST /api/stripe/checkout 500 in 176ms (compile: 28ms, proxy.ts: 144ms, render: 5ms)
+ GET /zh/app/jobs 200 in 362ms (compile: 11ms, proxy.ts: 292ms, render: 60ms)
+ GET /zh/app/jobs 200 in 3.1s (compile: 15ms, proxy.ts: 940ms, render: 2.1s)
+ GET /zh/app/jobs 200 in 409ms (compile: 11ms, proxy.ts: 349ms, render: 49ms)
+ GET /zh/app/jobs 200 in 846ms (compile: 13ms, proxy.ts: 784ms, render: 49ms)
+ GET /zh/app/jobs 200 in 917ms (compile: 12ms, proxy.ts: 848ms, render: 57ms)
+ GET /zh/app/jobs 200 in 438ms (compile: 10ms, proxy.ts: 370ms, render: 58ms)
+ GET /zh 200 in 858ms (proxy.ts: 6ms)

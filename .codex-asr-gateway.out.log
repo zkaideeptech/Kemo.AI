@@ -1,0 +1,6 @@
+
+> app@0.1.0 asr:gateway
+> tsx scripts/live-asr-gateway.ts
+
+[dotenv@17.2.4] injecting env (25) from .env.local -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[LiveASRGateway] listening on http://127.0.0.1:43119
