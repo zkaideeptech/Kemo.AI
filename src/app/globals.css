@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&family=Source+Serif+4:opsz,wght@8..60,400;500;600;700&display=swap");
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -11630,5 +11631,81 @@ body::after {
     border-top: 1px solid var(--kw-outline-variant);
     padding-top: 20px;
     padding-left: 0;
+  }
+
+  .kemo-reference-workspace {
+    display: block !important;
+    min-height: 100vh !important;
+    overflow-y: auto !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-nav {
+    position: static !important;
+    width: 100% !important;
+    min-height: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--outline-variant) !important;
+    padding: 16px !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-brand {
+    padding: 0 0 14px !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-new,
+  .kemo-reference-workspace .kw-sidebar-control-row,
+  .kemo-reference-workspace .kw-language-segment {
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-nav-list,
+  .kemo-reference-workspace .kw-designer-footer-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-footer-nav {
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-nav-item {
+    border-left: 0 !important;
+    border-radius: 8px !important;
+    padding: 0 12px !important;
+  }
+
+  .kemo-reference-workspace > main {
+    display: block !important;
+    height: auto !important;
+    margin-left: 0 !important;
+    overflow: visible !important;
+  }
+
+  .kemo-reference-workspace > main > section {
+    padding: 18px 16px !important;
+  }
+
+  .kemo-reference-workspace .kw-content {
+    padding: 0 !important;
+  }
+
+  .kemo-reference-workspace .kw-project-card-grid,
+  .kemo-reference-workspace .kw-artifact-grid,
+  .kemo-reference-workspace .kw-source-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .kemo-reference-workspace .kw-page-heading {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-inspector {
+    width: 100% !important;
+    border-left: 0 !important;
+    border-top: 1px solid var(--outline-variant) !important;
   }
 }

@@ -212,6 +212,23 @@ create trigger usage_counters_updated_at
 -- ============================================================
 -- 11. Events（审计事件表）
 -- ============================================================
+create table if not exists public.support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  topic text not null check (topic in ('bug','feature','data_source','other')),
+  description text not null,
+  status text not null default 'open' check (status in ('open','triaged','closed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.support_tickets is '帮助与反馈工单：用户在工作台提交的问题、需求和资料源咨询';
+
+drop trigger if exists support_tickets_updated_at on public.support_tickets;
+create trigger support_tickets_updated_at
+  before update on public.support_tickets
+  for each row execute function public.handle_updated_at();
+
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -240,6 +257,10 @@ create index if not exists idx_term_occurrences_status on public.term_occurrence
 create index if not exists idx_confirmations_job_id on public.confirmations(job_id);
 create index if not exists idx_credits_ledger_user_id on public.credits_ledger(user_id);
 create index if not exists idx_subscriptions_user_id on public.subscriptions(user_id);
+create unique index if not exists idx_subscriptions_stripe_subscription_id on public.subscriptions(stripe_subscription_id)
+  where stripe_subscription_id is not null;
 create index if not exists idx_usage_counters_user_id on public.usage_counters(user_id);
+create index if not exists idx_support_tickets_user_id on public.support_tickets(user_id);
+create index if not exists idx_support_tickets_status on public.support_tickets(status);
 create index if not exists idx_events_user_id on public.events(user_id);
 create index if not exists idx_events_type on public.events(type);

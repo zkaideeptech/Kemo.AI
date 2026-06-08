@@ -124,6 +124,17 @@ create table if not exists public.usage_counters (
   updated_at timestamptz not null default now()
 );
 
+-- Support tickets
+create table if not exists public.support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  topic text not null,
+  description text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Events (optional audit)
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
@@ -142,3 +153,6 @@ create index if not exists idx_glossary_terms_user_id on public.glossary_terms(u
 create unique index if not exists idx_glossary_terms_user_term on public.glossary_terms(user_id, term);
 create index if not exists idx_term_occurrences_job_id on public.term_occurrences(job_id);
 create index if not exists idx_confirmations_job_id on public.confirmations(job_id);
+create unique index if not exists idx_subscriptions_stripe_subscription_id on public.subscriptions(stripe_subscription_id)
+  where stripe_subscription_id is not null;
+create index if not exists idx_support_tickets_user_id on public.support_tickets(user_id);

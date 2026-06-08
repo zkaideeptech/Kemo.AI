@@ -164,6 +164,7 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   const [themeMode, setThemeMode] = useState<WorkspaceUiMode>("light");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false);
 
   const transcriptCount = stats.filesUsed || stats.jobCount;
   const hasLimitedJobs = stats.monthlyJobLimit !== null;
@@ -212,6 +213,26 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
     } finally {
       setIsUploadingAvatar(false);
       event.target.value = "";
+    }
+  };
+
+  const handleCheckout = async () => {
+    try {
+      setIsStartingCheckout(true);
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locale }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok || !json.data?.url) {
+        throw new Error(json?.error?.message || "Checkout is not available");
+      }
+      window.location.href = json.data.url;
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setIsStartingCheckout(false);
     }
   };
 
@@ -269,7 +290,14 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
               <span className="material-symbols-outlined" data-icon="help">help</span>
             </button>
             <div className="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden ml-2 cursor-pointer border border-outline-variant">
-              {avatarUrl ? <img alt={copy.avatarAlt} className="w-full h-full object-cover" src={avatarUrl} /> : <span className="flex h-full w-full items-center justify-center font-label-sm text-label-sm text-primary">{initials}</span>}
+              {avatarUrl ? (
+                <span
+                  aria-label={copy.avatarAlt}
+                  className="block h-full w-full bg-cover bg-center"
+                  role="img"
+                  style={{ backgroundImage: `url(${avatarUrl})` }}
+                />
+              ) : <span className="flex h-full w-full items-center justify-center font-label-sm text-label-sm text-primary">{initials}</span>}
             </div>
           </div>
         </header>
@@ -281,7 +309,14 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
               <h2 className="font-headline-md text-headline-md text-on-background border-b border-outline-variant pb-2">{copy.profile}</h2>
               <div className="flex items-start gap-stack-lg mt-4">
                 <label className="w-20 h-20 rounded-full bg-surface-container-high overflow-hidden flex-shrink-0 border border-outline-variant relative group cursor-pointer">
-                  {avatarUrl ? <img alt={copy.avatarAlt} className="w-full h-full object-cover" src={avatarUrl} /> : <span className="flex h-full w-full items-center justify-center font-headline-md text-headline-md text-primary">{initials}</span>}
+                  {avatarUrl ? (
+                    <span
+                      aria-label={copy.avatarAlt}
+                      className="block h-full w-full bg-cover bg-center"
+                      role="img"
+                      style={{ backgroundImage: `url(${avatarUrl})` }}
+                    />
+                  ) : <span className="flex h-full w-full items-center justify-center font-headline-md text-headline-md text-primary">{initials}</span>}
                   <span className="absolute inset-0 bg-primary/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <span className="material-symbols-outlined text-on-primary">{isUploadingAvatar ? "progress_activity" : "edit"}</span>
                   </span>
@@ -351,8 +386,8 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
                       </li>
                     ))}
                   </ul>
-                  <button className="mt-2 w-full bg-primary text-on-primary py-3 px-6 rounded-lg font-label-sm text-label-sm hover:bg-inverse-surface transition-colors flex items-center justify-center gap-2 shadow-sm" type="button">
-                    {copy.cta}
+                  <button className="mt-2 w-full bg-primary text-on-primary py-3 px-6 rounded-lg font-label-sm text-label-sm hover:bg-inverse-surface transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60" disabled={isStartingCheckout} type="button" onClick={() => void handleCheckout()}>
+                    {isStartingCheckout ? copy.saving : copy.cta}
                     <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                   </button>
                 </div>

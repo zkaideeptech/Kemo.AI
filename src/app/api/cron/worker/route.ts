@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { jsonError, jsonOk } from "@/lib/api/response";
 import { runQueuedJobs } from "@/lib/workflows/queue";
 
 export const runtime = "nodejs";
@@ -14,7 +13,7 @@ function isAuthorized(req: Request) {
 
 export async function GET(req: Request) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    return jsonError("unauthorized", "Unauthorized", { status: 401 });
   }
 
   const limit = Math.max(1, Number(process.env.WORKER_BATCH_LIMIT || 1));
@@ -22,14 +21,13 @@ export async function GET(req: Request) {
 
   try {
     const summary = await runQueuedJobs(limit);
-    return NextResponse.json({
-      ok: true,
+    return jsonOk({
       limit,
       elapsedMs: Date.now() - startedAt,
       ...summary,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Worker cron failed";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return jsonError("worker_failed", message, { status: 500 });
   }
 }

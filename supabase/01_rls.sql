@@ -171,6 +171,18 @@ create policy "usage_counters_select_own" on public.usage_counters
 -- ============================================================
 -- Events（只读审计）
 -- ============================================================
+alter table public.support_tickets enable row level security;
+
+drop policy if exists "support_tickets_select_own" on public.support_tickets;
+drop policy if exists "support_tickets_insert_own" on public.support_tickets;
+drop policy if exists "support_tickets_update_own" on public.support_tickets;
+drop policy if exists "support_tickets_delete_own" on public.support_tickets;
+
+create policy "support_tickets_select_own" on public.support_tickets
+  for select using (user_id = auth.uid());
+create policy "support_tickets_insert_own" on public.support_tickets
+  for insert with check (user_id = auth.uid());
+
 drop policy if exists "events_select_own" on public.events;
 drop policy if exists "events_insert_own" on public.events;
 drop policy if exists "events_update_own" on public.events;

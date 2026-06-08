@@ -373,6 +373,28 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["subscriptions"]["Row"]>;
         Relationships: [];
       };
+      support_tickets: {
+        Row: {
+          id: string;
+          user_id: string;
+          topic: string;
+          description: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          topic: string;
+          description: string;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["support_tickets"]["Row"]>;
+        Relationships: [];
+      };
       usage_counters: {
         Row: {
           id: string;

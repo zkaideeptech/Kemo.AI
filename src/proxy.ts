@@ -9,7 +9,7 @@ const handleI18nRouting = createMiddleware({
   localePrefix: "always",
 });
 
-export default async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   // Update Supabase session to prevent auth expiration (this creates a valid response)
   const { response: supabaseResponse, user } = await updateSession(request);
 

@@ -6,6 +6,7 @@
 
 -- 清空所有业务表数据（保留表结构）
 truncate public.events cascade;
+truncate public.support_tickets cascade;
 truncate public.usage_counters cascade;
 truncate public.subscriptions cascade;
 truncate public.credits_ledger cascade;

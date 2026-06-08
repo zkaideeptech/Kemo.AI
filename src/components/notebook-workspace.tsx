@@ -102,7 +102,7 @@ const WORKSPACE_COPY = {
     sourceTypeFallback: "Source",
     helpKicker: "Help & Feedback",
     helpTitle: "Help & Documentation",
-    helpDescription: "Browse product guidance. Support tickets are disabled until a backend ticket API exists.",
+    helpDescription: "Browse product guidance or send a support ticket from the workspace.",
     helpProjectTitle: "Setting up a new Project",
     helpProjectCopy: "Create a project, then import audio, live sessions, URLs, or text sources.",
     helpSourcesTitle: "Data Source Integrations",
@@ -113,14 +113,17 @@ const WORKSPACE_COPY = {
     helpPlanCopy: (limit: number) => `Your current plan allows single files up to ${limit}MB.`,
     contactSupport: "Contact Support",
     submitFeedback: "Submit Feedback",
-    disabled: "Disabled",
+    readyToSend: "Ready",
     topic: "Topic",
     bugReport: "Bug Report",
     featureRequest: "Feature Request",
     dataSourceInquiry: "Data Source Inquiry",
+    otherTopic: "Other",
     description: "Description",
-    supportPlaceholder: "Support ticket submission needs POST /api/support/tickets before this can be enabled.",
+    supportPlaceholder: "Describe the issue or suggestion with enough detail for the team to investigate.",
     submitTicket: "Submit Ticket",
+    sendingTicket: "Submitting...",
+    supportSubmitted: "Ticket submitted. The support team will review it soon.",
     metaSeparator: " · ",
     startLive: "Start live session",
     recentConversations: "Recent conversations",
@@ -204,7 +207,7 @@ const WORKSPACE_COPY = {
     sourceTypeFallback: "资料",
     helpKicker: "帮助与反馈",
     helpTitle: "帮助与文档",
-    helpDescription: "查看产品使用说明。当前后端尚未提供工单接口，因此反馈提交暂不可用。",
+    helpDescription: "查看产品使用说明，也可以直接从工作台提交支持工单。",
     helpProjectTitle: "创建新项目",
     helpProjectCopy: "先创建项目，再导入音频、实时访谈、URL 或文本资料。",
     helpSourcesTitle: "资料来源接入",
@@ -215,14 +218,17 @@ const WORKSPACE_COPY = {
     helpPlanCopy: (limit: number) => `当前套餐支持单个文件最大 ${limit}MB。`,
     contactSupport: "联系支持",
     submitFeedback: "提交反馈",
-    disabled: "暂不可用",
+    readyToSend: "可提交",
     topic: "主题",
     bugReport: "问题反馈",
     featureRequest: "功能建议",
     dataSourceInquiry: "资料来源咨询",
+    otherTopic: "其他",
     description: "描述",
-    supportPlaceholder: "需要新增 POST /api/support/tickets 后才能启用工单提交。",
+    supportPlaceholder: "请尽量描述问题或建议的背景、复现路径和预期结果。",
     submitTicket: "提交工单",
+    sendingTicket: "提交中...",
+    supportSubmitted: "工单已提交，支持团队会尽快处理。",
     metaSeparator: " · ",
     startLive: "开始实时访谈",
     recentConversations: "最近访谈",
@@ -396,11 +402,14 @@ async function buildDocumentSourceText(file: File, copy: ReturnType<typeof getWo
 
 async function readApi<T>(response: Response) {
   const json = (await response.json().catch(() => null)) as ApiResult<T> | null;
-  if (!response.ok || !json) {
+  if (!json) {
     throw new Error(response.statusText || "Request failed");
   }
   if (!json.ok) {
     throw new Error(json.error?.message || response.statusText || "Request failed");
+  }
+  if (!response.ok) {
+    throw new Error(response.statusText || "Request failed");
   }
   return json.data;
 }
@@ -513,6 +522,9 @@ export function NotebookWorkspace({
   const [sourceTitle, setSourceTitle] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [supportTopic, setSupportTopic] = useState("bug");
+  const [supportDescription, setSupportDescription] = useState("");
+  const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [pendingArtifacts, setPendingArtifacts] = useState<string[]>([]);
@@ -999,6 +1011,52 @@ export function NotebookWorkspace({
     } catch (caught) {
       setUploadState("error");
       setError(caught instanceof Error ? caught.message : t("workspace.errors.sourceImportFailed"));
+    }
+  }
+
+  async function submitSupportTicket() {
+    if (supportDescription.trim().length < 10) {
+      setError(locale === "zh" ? "请至少输入 10 个字符，方便支持团队定位问题。" : "Please enter at least 10 characters so support can investigate.");
+      return;
+    }
+
+    setIsSubmittingSupport(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      await readApi<{ ticket: { id: string; status: string } }>(
+        await fetch("/api/support/tickets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            topic: supportTopic,
+            description: supportDescription,
+          }),
+        })
+      );
+      setSupportDescription("");
+      setFeedback(copy.supportSubmitted);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Support ticket submission failed");
+    } finally {
+      setIsSubmittingSupport(false);
+    }
+  }
+
+  async function startCheckout() {
+    setError(null);
+    setFeedback(null);
+    try {
+      const data = await readApi<{ url: string }>(
+        await fetch("/api/stripe/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locale }),
+        })
+      );
+      window.location.href = data.url;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Checkout is not available");
     }
   }
 
@@ -1721,12 +1779,12 @@ export function NotebookWorkspace({
                 <p className="kw-kicker">{copy.contactSupport}</p>
                 <h2>{copy.submitFeedback}</h2>
               </div>
-              <span className="kw-mini-status">{copy.disabled}</span>
+              <span className="kw-mini-status">{copy.readyToSend}</span>
             </div>
             <div className="kw-form-stack">
-              <label>{copy.topic}<select disabled><option>{copy.bugReport}</option><option>{copy.featureRequest}</option><option>{copy.dataSourceInquiry}</option></select></label>
-              <label>{copy.description}<textarea disabled placeholder={copy.supportPlaceholder} /></label>
-              <button type="button" className="kw-button secondary full" disabled>{copy.submitTicket}</button>
+              <label>{copy.topic}<select value={supportTopic} onChange={(event) => setSupportTopic(event.target.value)}><option value="bug">{copy.bugReport}</option><option value="feature">{copy.featureRequest}</option><option value="data_source">{copy.dataSourceInquiry}</option><option value="other">{copy.otherTopic}</option></select></label>
+              <label>{copy.description}<textarea value={supportDescription} onChange={(event) => setSupportDescription(event.target.value)} placeholder={copy.supportPlaceholder} /></label>
+              <button type="button" className="kw-button secondary full" disabled={isSubmittingSupport || supportDescription.trim().length < 10} onClick={() => void submitSupportTicket()}>{isSubmittingSupport ? <Loader2 className="spin" /> : null}{isSubmittingSupport ? copy.sendingTicket : copy.submitTicket}</button>
             </div>
           </section>
         </div>
@@ -1917,10 +1975,10 @@ export function NotebookWorkspace({
             ))}
           </div>
           <div className="mt-auto pt-stack-md">
-            <Link className="bg-surface-container-lowest border border-outline-variant rounded-lg p-stack-sm flex items-center justify-between cursor-pointer hover:bg-surface-container-high transition-colors" href={`/${locale}/app/settings`}>
+            <button className="bg-surface-container-lowest border border-outline-variant rounded-lg p-stack-sm flex items-center justify-between cursor-pointer hover:bg-surface-container-high transition-colors w-full" type="button" onClick={() => void startCheckout()}>
               <span className="font-label-sm text-label-sm text-primary">{copy.proCta}</span>
               <span className="material-symbols-outlined text-sm text-on-surface-variant">arrow_forward</span>
-            </Link>
+            </button>
           </div>
         </aside>
       </main>

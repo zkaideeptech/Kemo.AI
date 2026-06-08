@@ -7,13 +7,11 @@ export type TermCandidate = {
 
 // Seed layer (cold start)
 export async function getSeedTerms(): Promise<string[]> {
-  // TODO: load from DB or offline import (seed dataset)
   return [];
 }
 
 // Memory layer (user-confirmed glossary)
 export async function getMemoryTerms(): Promise<string[]> {
-  // TODO: load from glossary_terms for the current user
   return [];
 }
 
@@ -45,8 +43,8 @@ export async function extractTerms({
     }
   }
 
-  // Rule-based: capitalized or acronym-like tokens
-  const regex = /\b[A-Z][A-Za-z0-9-]{2,}\b/g;
+  // Rule-based: capitalized/acronym tokens and common Chinese business terms.
+  const regex = /\b[A-Z][A-Za-z0-9-]{2,}\b|[\u4e00-\u9fffA-Za-z0-9]{2,}(?:模型|平台|指标|系统|策略|流程|接口|数据源|工作台|过滤器|搜索|转写|摘要|纪要|问答|访谈|资料|项目|任务)/g;
   const matches = transcriptText.match(regex) || [];
   for (const match of matches) {
     const key = match.toLowerCase();
@@ -59,9 +57,6 @@ export async function extractTerms({
       context: getContext(match),
     });
   }
-
-  // LLM stub (reserved)
-  // TODO: call LLM to extract more candidate terms with confidence
 
   return { candidates };
 }
