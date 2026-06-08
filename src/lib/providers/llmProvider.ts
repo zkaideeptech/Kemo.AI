@@ -293,6 +293,10 @@ function isSkillBackedArtifact(kind: ArtifactKind) {
   return ["publish_script", "roadshow_transcript", "meeting_minutes", "live_meeting_editor", "live_question_coach"].includes(kind);
 }
 
+function isInterviewEditorGuidedArtifact(kind: ArtifactKind) {
+  return ["quick_summary", "inspiration_questions", "ic_qa", "wechat_article"].includes(kind);
+}
+
 async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) {
   const skillDirMap: Record<ArtifactKind, string> = {
     live_meeting_editor: "03-live-meeting-editor",
@@ -441,20 +445,64 @@ async function buildSkillBackedPrompt(kind: ArtifactKind, input: ArtifactInput) 
   ].join("\n");
 }
 
+async function buildInterviewEditorGuidedPrompt(kind: ArtifactKind, input: ArtifactInput) {
+  const skillText = await loadSkillPrompt("00-interview-editor");
+  const promptFile = getPromptFile(kind);
+  const upstreamScript = input.publishScriptText?.trim() || input.transcriptText.trim();
+  const formatPrompt = renderPrompt(await loadPrompt(promptFile), {
+    transcript_text: upstreamScript,
+    glossary_terms: input.glossaryTerms.join(", "),
+    uncertain_terms: input.uncertainTerms.join(", "),
+    source_context: input.sourceContext || "",
+    clarification_context: input.clarificationContext || "",
+    title: input.title || "",
+    guest_name: input.guestName || "",
+    interviewer_name: input.interviewerName || "",
+    publish_script_text: upstreamScript,
+  });
+
+  return [
+    "[KEMO_BUSINESS_SKILL:skills/00-interview-editor/SKILL.md]",
+    "The business rules below are the source of truth for interview-record understanding, fact preservation, terminology handling, and anti-fabrication constraints.",
+    "Apply them before following the artifact-specific format prompt.",
+    skillText,
+    "",
+    `[KEMO_FORMAT_PROMPT:prompts/${promptFile}]`,
+    "Use the prompt below only as the artifact output contract. Do not let it override the business skill rules above.",
+    formatPrompt,
+    "",
+    "[KEMO_CANONICAL_INTERVIEW_RECORD]",
+    upstreamScript,
+    "",
+    "[KEMO_OUTPUT_RULE]",
+    "Return only the final artifact content. Do not explain the prompt, routing, or execution process.",
+  ].join("\n");
+}
+
+export async function buildArtifactPrompt(kind: ArtifactKind, input: ArtifactInput) {
+  if (isSkillBackedArtifact(kind)) {
+    return buildSkillBackedPrompt(kind, input);
+  }
+
+  if (isInterviewEditorGuidedArtifact(kind)) {
+    return buildInterviewEditorGuidedPrompt(kind, input);
+  }
+
+  return renderPrompt(await loadPrompt(getPromptFile(kind)), {
+    transcript_text: input.transcriptText,
+    glossary_terms: input.glossaryTerms.join(", "),
+    uncertain_terms: input.uncertainTerms.join(", "),
+    source_context: input.sourceContext || "",
+    clarification_context: input.clarificationContext || "",
+    title: input.title || "",
+    guest_name: input.guestName || "",
+    interviewer_name: input.interviewerName || "",
+    publish_script_text: input.publishScriptText || "",
+  });
+}
+
 export async function generateArtifactText(kind: ArtifactKind, input: ArtifactInput) {
-  const prompt = isSkillBackedArtifact(kind)
-    ? await buildSkillBackedPrompt(kind, input)
-    : renderPrompt(await loadPrompt(getPromptFile(kind)), {
-        transcript_text: input.transcriptText,
-        glossary_terms: input.glossaryTerms.join(", "),
-        uncertain_terms: input.uncertainTerms.join(", "),
-      source_context: input.sourceContext || "",
-      clarification_context: input.clarificationContext || "",
-      title: input.title || "",
-      guest_name: input.guestName || "",
-      interviewer_name: input.interviewerName || "",
-      publish_script_text: input.publishScriptText || "",
-    });
+  const prompt = await buildArtifactPrompt(kind, input);
 
   return callLlm(prompt, kind);
 }

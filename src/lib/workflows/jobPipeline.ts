@@ -344,6 +344,7 @@ export async function runJobPipeline(jobId: string) {
     title: job.title || "",
     guestName: job.guest_name || "",
     interviewerName: job.interviewer_name || "",
+    publishScriptText: publishScript,
   });
   console.log(`${LOG} ✓ 快速摘要: ${quickSummary.length} 字符`);
 
@@ -364,6 +365,10 @@ export async function runJobPipeline(jobId: string) {
     transcriptText: transcript.transcript_text,
     glossaryTerms,
     uncertainTerms: [],
+    title: job.title || "",
+    guestName: job.guest_name || "",
+    interviewerName: job.interviewer_name || "",
+    publishScriptText: publishScript,
   });
   console.log(`${LOG} ✓ IC Q&A: ${icQa.length} 字符`);
 
@@ -372,6 +377,10 @@ export async function runJobPipeline(jobId: string) {
     transcriptText: transcript.transcript_text,
     glossaryTerms,
     uncertainTerms: [],
+    title: job.title || "",
+    guestName: job.guest_name || "",
+    interviewerName: job.interviewer_name || "",
+    publishScriptText: publishScript,
   });
   console.log(`${LOG} ✓ 公众号长文: ${wechat.length} 字符`);
 
