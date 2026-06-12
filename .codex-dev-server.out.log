@@ -55,3 +55,5 @@
  GET /zh/app/jobs 200 in 917ms (compile: 12ms, proxy.ts: 848ms, render: 57ms)
  GET /zh/app/jobs 200 in 438ms (compile: 10ms, proxy.ts: 370ms, render: 58ms)
  GET /zh 200 in 858ms (proxy.ts: 6ms)
+ GET /zh 200 in 183ms (compile: 36ms, proxy.ts: 17ms, render: 130ms)
+[?25h
