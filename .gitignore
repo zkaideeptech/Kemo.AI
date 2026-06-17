@@ -30,6 +30,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+.codex-*.log
 
 # env files (can opt-in for committing if needed)
 .env*
@@ -45,6 +46,9 @@ test-audio.mp3
 *.m4a
 outputs/
 __pycache__/
+
+# local tunnel binaries
+/tools/
 
 # typescript
 *.tsbuildinfo

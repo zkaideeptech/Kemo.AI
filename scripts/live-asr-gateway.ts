@@ -18,8 +18,8 @@ import {
 
 config({ path: ".env.local" });
 
-const HOST = process.env.KEMO_ASR_GATEWAY_HOST || "127.0.0.1";
-const PORT = Number(process.env.KEMO_ASR_GATEWAY_PORT || "43119");
+const HOST = process.env.KEMO_ASR_GATEWAY_HOST || process.env.LIVE_ASR_GATEWAY_HOST || "127.0.0.1";
+const PORT = Number(process.env.KEMO_ASR_GATEWAY_PORT || process.env.LIVE_ASR_GATEWAY_PORT || "43119");
 
 type BrowserClientState = {
   jobId: string | null;

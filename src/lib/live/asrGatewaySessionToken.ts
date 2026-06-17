@@ -9,7 +9,7 @@ type AsrGatewaySessionTokenPayload = {
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 function getTokenSecret() {
-  return process.env.KEMO_ASR_GATEWAY_TOKEN_SECRET || process.env.DASHSCOPE_API_KEY || "kemo-live-asr";
+  return process.env.KEMO_ASR_GATEWAY_TOKEN_SECRET || process.env.LIVE_ASR_SESSION_TOKEN_SECRET || process.env.DASHSCOPE_API_KEY || "kemo-live-asr";
 }
 
 function toBase64Url(value: Buffer | string) {

@@ -4,13 +4,16 @@ import * as path from "node:path";
 import { createAsrGatewaySessionToken } from "@/lib/live/asrGatewaySessionToken";
 import type { RealtimeAsrDebugState, SessionSnapshot } from "@/lib/live/realtimeAsrSession";
 
-const HOST = process.env.KEMO_ASR_GATEWAY_HOST || "127.0.0.1";
-const PORT = Number(process.env.KEMO_ASR_GATEWAY_PORT || "43119");
+const HOST = process.env.KEMO_ASR_GATEWAY_HOST || process.env.LIVE_ASR_GATEWAY_HOST || "127.0.0.1";
+const PORT = Number(process.env.KEMO_ASR_GATEWAY_PORT || process.env.LIVE_ASR_GATEWAY_PORT || "43119");
 const HTTP_BASE_URL = `http://${HOST}:${PORT}`;
-const WS_PUBLIC_URL = process.env.KEMO_ASR_GATEWAY_PUBLIC_WS_URL || `ws://${HOST}:${PORT}/browser`;
-const HEALTH_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_HEALTH_TIMEOUT_MS || "1200");
-const BOOT_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_BOOT_TIMEOUT_MS || "8000");
-const REQUEST_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_REQUEST_TIMEOUT_MS || "15000");
+const WS_PUBLIC_URL =
+  process.env.KEMO_ASR_GATEWAY_PUBLIC_WS_URL ||
+  process.env.NEXT_PUBLIC_LIVE_ASR_GATEWAY_URL ||
+  `ws://${HOST}:${PORT}/browser`;
+const HEALTH_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_HEALTH_TIMEOUT_MS || process.env.LIVE_ASR_GATEWAY_HEALTH_TIMEOUT_MS || "1200");
+const BOOT_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_BOOT_TIMEOUT_MS || process.env.LIVE_ASR_GATEWAY_BOOT_TIMEOUT_MS || "8000");
+const REQUEST_TIMEOUT_MS = Number(process.env.KEMO_ASR_GATEWAY_REQUEST_TIMEOUT_MS || process.env.LIVE_ASR_GATEWAY_REQUEST_TIMEOUT_MS || "15000");
 const HEALTH_POLL_INTERVAL_MS = 200;
 
 export type RealtimeAsrGatewaySnapshot = SessionSnapshot & {

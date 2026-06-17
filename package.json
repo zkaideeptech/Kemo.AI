@@ -10,6 +10,8 @@
     "start": "next start",
     "lint": "eslint",
     "asr:gateway": "tsx scripts/live-asr-gateway.ts",
+    "asr:gateway:public": "powershell -ExecutionPolicy Bypass -File scripts/start-public-asr-gateway.ps1",
+    "asr:gateway:verify": "node scripts/verify-public-asr-gateway.mjs",
     "worker": "tsx scripts/worker.ts",
     "seed:terms": "tsx scripts/import-seed-terms.ts"
   },
