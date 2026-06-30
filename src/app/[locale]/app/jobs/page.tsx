@@ -45,7 +45,7 @@ export default async function JobsPage({
       supabase.from("memos").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("artifacts").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       admin.from("favorites").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
-      supabase.from("sources").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+      admin.from("sources").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       supabase.from("term_occurrences").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     ]);
 

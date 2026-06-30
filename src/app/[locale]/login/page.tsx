@@ -9,6 +9,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { KemoMark } from "@/components/kemo-mark";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
@@ -40,11 +41,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
-      <div className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t("appName")}</p>
-        <h1 className="font-serif text-3xl tracking-tight">{t("login.title")}</h1>
-        <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
+    <div className="kemo-auth-page mx-auto flex w-full max-w-sm flex-col gap-6 pt-10">
+      <div className="space-y-3">
+        <div className="kemo-auth-brand">
+          <span className="kemo-auth-mark"><KemoMark /></span>
+          <span>
+            <strong>{t("appName")}</strong>
+            <small>{locale === "zh" ? "研究工作台" : "Research Workbench"}</small>
+          </span>
+        </div>
+        <h1 className="text-[28px] font-semibold leading-9 tracking-normal text-foreground">{t("login.title")}</h1>
+        <p className="text-sm leading-6 text-muted-foreground">{t("login.subtitle")}</p>
       </div>
 
       <Card className="shadow-none">

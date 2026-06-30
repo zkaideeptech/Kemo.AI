@@ -14,6 +14,10 @@ import {
   FileText,
   Loader2,
   Mic,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Pencil,
   Plus,
   RefreshCw,
@@ -65,12 +69,18 @@ const AUDIO_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AUDIO || "a
 const MEDIA_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".mp4", ".mov", ".mkv", ".avi", ".webm"]);
 const TEXT_EXTENSIONS = new Set([".txt", ".md", ".markdown", ".csv", ".json", ".yaml", ".yml", ".srt", ".vtt"]);
 const TEXT_PREVIEW_LIMIT = 16000;
+type NewProjectMode = "live" | "upload";
 
 const WORKSPACE_COPY = {
   en: {
     workspaceKicker: "Kemo.AI Research Workspace",
     brandSubtitle: "Research Workbench",
     newProject: "New Project",
+    projectModeTitle: "Choose how this project starts",
+    createAndStartLive: "Create and start live interview",
+    createAndImport: "Create and import file",
+    projectModeLiveCopy: "Start a real-time interview with live transcription and AI follow-up support.",
+    projectModeUploadCopy: "Upload audio, video, documents, or text files into the new project.",
     theme: "Theme",
     navProjects: "Projects",
     navJobs: "Jobs",
@@ -151,9 +161,9 @@ const WORKSPACE_COPY = {
     syncing: "Syncing",
     extractedNote: "Extracted note",
     featureArtifact: "Generated artifact",
-    noLiveNotes: "No live notes have been generated yet.",
+    noLiveNotes: "No live notes yet. They will appear automatically after capture starts.",
     suggestedFollowUps: "Suggested follow-ups based on recent context:",
-    noCoachQuestions: "No coach questions have been generated yet.",
+    noCoachQuestions: "No follow-up suggestions yet. They will appear when enough transcript context is available.",
     manualNote: "Add manual note...",
     manualNoteSpeaker: "Manual note",
     manualNoteAdded: "Manual note added.",
@@ -171,11 +181,20 @@ const WORKSPACE_COPY = {
     archivedFileNote: "The file has been archived as a project source. Text extraction is not available for this format yet.",
     unreadableFileNote: "The file was imported, but no readable text was found.",
     durationMinutes: (minutes: number) => `${minutes} mins`,
+    collapseSidebar: "Collapse sidebar",
+    expandSidebar: "Expand sidebar",
+    collapseInspector: "Collapse inspector",
+    expandInspector: "Expand inspector",
   },
   zh: {
     workspaceKicker: "Kemo.AI 研究工作台",
     brandSubtitle: "研究工作台",
     newProject: "新建项目",
+    projectModeTitle: "选择这个项目的启动方式",
+    createAndStartLive: "创建并开始实时访谈",
+    createAndImport: "创建并上传文件",
+    projectModeLiveCopy: "进入实时访谈，边转写边生成笔记和追问建议。",
+    projectModeUploadCopy: "上传音频、视频、文档或文本资料到新项目。",
     theme: "主题",
     navProjects: "项目",
     navJobs: "任务",
@@ -256,9 +275,9 @@ const WORKSPACE_COPY = {
     syncing: "同步中",
     extractedNote: "提取笔记",
     featureArtifact: "生成成果",
-    noLiveNotes: "还没有生成实时笔记。",
+    noLiveNotes: "暂无实时笔记。开始采集后会自动提取关键内容。",
     suggestedFollowUps: "基于最近上下文的建议追问：",
-    noCoachQuestions: "还没有生成追问建议。",
+    noCoachQuestions: "暂无追问建议。转写内容足够后会自动生成。",
     manualNote: "添加手动笔记...",
     manualNoteSpeaker: "手动笔记",
     manualNoteAdded: "手动笔记已添加。",
@@ -276,6 +295,10 @@ const WORKSPACE_COPY = {
     archivedFileNote: "该文件已作为项目资料归档，当前格式暂不支持文本提取。",
     unreadableFileNote: "文件已导入，但未读取到可预览文本。",
     durationMinutes: (minutes: number) => `${minutes} 分钟`,
+    collapseSidebar: "收起侧栏",
+    expandSidebar: "展开侧栏",
+    collapseInspector: "收起右栏",
+    expandInspector: "展开右栏",
   },
 } as const;
 
@@ -512,12 +535,13 @@ export function NotebookWorkspace({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(initialJob?.id || null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<WorkspaceSection>(initialNewInterviewOpen ? "live" : initialJob ? "jobs" : "projects");
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>(initialJob ? "jobs" : "projects");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(initialNewInterviewOpen);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [newProjectDescription, setNewProjectDescription] = useState("");
+  const [newProjectMode, setNewProjectMode] = useState<NewProjectMode>("live");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -540,6 +564,9 @@ export function NotebookWorkspace({
     elapsedSeconds: 0,
   });
   const [manualNoteDraft, setManualNoteDraft] = useState("");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(true);
+  const [isLiveInspectorCollapsed, setIsLiveInspectorCollapsed] = useState(false);
 
   useEffect(() => setProjectState(projects), [projects]);
   useEffect(() => setJobState(jobs), [jobs]);
@@ -745,6 +772,16 @@ export function NotebookWorkspace({
     closeCaptureDialog();
   }
 
+  const openProjectDialog = useCallback((mode: NewProjectMode = "live") => {
+    setNewProjectMode(mode);
+    setProjectDialogOpen(true);
+  }, []);
+
+  function closeProjectDialog() {
+    setProjectDialogOpen(false);
+    clearNewInterviewQuery();
+  }
+
   async function createProject() {
     const title = newProjectTitle.trim();
     if (!title) {
@@ -769,6 +806,13 @@ export function NotebookWorkspace({
       setNewProjectTitle("");
       setNewProjectDescription("");
       setFeedback(t("workspace.feedback.projectCreated"));
+      clearNewInterviewQuery();
+      if (newProjectMode === "live") {
+        setActiveSection("live");
+      } else {
+        setActiveSection("sources");
+        setCaptureDialogOpen(true);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("workspace.errors.createProjectFailed"));
     } finally {
@@ -978,7 +1022,7 @@ export function NotebookWorkspace({
 
   async function importUrlSource() {
     if (!selectedProjectId) {
-      setProjectDialogOpen(true);
+      openProjectDialog("upload");
       return;
     }
     if (!sourceUrl.trim()) {
@@ -1062,7 +1106,7 @@ export function NotebookWorkspace({
 
   async function handleFileUpload(file: File) {
     if (!selectedProjectId) {
-      setProjectDialogOpen(true);
+      openProjectDialog("upload");
       return;
     }
 
@@ -1074,23 +1118,23 @@ export function NotebookWorkspace({
     setUploadState("working");
     setError(null);
     try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
-
       const safeFileName = sanitizeFileName(file.name);
-      const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
       const mimeType = file.type || "application/octet-stream";
 
-      const { error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, {
-        contentType: mimeType,
-        upsert: false,
-      });
-      if (uploadError) throw new Error(t("workspace.errors.uploadFailed"));
-
       if (isMediaFile(file)) {
+        const supabase = createSupabaseBrowserClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
+
+        const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
+        const { error: uploadError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, {
+          contentType: mimeType,
+          upsert: false,
+        });
+        if (uploadError) throw new Error(uploadError.message || t("workspace.errors.uploadFailed"));
+
         const data = await readApi<{ jobId: string; job: JobRow }>(
           await fetch("/api/jobs", {
             method: "POST",
@@ -1123,7 +1167,7 @@ export function NotebookWorkspace({
               sourceType: "file_upload",
               rawText: documentText,
               extractedText: documentText,
-              metadata: { storage_path: storagePath, file_name: file.name, file_size: file.size, mime_type: mimeType },
+              metadata: { file_name: file.name, safe_file_name: safeFileName, file_size: file.size, mime_type: mimeType },
             }),
           })
         );
@@ -1143,7 +1187,7 @@ export function NotebookWorkspace({
 
   const ensureLiveJob = useCallback(async () => {
     if (!selectedProjectId) {
-      setProjectDialogOpen(true);
+      openProjectDialog("live");
       return { jobId: null, statusText: t("workspace.errors.createProjectFirst") };
     }
 
@@ -1178,7 +1222,7 @@ export function NotebookWorkspace({
     } catch (caught) {
       return { jobId: null, statusText: caught instanceof Error ? caught.message : t("workspace.errors.createLiveJobFailed") };
     }
-  }, [locale, selectedJob, selectedProjectId, t]);
+  }, [locale, openProjectDialog, selectedJob, selectedProjectId, t]);
 
   function handleLiveFinalized(payload: { job?: unknown; draftArtifacts?: unknown[]; transcriptText: string; statusText: string }) {
     if (payload.job) {
@@ -1308,7 +1352,7 @@ export function NotebookWorkspace({
                 </button>
               </div>
             </div>
-          )) : <EmptyState title={copy.noConversationsTitle} copy={copy.noConversationsCopy} action={copy.startLive} onAction={chooseLiveCapture} />}
+          )) : <EmptyState title={copy.noConversationsTitle} copy={copy.noConversationsCopy} action={copy.startLive} onAction={() => void chooseLiveCapture()} />}
         </div>
       </section>
     );
@@ -1333,7 +1377,7 @@ export function NotebookWorkspace({
               <h1 className="font-display-lg text-display-lg text-primary">{copy.projectsTitle}</h1>
               <p className="text-on-surface-variant">{copy.projectsDescription}</p>
             </div>
-            <button className="bg-primary text-on-primary font-body-md text-body-md px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-surface-tint transition-colors" type="button" onClick={() => setProjectDialogOpen(true)}>
+            <button className="bg-primary text-on-primary font-body-md text-body-md px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-surface-tint transition-colors" type="button" onClick={() => openProjectDialog("live")}>
               <Plus className="h-4 w-4" />
               {copy.newProject}
             </button>
@@ -1372,7 +1416,7 @@ export function NotebookWorkspace({
             ))}
           </div>
         ) : (
-          <EmptyState title={t("workspace.empty.noProjects")} copy={copy.createProjectFirst} action={copy.newProject} onAction={() => setProjectDialogOpen(true)} />
+          <EmptyState title={t("workspace.empty.noProjects")} copy={copy.createProjectFirst} action={copy.newProject} onAction={() => openProjectDialog("live")} />
         )}
       </section>
     );
@@ -1532,11 +1576,39 @@ export function NotebookWorkspace({
       .map((item) => item.replace(/^[-*]\s*/, "").trim())
       .filter(Boolean)
       .slice(0, 2);
+    const transcriptCharacterCount = transcriptText.trim().length;
+    const liveProgressItems = [
+      {
+        key: "capture",
+        label: liveRuntimeState.isRunning ? copy.recording : liveStatus,
+        detail: liveRuntimeState.isRunning ? liveElapsed : liveCaptureStatus,
+        state: liveRuntimeState.isRunning ? "running" : selectedJob?.status === "failed" ? "error" : "done",
+      },
+      {
+        key: "transcript",
+        label: copy.liveTranscript,
+        detail: transcriptCharacterCount ? `${transcriptCharacterCount.toLocaleString(locale)} chars` : copy.transcriptEmpty,
+        state: transcriptCharacterCount ? "done" : "idle",
+      },
+      {
+        key: "notes",
+        label: copy.liveNotes,
+        detail: liveNotesArtifact ? formatDate(liveNotesArtifact.updated_at || liveNotesArtifact.created_at, locale) : copy.noLiveNotes,
+        state: pendingArtifacts.includes("live_meeting_editor") ? "running" : liveNotesArtifact ? "done" : "idle",
+      },
+      {
+        key: "coach",
+        label: copy.questionCoach,
+        detail: coachArtifact ? formatDate(coachArtifact.updated_at || coachArtifact.created_at, locale) : copy.noCoachQuestions,
+        state: pendingArtifacts.includes("live_question_coach") ? "running" : coachArtifact ? "done" : "idle",
+      },
+    ];
 
     const hiddenLivePanel = (
       <div className="hidden">
         <LiveInterviewPanel
           key={selectedProjectId || "live"}
+          locale={locale}
           compact
           disabled={!selectedProjectId}
           disabledReason={t("workspace.errors.createProjectFirst")}
@@ -1555,19 +1627,24 @@ export function NotebookWorkspace({
       </div>
     );
 
+    const liveStatusTone = liveRuntimeState.isRunning ? "recording" : selectedJob?.status === "failed" ? "error" : "ready";
+
     return (
-      <div className="kemo-reference-live dark bg-background text-on-background font-body-md min-h-screen flex flex-col overflow-hidden">
-        <header className="h-16 border-b border-outline-variant flex items-center justify-between px-gutter shrink-0 bg-surface z-20">
-          <div className="flex items-center gap-4">
-            <span className="font-headline-md text-headline-md font-semibold text-primary">Kemo.AI</span>
+      <div className={`kemo-reference-live ${isLiveInspectorCollapsed ? "is-live-inspector-collapsed" : ""} bg-background text-on-background font-body-md min-h-screen flex flex-col overflow-hidden`}>
+        <header className="kemo-live-topbar h-16 border-b border-outline-variant flex items-center justify-between px-gutter shrink-0 bg-surface z-20">
+          <div className="kemo-live-topbar-left flex items-center gap-4">
+            <Link className="kemo-live-brand" href={`/${locale}/app/jobs`} onClick={() => setActiveSection("projects")} aria-label="Kemo.AI">
+              <span className="kemo-live-brand-mark"><KemoMark /></span>
+              <span className="kemo-live-brand-copy"><strong>Kemo.AI</strong><small>{copy.brandSubtitle}</small></span>
+            </Link>
             <div className="h-4 w-px bg-outline-variant mx-2" />
-            <div className="flex items-center gap-2 text-error">
-              <div className="w-2 h-2 rounded-full bg-error pulse-dot" />
+            <div className={`workspace-live-status-badge ${liveStatusTone}`}>
+              <div className="workspace-live-status-dot pulse-dot" />
               <span className="font-label-sm text-label-sm uppercase tracking-wider font-semibold">{liveStatus}</span>
             </div>
-            <span className="font-body-md text-body-md text-on-surface-variant ml-2">{copy.liveSession}: {liveTitle}</span>
+            <span className="kemo-live-session-title font-body-md text-body-md text-on-surface-variant ml-2">{copy.liveSession}: {liveTitle}</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="kemo-live-controls flex items-center gap-3">
             <span className="font-mono-code text-mono-code text-on-surface-variant">{liveElapsed}</span>
             <button className="w-10 h-10 rounded-full border border-outline-variant flex items-center justify-center hover:bg-surface-variant transition-colors text-primary" type="button" onClick={handlePrimaryLiveControl} disabled={Boolean(liveRuntimeState.pendingAction)} title={primaryLiveLabel}>
               <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{primaryLiveIcon}</span>
@@ -1632,7 +1709,7 @@ export function NotebookWorkspace({
             </div>
           </section>
 
-          <aside className="w-96 flex flex-col bg-surface-container-low shrink-0 relative">
+          {!isLiveInspectorCollapsed ? <aside className="kemo-live-inspector w-96 flex flex-col bg-surface-container-low shrink-0 relative">
             <div className="h-12 border-b border-outline-variant flex px-4 shrink-0 bg-surface-container-low sticky top-0 z-10">
               <button className="px-4 h-full border-b-2 border-primary text-primary font-label-sm text-label-sm font-semibold flex items-center gap-2" type="button">
                 <span className="material-symbols-outlined text-[18px]">notes</span>
@@ -1642,8 +1719,28 @@ export function NotebookWorkspace({
                 <span className="material-symbols-outlined text-[18px]">psychology</span>
                 {copy.coachTab}
               </button>
+              <button className="kw-icon-button ml-auto my-auto" type="button" onClick={() => setIsLiveInspectorCollapsed(true)} title={copy.collapseInspector} aria-label={copy.collapseInspector}>
+                <PanelRightClose />
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+              <section className="kemo-live-progress">
+                <div className="kemo-live-progress-head">
+                  <h3>{copy.artifacts}</h3>
+                  <span>{liveRuntimeState.pendingAction || liveStatus}</span>
+                </div>
+                <div className="kemo-live-progress-list">
+                  {liveProgressItems.map((item) => (
+                    <div className={`kemo-live-progress-item ${item.state}`} key={item.key}>
+                      <span className="kemo-live-progress-dot" />
+                      <div>
+                        <strong>{item.label}</strong>
+                        <small>{item.detail}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-body-md text-body-md font-medium text-on-surface">{copy.autoExtraction}</h3>
@@ -1679,7 +1776,7 @@ export function NotebookWorkspace({
                       <p className={`font-body-md text-body-md ${index === 0 ? "text-on-surface group-hover:text-primary" : "text-on-surface-variant"}`}>{suggestion}</p>
                     </button>
                   ))}
-                  {!coachSuggestions.length ? <p className="font-body-md text-body-md text-on-surface-variant">{copy.noCoachQuestions}</p> : null}
+                  {!coachSuggestions.length ? <div className="kemo-live-empty-copy">{copy.noCoachQuestions}</div> : null}
                 </div>
               </div>
             </div>
@@ -1688,12 +1785,15 @@ export function NotebookWorkspace({
                 <input className="w-full bg-surface border-b border-outline-variant focus:border-primary focus:ring-0 px-0 py-2 text-on-surface font-body-md text-body-md placeholder-on-surface-variant bg-transparent" placeholder={copy.manualNote} type="text" value={manualNoteDraft} onChange={(event) => setManualNoteDraft(event.target.value)} onKeyDown={(event) => {
                   if (event.key === "Enter") submitManualNote();
                 }} />
-                <button className="absolute right-0 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors" type="button" onClick={submitManualNote}>
+                <button className="absolute right-0 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors" type="button" onClick={submitManualNote} aria-label={copy.manualNoteAdded}>
                   <span className="material-symbols-outlined">send</span>
                 </button>
               </div>
             </div>
-          </aside>
+          </aside> : null}
+          <button className="kw-floating-inspector-toggle" type="button" onClick={() => setIsLiveInspectorCollapsed(false)} title={copy.expandInspector} aria-label={copy.expandInspector}>
+            <PanelRightOpen />
+          </button>
         </main>
         {hiddenLivePanel}
       </div>
@@ -1915,15 +2015,20 @@ export function NotebookWorkspace({
   ];
 
   return (
-    <div className="kemo-reference-workspace light flex h-screen overflow-hidden bg-background text-on-background">
+    <div className={`kemo-reference-workspace ${isSidebarCollapsed ? "is-sidebar-collapsed" : ""} ${isInspectorCollapsed ? "is-inspector-collapsed" : ""} flex h-screen overflow-hidden bg-background text-on-background`}>
       <nav className="kw-designer-nav">
-        <Link className="kw-designer-brand" href={`/${locale}/app/jobs`} onClick={() => setActiveSection("projects")}>
-          <span className="kw-designer-avatar"><KemoMark /></span>
-          <span><strong>Kemo.AI</strong><small>{copy.brandSubtitle}</small></span>
-        </Link>
-        <button className="kw-designer-new" type="button" onClick={() => setProjectDialogOpen(true)}>
+        <div className="kw-designer-brand-row">
+          <Link className="kw-designer-brand" href={`/${locale}/app/jobs`} onClick={() => setActiveSection("projects")} title="Kemo.AI">
+            <span className="kw-designer-avatar"><KemoMark /></span>
+            <span><strong>Kemo.AI</strong><small>{copy.brandSubtitle}</small></span>
+          </Link>
+          <button className="kw-icon-button kw-sidebar-toggle" type="button" onClick={() => setIsSidebarCollapsed((value) => !value)} title={isSidebarCollapsed ? copy.expandSidebar : copy.collapseSidebar} aria-label={isSidebarCollapsed ? copy.expandSidebar : copy.collapseSidebar}>
+            {isSidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+          </button>
+        </div>
+        <button className="kw-designer-new" type="button" onClick={() => openProjectDialog("live")}>
           <span className="material-symbols-outlined">add</span>
-          {copy.newProject}
+          <span className="kw-nav-label">{copy.newProject}</span>
         </button>
         <div className="kw-sidebar-control-row">
           <span>{copy.theme}</span>
@@ -1934,7 +2039,7 @@ export function NotebookWorkspace({
           {navItems.map((item) => item.href ? (
             <Link className={`kw-designer-nav-item ${activeSection === item.id ? "active" : ""}`} href={item.href} key={item.id}>
               <span className="material-symbols-outlined" style={activeSection === item.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{item.icon}</span>
-              {item.label}
+              <span className="kw-nav-label">{item.label}</span>
             </Link>
           ) : (
             <button className={`kw-designer-nav-item ${activeSection === item.id ? "active" : ""}`} type="button" key={item.id} onClick={() => {
@@ -1942,7 +2047,7 @@ export function NotebookWorkspace({
               setActiveSection(item.id);
             }}>
               <span className="material-symbols-outlined" style={activeSection === item.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{item.icon}</span>
-              {item.label}
+              <span className="kw-nav-label">{item.label}</span>
             </button>
           ))}
         </div>
@@ -1950,18 +2055,21 @@ export function NotebookWorkspace({
           {footerNavItems.map((item) => (
             <button className={`kw-designer-nav-item ${activeSection === item.id ? "active" : ""}`} type="button" key={item.id} onClick={() => setActiveSection(item.id)}>
               <span className="material-symbols-outlined">{item.icon}</span>
-              {item.label}
+              <span className="kw-nav-label">{item.label}</span>
             </button>
           ))}
         </div>
       </nav>
 
-      <main className="ml-[280px] flex-1 flex flex-col md:flex-row h-full overflow-hidden max-md:overflow-y-auto">
+      <main className="kw-workspace-main flex-1 flex flex-col md:flex-row h-full overflow-hidden max-md:overflow-y-auto">
         {renderActiveSection()}
-        <aside className="kw-designer-inspector">
+        {!isInspectorCollapsed ? <aside className="kw-designer-inspector">
           <div className="kw-designer-inspector-head">
             <h3><span className="material-symbols-outlined">auto_awesome</span>{copy.artifacts}</h3>
-            <button type="button" className="kw-icon-button" onClick={() => router.refresh()} title={t("workspace.actions.refresh")}><RefreshCw /></button>
+            <div className="kw-inspector-actions">
+              <button type="button" className="kw-icon-button" onClick={() => router.refresh()} title={t("workspace.actions.refresh")}><RefreshCw /></button>
+              <button type="button" className="kw-icon-button" onClick={() => setIsInspectorCollapsed(true)} title={copy.collapseInspector} aria-label={copy.collapseInspector}><PanelRightClose /></button>
+            </div>
           </div>
           <div className="flex flex-col gap-stack-sm flex-1">
             {sidebarCards.map((card) => (
@@ -1980,7 +2088,10 @@ export function NotebookWorkspace({
               <span className="material-symbols-outlined text-sm text-on-surface-variant">arrow_forward</span>
             </button>
           </div>
-        </aside>
+        </aside> : null}
+        <button className="kw-floating-inspector-toggle" type="button" onClick={() => setIsInspectorCollapsed(false)} title={copy.expandInspector} aria-label={copy.expandInspector}>
+          <PanelRightOpen />
+        </button>
       </main>
 
       {(feedback || error) ? (
@@ -1991,11 +2102,29 @@ export function NotebookWorkspace({
       ) : null}
 
       {projectDialogOpen ? (
-        <Modal title={t("workspace.projectDialog.title")} closeLabel={t("common.close")} onClose={() => setProjectDialogOpen(false)}>
+        <Modal title={t("workspace.projectDialog.title")} closeLabel={t("common.close")} onClose={closeProjectDialog}>
           <div className="kw-form-stack">
             <label>{t("workspace.projectDialog.titleLabel")}<input value={newProjectTitle} onChange={(event) => setNewProjectTitle(event.target.value)} placeholder={t("workspace.projectDialog.titlePlaceholder")} /></label>
             <label>{t("workspace.projectDialog.descriptionLabel")}<textarea value={newProjectDescription} onChange={(event) => setNewProjectDescription(event.target.value)} placeholder={t("workspace.projectDialog.descriptionPlaceholder")} /></label>
-            <button type="button" className="kw-button primary full" disabled={isCreatingProject} onClick={() => void createProject()}>{isCreatingProject ? <Loader2 className="spin" /> : <Plus />} {t("workspace.projectDialog.create")}</button>
+            <div className="kw-project-mode-block" role="radiogroup" aria-label={copy.projectModeTitle}>
+              <p>{copy.projectModeTitle}</p>
+              <div className="kw-capture-grid two">
+                <button className={newProjectMode === "live" ? "active" : ""} type="button" role="radio" aria-checked={newProjectMode === "live"} onClick={() => setNewProjectMode("live")}>
+                  <Mic />
+                  <strong>{t("workspace.captureDialog.liveTitle")}</strong>
+                  <span>{copy.projectModeLiveCopy}</span>
+                </button>
+                <button className={newProjectMode === "upload" ? "active" : ""} type="button" role="radio" aria-checked={newProjectMode === "upload"} onClick={() => setNewProjectMode("upload")}>
+                  <Upload />
+                  <strong>{t("workspace.captureDialog.uploadTitle")}</strong>
+                  <span>{copy.projectModeUploadCopy}</span>
+                </button>
+              </div>
+            </div>
+            <button type="button" className="kw-button primary full" disabled={isCreatingProject} onClick={() => void createProject()}>
+              {isCreatingProject ? <Loader2 className="spin" /> : newProjectMode === "live" ? <Mic /> : <Upload />}
+              {newProjectMode === "live" ? copy.createAndStartLive : copy.createAndImport}
+            </button>
           </div>
         </Modal>
       ) : null}

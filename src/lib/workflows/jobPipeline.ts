@@ -28,10 +28,27 @@ type MemoRow = Database["public"]["Tables"]["memos"]["Row"];
 
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 const DEFAULT_POLL_MAX_ATTEMPTS = 120;
+const ASR_MAX_DOWNLOAD_ATTEMPTS = 3;
 const LOG = "[Pipeline]";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "unknown");
+}
+
+function isRetryableAsrDownloadError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("file_download_failed") ||
+    message.includes("download") ||
+    message.includes("fetch failed") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("timed out")
+  );
 }
 
 async function pollUntilCompleted(vendorTaskId: string) {
@@ -52,6 +69,50 @@ async function pollUntilCompleted(vendorTaskId: string) {
   }
 
   throw new Error("ASR polling timed out");
+}
+
+async function transcribeAudioWithFreshSignedUrl({
+  supabase,
+  bucket,
+  storagePath,
+}: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  bucket: string;
+  storagePath: string;
+}) {
+  let signedAudioUrl = "";
+  let lastAsrError: unknown = null;
+
+  for (let attempt = 1; attempt <= ASR_MAX_DOWNLOAD_ATTEMPTS; attempt += 1) {
+    const { data: signed, error: signedError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(storagePath, 60 * 60);
+
+    if (signedError || !signed?.signedUrl) {
+      console.error(`${LOG} Failed to create signed URL`, signedError?.message);
+      throw new Error(signedError?.message || "Failed to create signed URL for audio");
+    }
+
+    signedAudioUrl = signed.signedUrl;
+    console.log(`${LOG} Signed URL ready for ASR attempt ${attempt}/${ASR_MAX_DOWNLOAD_ATTEMPTS}`);
+
+    try {
+      const { vendorTaskId } = await startTranscription({
+        audioUrl: signedAudioUrl,
+      });
+      const result = await pollUntilCompleted(vendorTaskId);
+      return { result, signedAudioUrl };
+    } catch (error) {
+      lastAsrError = error;
+      if (attempt >= ASR_MAX_DOWNLOAD_ATTEMPTS || !isRetryableAsrDownloadError(error)) {
+        throw error;
+      }
+      console.warn(`${LOG} ASR download failed; retrying with a fresh signed URL (${attempt}/${ASR_MAX_DOWNLOAD_ATTEMPTS}): ${getErrorMessage(error)}`);
+      await sleep(1500 * attempt);
+    }
+  }
+
+  throw new Error(`ASR failed: ${getErrorMessage(lastAsrError)}`);
 }
 
 /**
@@ -125,24 +186,11 @@ export async function runJobPipeline(jobId: string) {
       .update({ status: JOB_STATUS.transcribing })
       .eq("id", jobId);
 
-    // 生成 signed URL
-    const { data: signed } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(audioAsset.storage_path, 60 * 60);
-
-    if (!signed?.signedUrl) {
-      console.error(`${LOG} ✗ 无法生成 signed URL`);
-      throw new Error("Failed to create signed URL for audio");
-    }
-
-    console.log(`${LOG} Signed URL 已生成 (1h有效期)`);
-
-    // 提交主转写任务
-    const { vendorTaskId } = await startTranscription({
-      audioUrl: signed.signedUrl,
+    const { result, signedAudioUrl } = await transcribeAudioWithFreshSignedUrl({
+      supabase,
+      bucket,
+      storagePath: audioAsset.storage_path,
     });
-
-    const result = await pollUntilCompleted(vendorTaskId);
 
     let transcriptText = result.transcriptText || "";
     let speakerTranscriptText = "";
@@ -151,7 +199,7 @@ export async function runJobPipeline(jobId: string) {
     try {
       console.log(`${LOG} 尝试生成说话人分离版本...`);
       const diarizationTaskId = await transcribeWithSpeakerDiarization({
-        audioUrl: signed.signedUrl,
+        audioUrl: signedAudioUrl,
       });
       const diarizationResult = await pollUntilCompleted(diarizationTaskId);
       const diarizationPayload =

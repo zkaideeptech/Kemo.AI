@@ -81,11 +81,14 @@ export async function startTranscription({
 
   const endpoint = `${baseUrl}/services/audio/asr/transcription`;
 
+  const input =
+    model === DIARIZATION_MODEL
+      ? { file_urls: [audioUrl] }
+      : { file_url: audioUrl };
+
   const body = {
     model,
-    input: {
-      file_url: audioUrl,
-    },
+    input,
     parameters: {
       ...(model === DIARIZATION_MODEL
         ? {
@@ -186,7 +189,7 @@ export async function pollResult({
     console.log(`${LOG_PREFIX} ✓ 转写完成`);
 
     // Filetrans 模型返回 transcription_url，需要再请求一次获取结果
-    const transcriptionUrl = json?.output?.result?.transcription_url;
+    const transcriptionUrl = findTranscriptionUrl(json);
     let transcriptText = "";
     let raw: unknown = json;
 
@@ -299,6 +302,43 @@ function extractTranscript(payload: unknown): string {
   // 兜底：序列化全部数据
   console.warn(`${LOG_PREFIX} ⚠ 无法识别转写格式，返回原始 JSON`);
   return JSON.stringify(data);
+}
+
+function findTranscriptionUrl(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const data = payload as Record<string, unknown>;
+  if (typeof data.transcription_url === "string") {
+    return data.transcription_url;
+  }
+
+  const output = data.output as Record<string, unknown> | undefined;
+  if (output) {
+    const result = output.result as Record<string, unknown> | undefined;
+    if (typeof result?.transcription_url === "string") {
+      return result.transcription_url;
+    }
+
+    const outputResults = output.results as unknown;
+    const fromOutputResults = findTranscriptionUrl(outputResults);
+    if (fromOutputResults) {
+      return fromOutputResults;
+    }
+  }
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const found = findTranscriptionUrl(item);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  const results = data.results as unknown;
+  return findTranscriptionUrl(results);
 }
 
 export function extractSpeakerSegments(payload: unknown): SpeakerSegment[] {

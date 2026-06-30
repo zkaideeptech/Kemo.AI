@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "kemo",
+  title: "Kemo.AI",
   description: "Interview audio -> transcript -> IC memo + WeChat article",
 };
 

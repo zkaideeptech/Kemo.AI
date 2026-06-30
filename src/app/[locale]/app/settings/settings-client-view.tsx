@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ChangeEvent } from "react";
 import { KemoMark } from "@/components/kemo-mark";
+import { WorkspaceThemeSwitcher } from "@/components/workspace-theme-switcher";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 interface SettingsClientViewProps {
@@ -27,31 +28,17 @@ interface SettingsClientViewProps {
   locale: string;
 }
 
-type WorkspaceUiMode = "light" | "dark" | "system";
-
-function applyWorkspaceMode(mode: WorkspaceUiMode) {
-  window.localStorage.setItem("kemo-ui-mode", mode);
-
-  if (mode === "system") {
-    delete document.documentElement.dataset.workspaceTheme;
-    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      document.documentElement.classList.add("dark");
-      document.documentElement.classList.remove("light");
-    } else {
-      document.documentElement.classList.add("light");
-      document.documentElement.classList.remove("dark");
-    }
-  } else {
-    document.documentElement.dataset.workspaceTheme = mode;
-    document.documentElement.classList.toggle("dark", mode === "dark");
-    document.documentElement.classList.toggle("light", mode === "light");
-  }
-
-  window.dispatchEvent(new Event("kemo-ui-mode-change"));
-}
-
 const SETTINGS_COPY = {
   en: {
+    brandSubtitle: "Research Workbench",
+    newProject: "New Project",
+    theme: "Theme",
+    navProjects: "Projects",
+    navJobs: "Jobs",
+    navSources: "Sources",
+    navSettings: "Settings",
+    navHelp: "Help",
+    navFeedback: "Feedback",
     search: "Search workspace...",
     transcripts: "Transcripts",
     overview: "Overview",
@@ -94,6 +81,15 @@ const SETTINGS_COPY = {
     avatarAlt: "Account avatar",
   },
   zh: {
+    brandSubtitle: "研究工作台",
+    newProject: "新建项目",
+    theme: "主题",
+    navProjects: "项目",
+    navJobs: "任务",
+    navSources: "资料来源",
+    navSettings: "设置",
+    navHelp: "帮助",
+    navFeedback: "反馈",
     search: "搜索工作台...",
     transcripts: "转写记录",
     overview: "总览",
@@ -137,6 +133,21 @@ const SETTINGS_COPY = {
   },
 } as const;
 
+function LocaleSegmentedControl({ locale }: { locale: string }) {
+  const nextPath = (nextLocale: string) => `/${nextLocale}/app/settings`;
+
+  return (
+    <div className="kw-language-segment" aria-label="Language">
+      <Link className={locale === "zh" ? "active" : ""} href={nextPath("zh")} aria-current={locale === "zh" ? "true" : undefined}>
+        中文
+      </Link>
+      <Link className={locale === "en" ? "active" : ""} href={nextPath("en")} aria-current={locale === "en" ? "true" : undefined}>
+        English
+      </Link>
+    </div>
+  );
+}
+
 function getCopy(locale: string) {
   return locale.toLowerCase().startsWith("zh") ? SETTINGS_COPY.zh : SETTINGS_COPY.en;
 }
@@ -161,7 +172,6 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   const supabase = createSupabaseBrowserClient();
   const [fullName, setFullName] = useState(user.fullName || user.email.split("@")[0] || "");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl);
-  const [themeMode, setThemeMode] = useState<WorkspaceUiMode>("light");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
@@ -175,11 +185,6 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   const planLabel = plan.plan === "free" ? copy.freePlan : copy.proPlan;
   const benefits = plan.plan === "free" ? copy.freeBenefits(monthlyLimit, plan.maxFileSizeMb) : copy.proBenefits(plan.maxFileSizeMb);
   const initials = getInitials(fullName, user.email);
-
-  const handleThemeChange = (mode: WorkspaceUiMode) => {
-    setThemeMode(mode);
-    applyWorkspaceMode(mode);
-  };
 
   const handleUpdateProfile = async () => {
     try {
@@ -237,41 +242,52 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
   };
 
   return (
-    <div className="kemo-reference-settings light antialiased min-h-screen flex selection:bg-surface-container-high bg-background text-on-background">
-      <nav className="hidden md:flex bg-surface-container-low dark:bg-surface-container-low h-screen w-20 flex-col border-r border-outline-variant fixed left-0 top-0 z-40 items-center py-stack-md justify-between">
-        <div className="flex flex-col items-center w-full gap-stack-lg">
-          <Link href={`/${locale}/app/jobs`} className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center font-headline-md text-headline-md font-bold text-primary dark:text-primary overflow-hidden border border-outline-variant" title="Kemo.AI">
-            <KemoMark />
-          </Link>
-          <ul className="flex flex-col w-full">
-            <li className="w-full">
-              <Link className="flex justify-center py-4 w-full text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors group" href={`/${locale}/app/jobs`}>
-                <span className="material-symbols-outlined scale-95 transition-transform duration-220 group-hover:scale-100" data-icon="search">search</span>
-              </Link>
-            </li>
-            <li className="w-full">
-              <Link className="flex justify-center py-4 w-full text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors group" href={`/${locale}/app/jobs`}>
-                <span className="material-symbols-outlined scale-95 transition-transform duration-220 group-hover:scale-100" data-icon="folder_open">folder_open</span>
-              </Link>
-            </li>
-            <li className="w-full">
-              <Link className="flex justify-center py-4 w-full text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-highest dark:hover:bg-surface-container-highest transition-colors group" href={`/${locale}/app/jobs`}>
-                <span className="material-symbols-outlined scale-95 transition-transform duration-220 group-hover:scale-100" data-icon="description">description</span>
-              </Link>
-            </li>
-            <li className="w-full">
-              <Link className="flex justify-center py-4 w-full text-primary dark:text-primary border-r-2 border-primary bg-surface-container-low dark:bg-surface-container-low group" href={`/${locale}/app/settings`}>
-                <span className="material-symbols-outlined scale-95 transition-transform duration-220" data-icon="settings" style={{ fontVariationSettings: "'FILL' 1" }}>settings</span>
-              </Link>
-            </li>
-          </ul>
-        </div>
-        <button className="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center hover:opacity-90 transition-opacity" title={copy.record} type="button" onClick={() => router.push(`/${locale}/app/jobs?new=1`)}>
-          <span className="material-symbols-outlined" data-icon="add">add</span>
+    <div className="kemo-reference-settings antialiased min-h-screen flex selection:bg-surface-container-high bg-background text-on-background">
+      <nav className="kw-designer-nav">
+        <Link className="kw-designer-brand" href={`/${locale}/app/jobs`}>
+          <span className="kw-designer-avatar"><KemoMark /></span>
+          <span><strong>Kemo.AI</strong><small>{copy.brandSubtitle}</small></span>
+        </Link>
+        <button className="kw-designer-new" type="button" onClick={() => router.push(`/${locale}/app/jobs?new=1`)}>
+          <span className="material-symbols-outlined">add</span>
+          {copy.newProject}
         </button>
+        <div className="kw-sidebar-control-row">
+          <span>{copy.theme}</span>
+          <WorkspaceThemeSwitcher />
+        </div>
+        <LocaleSegmentedControl locale={locale} />
+        <div className="kw-designer-nav-list">
+          <Link className="kw-designer-nav-item" href={`/${locale}/app/jobs`}>
+            <span className="material-symbols-outlined">folder_open</span>
+            {copy.navProjects}
+          </Link>
+          <Link className="kw-designer-nav-item" href={`/${locale}/app/jobs`}>
+            <span className="material-symbols-outlined">work_outline</span>
+            {copy.navJobs}
+          </Link>
+          <Link className="kw-designer-nav-item" href={`/${locale}/app/jobs`}>
+            <span className="material-symbols-outlined">database</span>
+            {copy.navSources}
+          </Link>
+          <Link className="kw-designer-nav-item active" href={`/${locale}/app/settings`}>
+            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>settings</span>
+            {copy.navSettings}
+          </Link>
+        </div>
+        <div className="kw-designer-footer-nav">
+          <Link className="kw-designer-nav-item" href={`/${locale}/app/jobs`}>
+            <span className="material-symbols-outlined">help_outline</span>
+            {copy.navHelp}
+          </Link>
+          <Link className="kw-designer-nav-item" href={`/${locale}/app/jobs`}>
+            <span className="material-symbols-outlined">chat_bubble_outline</span>
+            {copy.navFeedback}
+          </Link>
+        </div>
       </nav>
 
-      <div className="flex-1 flex flex-col min-h-screen md:ml-20">
+      <div className="flex-1 flex flex-col min-h-screen md:ml-[280px]">
         <header className="sticky top-0 w-full z-30 flex justify-between items-center px-gutter h-16 bg-surface/80 backdrop-blur-md border-b border-outline-variant">
           <div className="flex items-center gap-unit text-on-surface-variant">
             <span className="material-symbols-outlined text-lg">search</span>
@@ -342,25 +358,13 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
                   <p className="font-body-lg text-body-lg text-on-background">{copy.themeTitle}</p>
                   <p className="font-body-md text-body-md text-on-surface-variant">{copy.themeHint}</p>
                 </div>
-                <div className="flex bg-surface-container-low p-1 rounded-xl border border-outline-variant">
-                  {[
-                    { id: "light" as const, icon: "light_mode", label: copy.light },
-                    { id: "dark" as const, icon: "dark_mode", label: copy.dark },
-                    { id: "system" as const, icon: "desktop_windows", label: copy.system },
-                  ].map((item) => (
-                    <button key={item.id} className={`flex items-center gap-2 px-4 py-2 rounded-lg ${themeMode === item.id ? "bg-surface shadow-sm text-on-background" : "text-on-surface-variant hover:text-on-background"} font-label-sm text-label-sm transition-all`} type="button" onClick={() => handleThemeChange(item.id)}>
-                      <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+                <WorkspaceThemeSwitcher />
               </div>
             </section>
 
             <section className="flex flex-col gap-stack-md">
               <h2 className="font-headline-md text-headline-md text-on-background border-b border-outline-variant pb-2">{copy.usagePlan}</h2>
-              <div className="mt-4 rounded-xl border border-outline-variant bg-surface p-stack-lg relative overflow-hidden flex flex-col md:flex-row gap-stack-lg items-start md:items-center justify-between">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-surface-container-highest rounded-full blur-3xl -mr-32 -mt-32 opacity-50 pointer-events-none" />
+              <div className="mt-4 rounded-lg border border-outline-variant bg-surface p-stack-lg relative overflow-hidden flex flex-col md:flex-row gap-stack-lg items-start md:items-center justify-between">
                 <div className="flex flex-col gap-4 relative z-10 w-full max-w-sm">
                   <div className="flex items-center gap-3">
                     <span className="font-label-sm text-label-sm bg-surface-container-high px-2 py-1 rounded text-on-surface-variant tracking-wider uppercase">{copy.currentPlan}</span>
@@ -386,7 +390,7 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
                       </li>
                     ))}
                   </ul>
-                  <button className="mt-2 w-full bg-primary text-on-primary py-3 px-6 rounded-lg font-label-sm text-label-sm hover:bg-inverse-surface transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-60" disabled={isStartingCheckout} type="button" onClick={() => void handleCheckout()}>
+                  <button className="mt-2 w-full bg-primary text-on-primary py-3 px-6 rounded-md font-label-sm text-label-sm hover:bg-inverse-surface transition-colors flex items-center justify-center gap-2 shadow-none disabled:opacity-60" disabled={isStartingCheckout} type="button" onClick={() => void handleCheckout()}>
                     {isStartingCheckout ? copy.saving : copy.cta}
                     <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                   </button>
@@ -395,24 +399,13 @@ export function SettingsClientView({ user, plan, stats, locale }: SettingsClient
             </section>
 
             <div className="flex justify-end mt-4">
-              <button className="bg-transparent border border-outline text-on-background py-2 px-6 rounded-lg font-label-sm text-label-sm hover:bg-surface-container-low transition-colors" disabled={isSavingProfile} type="button" onClick={handleUpdateProfile}>
+              <button className="bg-transparent border border-outline text-on-background py-2 px-6 rounded-md font-label-sm text-label-sm hover:bg-surface-container-low transition-colors" disabled={isSavingProfile} type="button" onClick={handleUpdateProfile}>
                 {isSavingProfile ? copy.saving : copy.save}
               </button>
             </div>
           </div>
         </main>
       </div>
-
-      <nav className="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 z-50 mb-8 rounded-full mb-stack-lg mx-auto w-fit border border-outline-variant shadow-sm bg-surface-container-lowest dark:bg-surface-container-lowest flex items-center p-1">
-        <Link className="text-on-surface-variant px-6 py-2 flex items-center gap-2 font-label-sm text-label-sm hover:bg-surface-container-high transition-all rounded-full scale-98 duration-200" href={`/${locale}/app/jobs`}>
-          <span className="material-symbols-outlined" data-icon="mic">mic</span>
-          {copy.record}
-        </Link>
-        <Link className="text-on-surface-variant px-6 py-2 flex items-center gap-2 font-label-sm text-label-sm hover:bg-surface-container-high transition-all rounded-full scale-98 duration-200" href={`/${locale}/app/jobs`}>
-          <span className="material-symbols-outlined" data-icon="keyboard">keyboard</span>
-          {copy.input}
-        </Link>
-      </nav>
     </div>
   );
 }

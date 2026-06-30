@@ -8,6 +8,7 @@ import { User } from "lucide-react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { KemoMark } from "@/components/kemo-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import {
   DropdownMenu,
@@ -71,11 +72,15 @@ export function AppHeader() {
   if (pathname?.includes(`/${locale}/app`)) return null;
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/70 bg-background/90 backdrop-blur-md">
+    <header className="kemo-public-header sticky top-0 z-40 w-full border-b border-border/70 bg-background/90 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <div className="flex items-center gap-8">
-          <Link href={`/${locale}`} className="text-xl font-semibold tracking-tight text-foreground transition-colors hover:text-primary">
-            {t("appName")}
+          <Link href={`/${locale}`} className="kemo-auth-brand text-foreground transition-colors hover:text-primary">
+            <span className="kemo-auth-mark"><KemoMark /></span>
+            <span>
+              <strong>{t("appName")}</strong>
+              <small>{locale === "zh" ? "研究工作台" : "Research Workbench"}</small>
+            </span>
           </Link>
           {hasSession ? (
             <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
@@ -98,7 +103,7 @@ export function AppHeader() {
                   size="sm"
                   type="button"
                   id="user-menu-trigger"
-                  className="flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 transition-colors hover:bg-accent"
+                  className="flex items-center gap-2 rounded-[6px] border border-border/70 bg-card px-3 transition-colors hover:bg-accent"
                 >
                   <User className="h-4 w-4" />
                   <span className="max-w-[140px] truncate text-xs font-medium">
@@ -106,7 +111,7 @@ export function AppHeader() {
                   </span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/70 p-2 shadow-none backdrop-blur-sm">
+              <DropdownMenuContent align="end" className="w-56 rounded-[8px] border-border/70 p-2 shadow-none">
                 <DropdownMenuItem className="mb-1 rounded-lg text-xs text-muted-foreground" disabled>
                   {userEmail}
                 </DropdownMenuItem>
@@ -123,7 +128,7 @@ export function AppHeader() {
               <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <Link href={`/${locale}/login`}>{t("nav.login")}</Link>
               </Button>
-              <Button asChild size="sm" className="rounded-full font-semibold">
+              <Button asChild size="sm" className="rounded-[6px] font-semibold">
                 <Link href={`/${locale}/register`}>{t("login.signUp")}</Link>
               </Button>
             </div>

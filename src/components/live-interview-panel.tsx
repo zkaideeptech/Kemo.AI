@@ -39,31 +39,179 @@ type StartLiveResult = {
 
 type CaptureMode = "mic" | "system" | "tab";
 
-const CAPTURE_MODE_OPTIONS: Array<{
+const LIVE_PANEL_COPY = {
+  zh: {
+    options: {
+      mic: { label: "面对面", description: "使用本机麦克风，适合线下面谈和单人记录。", icon: "mic" as KemoLiveIconName },
+      system: { label: "会议 App", description: "捕获会议软件或电脑系统声音，适合飞书、Meet、Zoom。", icon: "people" as KemoLiveIconName },
+      tab: { label: "浏览器页面", description: "选择任意已打开标签页，例如 YouTube、播客或网页直播。", icon: "tab" as KemoLiveIconName },
+    },
+    liveTranscript: "实时转写",
+    sourceSummary: {
+      mic: "当前场景：面对面访谈",
+      system: "当前场景：会议App音频",
+      tab: "当前场景：浏览器页面",
+    },
+    permissionStatus: {
+      mic: "正在请求麦克风权限",
+      system: "请选择会议窗口或整个屏幕，并确保勾选系统音频",
+      tab: "请选择要监听的浏览器标签页，并勾选“分享音频”",
+    },
+    modePill: "实时访谈",
+    sourceSwitchAria: "选择会议来源",
+    disabledReason: "请先创建项目",
+    ready: "准备开始",
+    notStarted: "未开始",
+    liveJobNotReady: "实时任务尚未就绪",
+    gatewaySessionFailed: "实时转写会话准备失败",
+    finalSaveFailed: "最终文稿保存失败",
+    draftSyncFailed: "实时草稿同步失败",
+    finalSaved: "实时访谈已停止，最终文稿已保存",
+    transcriptSaved: "实时访谈已停止，转写已保存",
+    pausedSynced: "已暂停，转写已同步",
+    stoppedSaveFailed: "实时访谈已停止，但最终保存失败",
+    sessionReady: "实时采集中：音频已接入",
+    finalizing: "实时访谈已停止，正在整理最终文稿",
+    sessionError: "实时转写发生错误",
+    connectFailed: "实时转写连接失败",
+    invalidMessage: "实时转写返回了无效消息",
+    closed: "实时转写连接已关闭",
+    recordingSaveFailed: "实时录音保存失败",
+    starting: "正在启动实时访谈",
+    requestingPermission: "正在请求浏览器权限",
+    createLiveFailed: "无法创建实时访谈",
+    micMissing: "麦克风未接入",
+    displayMissing: "标签页音频未接入",
+    systemMissing: "会议音频未接入",
+    noAudio: "没有捕获到音频。请重新选择捕获源并务必勾选“分享音频”。",
+    permissionsGranted: "权限已获取，正在连接实时转写",
+    noTracks: "没有拿到任何音频轨道",
+    micTrackCount: (count: number) => `麦克风 ${count} 轨`,
+    systemTrackCount: (count: number) => `会议/系统音频 ${count} 轨`,
+    tabTrackCount: (count: number) => `浏览器页面音频 ${count} 轨`,
+    tabInterrupted: "浏览器标签页音频已中断，实时转写会停在最后一段。请重新开始并再次勾选“分享音频”。",
+    micInterrupted: "麦克风音频已中断，实时转写会停在最后一段。",
+    micRetry: "麦克风未接入，请检查系统权限后重试。",
+    displayRetry: "系统/标签页音频未接入，请重新选择并勾选“分享音频”。",
+    noDisplayAudio: "实时采集中，但当前没有捕获到系统/标签页音轨。",
+    startedCapture: (label: string) => `已开始采集 ${label}，正在连接实时转写`,
+    launchFailed: "无法启动实时访谈",
+    stopping: "正在停止并整理",
+    finalizingDetails: "正在收尾当前转写",
+    stopped: "实时访谈已停止",
+    stopFailed: "停止实时访谈失败",
+    notStartedCapture: "未开始采集",
+    pausing: "正在暂停",
+    savingProgress: "保存当前进度",
+    pausedContinue: "已暂停，可随时继续",
+    paused: "已暂停",
+    collapseTranscript: "收起转写",
+    showTranscript: "查看转写",
+    completed: "录音已整理结束",
+    startConnecting: "正在连接...",
+    startProcessing: "开始处理",
+    pausePending: "暂停中...",
+    pauseRecording: "暂停录制",
+    stopPending: "正在停止...",
+    finishProcessing: "结束处理",
+    tabModeHint: "浏览器页面模式会列出其他已打开标签页；选择目标页后记得勾选“分享音频”。",
+  },
+  en: {
+    options: {
+      mic: { label: "In person", description: "Use this device microphone for in-person interviews or solo notes.", icon: "mic" as KemoLiveIconName },
+      system: { label: "Meeting app", description: "Capture meeting or system audio from apps such as Meet, Zoom, or Teams.", icon: "people" as KemoLiveIconName },
+      tab: { label: "Browser tab", description: "Select an open tab, such as a stream, podcast, or web meeting.", icon: "tab" as KemoLiveIconName },
+    },
+    liveTranscript: "live transcription",
+    sourceSummary: {
+      mic: "Current source: in-person interview",
+      system: "Current source: meeting app audio",
+      tab: "Current source: browser tab",
+    },
+    permissionStatus: {
+      mic: "Requesting microphone permission",
+      system: "Select a meeting window or screen and enable system audio",
+      tab: "Select the browser tab to monitor and enable shared audio",
+    },
+    modePill: "Live interview",
+    sourceSwitchAria: "Choose meeting source",
+    disabledReason: "Create a project first",
+    ready: "Ready to start",
+    notStarted: "Not started",
+    liveJobNotReady: "Live job is not ready",
+    gatewaySessionFailed: "Unable to prepare live transcription session",
+    finalSaveFailed: "Unable to save the final transcript",
+    draftSyncFailed: "Unable to sync the live draft",
+    finalSaved: "Live interview stopped. Final transcript saved.",
+    transcriptSaved: "Live interview stopped. Transcript saved.",
+    pausedSynced: "Paused. Transcript synced.",
+    stoppedSaveFailed: "Live interview stopped, but final save failed.",
+    sessionReady: "Live capture running: audio connected",
+    finalizing: "Live interview stopped. Preparing the final transcript.",
+    sessionError: "Live transcription failed",
+    connectFailed: "Unable to connect live transcription",
+    invalidMessage: "Live transcription returned an invalid message",
+    closed: "Live transcription connection closed",
+    recordingSaveFailed: "Unable to save live recording",
+    starting: "Starting live interview",
+    requestingPermission: "Requesting browser permission",
+    createLiveFailed: "Unable to create live interview",
+    micMissing: "Microphone not connected",
+    displayMissing: "Tab audio not connected",
+    systemMissing: "Meeting audio not connected",
+    noAudio: "No audio was captured. Choose the source again and enable shared audio.",
+    permissionsGranted: "Permission granted. Connecting live transcription.",
+    noTracks: "No audio tracks were available",
+    micTrackCount: (count: number) => `${count} microphone track${count === 1 ? "" : "s"}`,
+    systemTrackCount: (count: number) => `${count} meeting/system audio track${count === 1 ? "" : "s"}`,
+    tabTrackCount: (count: number) => `${count} browser tab audio track${count === 1 ? "" : "s"}`,
+    tabInterrupted: "Browser tab audio stopped. Live transcription will stay on the last segment. Restart and enable shared audio again.",
+    micInterrupted: "Microphone audio stopped. Live transcription will stay on the last segment.",
+    micRetry: "Microphone is not connected. Check system permissions and try again.",
+    displayRetry: "System or tab audio is not connected. Select the source again and enable shared audio.",
+    noDisplayAudio: "Live capture is running, but no system or tab audio track was captured.",
+    startedCapture: (label: string) => `Started ${label}. Connecting live transcription.`,
+    launchFailed: "Unable to start live interview",
+    stopping: "Stopping and finalizing",
+    finalizingDetails: "Finishing the current transcript",
+    stopped: "Live interview stopped",
+    stopFailed: "Unable to stop live interview",
+    notStartedCapture: "Capture not started",
+    pausing: "Pausing",
+    savingProgress: "Saving current progress",
+    pausedContinue: "Paused. You can continue any time.",
+    paused: "Paused",
+    collapseTranscript: "Hide transcript",
+    showTranscript: "View transcript",
+    completed: "Recording has been finalized",
+    startConnecting: "Connecting...",
+    startProcessing: "Start processing",
+    pausePending: "Pausing...",
+    pauseRecording: "Pause recording",
+    stopPending: "Stopping...",
+    finishProcessing: "Finish processing",
+    tabModeHint: "Browser tab mode lists other open tabs. Select the target tab and enable shared audio.",
+  },
+} as const;
+
+type LivePanelCopy = (typeof LIVE_PANEL_COPY)[keyof typeof LIVE_PANEL_COPY];
+
+function getLivePanelCopy(locale?: string): LivePanelCopy {
+  return locale?.toLowerCase().startsWith("en") ? LIVE_PANEL_COPY.en : LIVE_PANEL_COPY.zh;
+}
+
+function getCaptureModeOptions(copy: LivePanelCopy): Array<{
   mode: CaptureMode;
   label: string;
   description: string;
   icon: KemoLiveIconName;
-}> = [
-  {
-    mode: "mic",
-    label: "面对面",
-    description: "使用本机麦克风，适合线下面谈和单人记录。",
-    icon: "mic",
-  },
-  {
-    mode: "system",
-    label: "会议 App",
-    description: "捕获会议软件或电脑系统声音，适合飞书、Meet、Zoom。",
-    icon: "people",
-  },
-  {
-    mode: "tab",
-    label: "浏览器页面",
-    description: "选择任意已打开标签页，例如 YouTube、播客或网页直播。",
-    icon: "tab",
-  },
-];
+}> {
+  return [
+    { mode: "mic", ...copy.options.mic },
+    { mode: "system", ...copy.options.system },
+    { mode: "tab", ...copy.options.tab },
+  ];
+}
 
 function mergeChunks(chunks: Uint8Array[]) {
   const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
@@ -175,40 +323,24 @@ function getAudioLevel(inputBuffer: AudioBuffer) {
   return Math.max(SILENT_WAVE_LEVEL, Math.min(1, Math.pow(rms * 8, 0.72)));
 }
 
-function getPublicStatusText(statusText: string) {
+function getPublicStatusText(statusText: string, copy: LivePanelCopy) {
   return statusText
-    .replace(/阿里实时\s*ASR|阿里\s*ASR|实时\s*ASR|ASR/gi, "实时转写")
-    .replace(/Realtime\s+ASR/gi, "实时转写")
+    .replace(/阿里实时\s*ASR|阿里\s*ASR|实时\s*ASR|ASR/gi, copy.liveTranscript)
+    .replace(/Realtime\s+ASR/gi, copy.liveTranscript)
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function getSourceSummary({
-  captureMode,
-}: {
-  captureMode: CaptureMode;
-}) {
-  if (captureMode === "tab") return "当前场景：浏览器页面";
-  if (captureMode === "system") return "当前场景：会议App音频";
-  return "当前场景：面对面访谈";
+function getSourceSummary(captureMode: CaptureMode, copy: LivePanelCopy) {
+  return copy.sourceSummary[captureMode];
 }
 
-function getCaptureModeLabel(captureMode: CaptureMode) {
-  if (captureMode === "tab") return "浏览器页面";
-  if (captureMode === "system") return "会议 App";
-  return "面对面访谈";
+function getCaptureModeLabel(captureMode: CaptureMode, copy: LivePanelCopy) {
+  return copy.options[captureMode].label;
 }
 
-function getCapturePermissionStatus(captureMode: CaptureMode) {
-  if (captureMode === "tab") {
-    return "请选择要监听的浏览器标签页，并勾选“分享音频”";
-  }
-
-  if (captureMode === "system") {
-    return "请选择会议窗口或整个屏幕，并确保勾选系统音频";
-  }
-
-  return "正在请求麦克风权限";
+function getCapturePermissionStatus(captureMode: CaptureMode, copy: LivePanelCopy) {
+  return copy.permissionStatus[captureMode];
 }
 
 function formatElapsedTime(totalSeconds: number) {
@@ -255,7 +387,7 @@ function createCaptureAudioContext() {
   }
 }
 
-async function requestTabCaptureStream(mode: "tab" | "system") {
+async function requestTabCaptureStream(mode: "tab" | "system", copy: LivePanelCopy) {
   const attempts: ExtendedDisplayMediaStreamOptions[] = [
     {
       video: {
@@ -292,10 +424,11 @@ async function requestTabCaptureStream(mode: "tab" | "system") {
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(mode === "tab" ? "浏览器页面音频未接入" : "会议音频未接入");
+  throw lastError instanceof Error ? lastError : new Error(mode === "tab" ? copy.displayMissing : copy.systemMissing);
 }
 
 export function LiveInterviewPanel({
+  locale = "zh",
   onTranscriptChange,
   onStatusChange,
   onEnsureJob,
@@ -306,10 +439,11 @@ export function LiveInterviewPanel({
   onRuntimeStateChange,
   afterRecorderSlot,
   disabled = false,
-  disabledReason = "请先创建项目",
+  disabledReason,
   compact = false,
   isCompleted = false,
 }: {
+  locale?: string;
   onTranscriptChange?: (value: string) => void;
   onStatusChange?: (value: string) => void;
   onEnsureJob?: () => Promise<StartLiveResult>;
@@ -324,10 +458,12 @@ export function LiveInterviewPanel({
   compact?: boolean;
   isCompleted?: boolean;
 }) {
+  const copy = getLivePanelCopy(locale);
+  const normalizedDisabledReason = disabledReason || copy.disabledReason;
   const [captureMode, setCaptureMode] = useState<CaptureMode>("mic");
   const [liveText, setLiveText] = useState("");
-  const [status, setStatus] = useState("准备开始");
-  const [captureDetails, setCaptureDetails] = useState("未开始");
+  const [status, setStatus] = useState<string>(copy.ready);
+  const [captureDetails, setCaptureDetails] = useState<string>(copy.notStarted);
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pendingAction, setPendingAction] = useState<"starting" | "stopping" | "pausing" | null>(null);
@@ -426,13 +562,13 @@ export function LiveInterviewPanel({
       setLiveText(nextTranscript);
     }
     if (typeof data.statusText === "string" && data.statusText) {
-      setStatus(getPublicStatusText(data.statusText));
+      setStatus(getPublicStatusText(data.statusText, copy));
     }
   }
 
   async function createGatewaySession(jobId: string) {
     if (!jobId) {
-      throw new Error("Live job is not ready");
+      throw new Error(copy.liveJobNotReady);
     }
 
     const res = await fetch(`/api/jobs/${jobId}/live/audio`, {
@@ -447,7 +583,7 @@ export function LiveInterviewPanel({
 
     const json = await res.json();
     if (!res.ok || !json.ok) {
-      throw new Error(getPublicStatusText(json?.error?.message || "实时转写会话准备失败"));
+      throw new Error(getPublicStatusText(json?.error?.message || copy.gatewaySessionFailed, copy));
     }
 
     if (json.data?.snapshot) {
@@ -648,7 +784,7 @@ export function LiveInterviewPanel({
     const json = await response.json().catch(() => null);
 
     if (!response.ok || !json?.ok) {
-      throw new Error(json?.error?.message || (finalize ? "最终文稿保存失败" : "实时草稿同步失败"));
+      throw new Error(json?.error?.message || (finalize ? copy.finalSaveFailed : copy.draftSyncFailed));
     }
 
     const savedTranscriptText =
@@ -661,7 +797,7 @@ export function LiveInterviewPanel({
       draftArtifacts: json.data.draftArtifacts,
       transcriptText: savedTranscriptText,
     };
-  }, []);
+  }, [copy.draftSyncFailed, copy.finalSaveFailed]);
 
   const scheduleDraftSync = useCallback((jobId: string, transcriptText: string, statusText: string) => {
     const trimmedTranscript = transcriptText.trim();
@@ -717,7 +853,7 @@ export function LiveInterviewPanel({
         })
         .catch((error) => {
           if (error instanceof Error) {
-            const publicMessage = getPublicStatusText(error.message);
+            const publicMessage = getPublicStatusText(error.message, copy);
             setCaptureDetails((current) => current.includes(publicMessage) ? current : `${current} · ${publicMessage}`);
           }
         })
@@ -731,7 +867,7 @@ export function LiveInterviewPanel({
           }
         });
     }, 2400);
-  }, [onDraftSynced, submitLiveInterview]);
+  }, [copy, onDraftSynced, submitLiveInterview]);
 
   useEffect(() => {
     if (!runningRef.current || pendingAction || !activeJobIdRef.current) {
@@ -784,23 +920,23 @@ export function LiveInterviewPanel({
           job: finalizeJson.data.job,
           draftArtifacts: finalizeJson.data.draftArtifacts,
           transcriptText: finalizedTranscriptText,
-          statusText: "实时访谈已停止，最终文稿已保存",
+          statusText: copy.finalSaved,
         });
         if (finalize) {
           if (Array.isArray(finalizeJson.data?.draftArtifacts) && finalizeJson.data.draftArtifacts.length) {
-            setStatus("实时访谈已停止，最终文稿已保存");
+            setStatus(copy.finalSaved);
           } else {
-            setStatus("实时访谈已停止，转写已保存");
+            setStatus(copy.transcriptSaved);
           }
           onFinalizeSettled?.({
             success: true,
-            statusText: "实时访谈已停止，最终文稿已保存",
+            statusText: copy.finalSaved,
           });
         } else {
-          setStatus("已暂停，转写已同步");
+          setStatus(copy.pausedSynced);
         }
       } else {
-        const failureStatus = finalizeJson?.error?.message || "实时访谈已停止，但最终保存失败";
+        const failureStatus = finalizeJson?.error?.message || copy.stoppedSaveFailed;
         setStatus(failureStatus);
         onFinalizeSettled?.({
           success: false,
@@ -809,7 +945,7 @@ export function LiveInterviewPanel({
       }
     })()
       .catch((error) => {
-        const failureStatus = error instanceof Error ? error.message : "最终文稿保存失败";
+        const failureStatus = error instanceof Error ? error.message : copy.finalSaveFailed;
         setStatus(failureStatus);
         onFinalizeSettled?.({
           success: false,
@@ -839,7 +975,7 @@ export function LiveInterviewPanel({
 
     if (message.type === "session.ready") {
       gatewayReadyRef.current = true;
-      setStatus("实时采集中：音频已接入");
+      setStatus(copy.sessionReady);
       flushAudio();
       return;
     }
@@ -853,14 +989,14 @@ export function LiveInterviewPanel({
           message.snapshot?.finalTranscriptText ||
           message.snapshot?.previewText ||
           liveTextRef.current;
-        scheduleFinalize(jobId, transcriptText, "实时访谈已停止，正在整理最终文稿");
+        scheduleFinalize(jobId, transcriptText, copy.finalizing);
       }
       closeGatewaySocket();
       return;
     }
 
     if (message.type === "session.error") {
-      setStatus(getPublicStatusText(message.message || "实时转写发生错误"));
+      setStatus(getPublicStatusText(message.message || copy.sessionError, copy));
     }
   }
 
@@ -915,15 +1051,15 @@ export function LiveInterviewPanel({
               }
 
               if (message.type === "session.error") {
-                fail(getPublicStatusText(message.message || "实时转写连接失败"));
+                fail(getPublicStatusText(message.message || copy.connectFailed, copy));
               }
             } catch {
-              fail("实时转写返回了无效消息");
+              fail(copy.invalidMessage);
             }
           };
 
           socket.onerror = () => {
-            fail("实时转写连接失败");
+            fail(copy.connectFailed);
           };
 
           socket.onclose = () => {
@@ -932,14 +1068,14 @@ export function LiveInterviewPanel({
               gatewaySocketRef.current = null;
             }
             if (!settled) {
-              fail("实时转写连接已关闭");
+              fail(copy.closed);
             }
           };
         });
 
         return;
       } catch (error) {
-        lastError = error instanceof Error ? new Error(getPublicStatusText(error.message)) : new Error("实时转写连接失败");
+        lastError = error instanceof Error ? new Error(getPublicStatusText(error.message, copy)) : new Error(copy.connectFailed);
         closeGatewaySocket();
         const retryDelay = Math.min(1000, GATEWAY_CONNECT_RETRY_BASE_MS * 2 ** attempt);
         attempt += 1;
@@ -950,7 +1086,7 @@ export function LiveInterviewPanel({
       }
     }
 
-    throw lastError || new Error("实时转写连接失败");
+    throw lastError || new Error(copy.connectFailed);
   }
 
   function teardownAudioGraph() {
@@ -995,7 +1131,7 @@ export function LiveInterviewPanel({
       });
 
     if (storageError) {
-      throw new Error("实时录音保存失败");
+      throw new Error(copy.recordingSaveFailed);
     }
 
     const res = await fetch(`/api/jobs/${jobId}/live/audio-asset`, {
@@ -1015,7 +1151,7 @@ export function LiveInterviewPanel({
       await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {
         // ignore cleanup failure
       });
-      throw new Error("实时录音保存失败");
+      throw new Error(copy.recordingSaveFailed);
     }
   }
 
@@ -1025,7 +1161,7 @@ export function LiveInterviewPanel({
     }
 
     if (disabled) {
-      setStatus(disabledReason);
+      setStatus(normalizedDisabledReason);
       return;
     }
 
@@ -1039,8 +1175,8 @@ export function LiveInterviewPanel({
     clearDraftSyncTimer();
     setLiveText("");
     setElapsedSeconds(0);
-    setStatus("正在启动实时访谈");
-    setCaptureDetails("正在请求浏览器权限");
+    setStatus(copy.starting);
+    setCaptureDetails(copy.requestingPermission);
     clearFinishFallbackTimer();
     closeGatewaySocket();
     activeJobIdRef.current = null;
@@ -1051,9 +1187,9 @@ export function LiveInterviewPanel({
     const usingDisplayAudio = captureMode === "tab" || captureMode === "system";
 
     try {
-      setStatus(getCapturePermissionStatus(captureMode));
+      setStatus(getCapturePermissionStatus(captureMode, copy));
 
-      const ensurePromise = onEnsureJob?.() || Promise.resolve({ jobId: null, statusText: "无法创建实时访谈" });
+      const ensurePromise = onEnsureJob?.() || Promise.resolve({ jobId: null, statusText: copy.createLiveFailed });
       const micPromise = usingMic
         ? navigator.mediaDevices.getUserMedia({
             audio: {
@@ -1067,7 +1203,7 @@ export function LiveInterviewPanel({
           })
         : Promise.resolve(null);
       const displayPromise = (captureMode === "tab" || captureMode === "system")
-        ? requestTabCaptureStream(captureMode)
+        ? requestTabCaptureStream(captureMode, copy)
         : Promise.resolve(null);
 
       const [ensuredResult, micResult, displayResult] = await Promise.allSettled([
@@ -1081,10 +1217,10 @@ export function LiveInterviewPanel({
           : null;
       const micStream = micResult.status === "fulfilled" ? micResult.value : null;
       const displayStream = displayResult.status === "fulfilled" ? displayResult.value : null;
-      const micError = micResult.status === "rejected" ? (micResult.reason instanceof Error ? micResult.reason.message : "麦克风未接入") : null;
+      const micError = micResult.status === "rejected" ? (micResult.reason instanceof Error ? micResult.reason.message : copy.micMissing) : null;
       const displayError =
         displayResult.status === "rejected"
-          ? (displayResult.reason instanceof Error ? displayResult.reason.message : "标签页音频未接入")
+          ? (displayResult.reason instanceof Error ? displayResult.reason.message : copy.displayMissing)
           : null;
 
       if (!ensured?.jobId) {
@@ -1092,8 +1228,8 @@ export function LiveInterviewPanel({
         cleanupTracks.forEach((track) => track.stop());
         setStatus(
           ensuredResult.status === "rejected"
-            ? (ensuredResult.reason instanceof Error ? ensuredResult.reason.message : "无法创建实时访谈")
-            : ensured?.statusText || "无法创建实时访谈"
+            ? (ensuredResult.reason instanceof Error ? ensuredResult.reason.message : copy.createLiveFailed)
+            : ensured?.statusText || copy.createLiveFailed
         );
         return;
       }
@@ -1108,10 +1244,10 @@ export function LiveInterviewPanel({
       audioTracks.push(...micAudioTracks, ...displayAudioTracks);
 
       const detailText = usingMic
-        ? (micAudioTracks.length ? `麦克风 ${micAudioTracks.length} 轨` : "麦克风未接入")
+        ? (micAudioTracks.length ? copy.micTrackCount(micAudioTracks.length) : copy.micMissing)
         : captureMode === "system"
-          ? (displayAudioTracks.length ? `会议/系统音频 ${displayAudioTracks.length} 轨` : "会议音频未接入")
-          : (displayAudioTracks.length ? `浏览器页面音频 ${displayAudioTracks.length} 轨` : "浏览器页面音频未接入");
+          ? (displayAudioTracks.length ? copy.systemTrackCount(displayAudioTracks.length) : copy.systemMissing)
+          : (displayAudioTracks.length ? copy.tabTrackCount(displayAudioTracks.length) : copy.displayMissing);
       setCaptureDetails(detailText);
 
       const displayTrackSet = new Set(displayAudioTracks);
@@ -1120,9 +1256,9 @@ export function LiveInterviewPanel({
           "ended",
           () => {
             if (displayTrackSet.has(track)) {
-              setStatus("浏览器标签页音频已中断，实时转写会停在最后一段。请重新开始并再次勾选“分享音频”。");
+              setStatus(copy.tabInterrupted);
             } else if (track.kind === "audio") {
-              setStatus("麦克风音频已中断，实时转写会停在最后一段。");
+              setStatus(copy.micInterrupted);
             }
           },
           { once: true }
@@ -1130,13 +1266,13 @@ export function LiveInterviewPanel({
       });
 
       if (usingDisplayAudio && !displayAudioTracks.length) {
-        setStatus("没有捕获到音频。请重新选择捕获源并务必勾选“分享音频”。");
+        setStatus(copy.noAudio);
       } else {
-        setStatus("权限已获取，正在连接实时转写");
+        setStatus(copy.permissionsGranted);
       }
 
       if (!audioTracks.length) {
-        throw new Error([micError, displayError].filter(Boolean).join("；") || "没有拿到任何音频轨道");
+        throw new Error([micError, displayError].filter(Boolean).join(locale?.toLowerCase().startsWith("en") ? "; " : "；") || copy.noTracks);
       }
 
       const audioContext = createCaptureAudioContext();
@@ -1183,13 +1319,13 @@ export function LiveInterviewPanel({
       setPendingAction(null);
 
       if (usingMic && micError) {
-        setStatus("麦克风未接入，请检查系统权限后重试。");
+        setStatus(copy.micRetry);
       } else if (usingDisplayAudio && displayError) {
-        setStatus("系统/标签页音频未接入，请重新选择并勾选“分享音频”。");
+        setStatus(copy.displayRetry);
       } else if (usingDisplayAudio && !displayAudioTracks.length) {
-        setStatus("实时采集中，但当前没有捕获到系统/标签页音轨。");
+        setStatus(copy.noDisplayAudio);
       } else {
-        setStatus(`已开始采集 ${getCaptureModeLabel(captureMode)}，正在连接实时转写`);
+        setStatus(copy.startedCapture(getCaptureModeLabel(captureMode, copy)));
       }
 
       const gatewaySession = await gatewaySessionPromise;
@@ -1211,8 +1347,8 @@ export function LiveInterviewPanel({
       closeGatewaySocket();
       activeJobIdRef.current = null;
       setWaveLevels(createSilentWaveLevels());
-      setCaptureDetails("启动失败");
-      setStatus(error instanceof Error ? getPublicStatusText(error.message) : "无法启动实时访谈");
+      setCaptureDetails(copy.launchFailed);
+      setStatus(error instanceof Error ? getPublicStatusText(error.message, copy) : copy.launchFailed);
     } finally {
       setPendingAction(null);
     }
@@ -1224,8 +1360,8 @@ export function LiveInterviewPanel({
     }
 
     setPendingAction("stopping");
-    setStatus("正在停止并整理");
-    setCaptureDetails("正在收尾当前转写");
+    setStatus(copy.stopping);
+    setCaptureDetails(copy.finalizingDetails);
     setTranscriptExpanded(false);
     clearFinishFallbackTimer();
     clearDraftSyncTimer();
@@ -1246,8 +1382,8 @@ export function LiveInterviewPanel({
       if (jobId && recordedChunks.length) {
         audioUploadPromiseRef.current = uploadLiveAudioAsset(jobId, recordedChunks).catch(() => {
           setStatus((current) => {
-            const suffix = "实时录音保存失败";
-            return current.includes("录音保存失败") ? current : `${current}（${suffix}）`;
+            const suffix = copy.recordingSaveFailed;
+            return current.includes(suffix) ? current : `${current} (${suffix})`;
           });
         });
       } else {
@@ -1266,31 +1402,31 @@ export function LiveInterviewPanel({
         onFinalizeStarted?.({
           jobId,
           transcriptText: finalSnapshotFallback,
-          statusText: "实时访谈已停止，正在整理最终文稿",
+          statusText: copy.finalizing,
         });
         finishFallbackTimerRef.current = window.setTimeout(() => {
-          scheduleFinalize(jobId, finalSnapshotFallback, "实时访谈已停止，正在整理最终文稿");
+          scheduleFinalize(jobId, finalSnapshotFallback, copy.finalizing);
           closeGatewaySocket();
         }, 1800);
       } else {
-        setStatus("实时访谈已停止");
+        setStatus(copy.stopped);
       }
     } catch (error) {
       if (jobId) {
-        scheduleFinalize(jobId, finalSnapshotFallback, "实时访谈已停止，正在整理最终文稿");
+        scheduleFinalize(jobId, finalSnapshotFallback, copy.finalizing);
       } else {
-        setStatus(error instanceof Error ? error.message : "停止实时访谈失败");
+        setStatus(error instanceof Error ? error.message : copy.stopFailed);
       }
     } finally {
       setIsRunning(false);
-      setCaptureDetails("未开始采集");
+      setCaptureDetails(copy.notStartedCapture);
       setWaveLevels(createSilentWaveLevels());
       setPendingAction(null);
       liveStartedAtRef.current = null;
       if (!jobId) {
         activeJobIdRef.current = null;
       } else {
-        setStatus("实时访谈已停止，正在整理最终文稿");
+        setStatus(copy.finalizing);
       }
     }
   }
@@ -1301,8 +1437,8 @@ export function LiveInterviewPanel({
     }
 
     setPendingAction("pausing");
-    setStatus("正在暂停");
-    setCaptureDetails("保存当前进度");
+    setStatus(copy.pausing);
+    setCaptureDetails(copy.savingProgress);
     setTranscriptExpanded(false);
     clearFinishFallbackTimer();
     clearDraftSyncTimer();
@@ -1333,24 +1469,24 @@ export function LiveInterviewPanel({
 
       if (jobId) {
         finishFallbackTimerRef.current = window.setTimeout(() => {
-          scheduleFinalize(jobId, finalSnapshotFallback, "已暂停，可随时继续", false);
+          scheduleFinalize(jobId, finalSnapshotFallback, copy.pausedContinue, false);
           closeGatewaySocket();
         }, 1800);
       } else {
-        setStatus("已暂停");
+        setStatus(copy.paused);
       }
     } catch {
       if (jobId) {
-        scheduleFinalize(jobId, finalSnapshotFallback, "已暂停", false);
+        scheduleFinalize(jobId, finalSnapshotFallback, copy.paused, false);
       }
     } finally {
       setIsRunning(false);
-      setCaptureDetails("未开始采集");
+      setCaptureDetails(copy.notStartedCapture);
       setWaveLevels(createSilentWaveLevels());
       setPendingAction(null);
       liveStartedAtRef.current = null;
       activeJobIdRef.current = null;
-      setStatus("已暂停，可随时继续");
+      setStatus(copy.pausedContinue);
     }
   }
 
@@ -1358,8 +1494,8 @@ export function LiveInterviewPanel({
   const isStopping = pendingAction === "stopping";
   const startButtonDisabled = disabled || isStarting || isStopping;
   const stopButtonDisabled = isStopping;
-  const sourceSummary = getSourceSummary({ captureMode });
-  const transcriptToggleLabel = transcriptExpanded ? "收起转写" : "查看转写";
+  const sourceSummary = getSourceSummary(captureMode, copy);
+  const transcriptToggleLabel = transcriptExpanded ? copy.collapseTranscript : copy.showTranscript;
   const recorderTimeLabel = formatElapsedTime(elapsedSeconds);
 
   return (
@@ -1367,19 +1503,19 @@ export function LiveInterviewPanel({
       <div className={`flex flex-col mb-1 ${compact ? "hidden" : "workspace-live-header"}`}>
         <div className="workspace-live-summary">
           <div className="workspace-live-summary-top">
-            <span className="workspace-live-mode-pill">实时访谈</span>
+            <span className="workspace-live-mode-pill">{copy.modePill}</span>
             <span className="workspace-live-scene-pill">{sourceSummary}</span>
           </div>
           <div className="workspace-live-summary-bottom">
-            <p className="workspace-live-status-line">{disabled ? disabledReason : status}</p>
-            <p className="workspace-live-detail-line">{disabled ? disabledReason : captureDetails}</p>
+            <p className="workspace-live-status-line">{disabled ? normalizedDisabledReason : status}</p>
+            <p className="workspace-live-detail-line">{disabled ? normalizedDisabledReason : captureDetails}</p>
           </div>
         </div>
       </div>
 
       <div className={`workspace-live-control-row ${compact ? "workspace-live-control-row-compact" : ""}`}>
-        <div className="workspace-live-source-switch" aria-label="选择会议来源">
-        {CAPTURE_MODE_OPTIONS.map((option) => {
+        <div className="workspace-live-source-switch" aria-label={copy.sourceSwitchAria}>
+        {getCaptureModeOptions(copy).map((option) => {
           const isActive = captureMode === option.mode;
 
           return (
@@ -1388,7 +1524,7 @@ export function LiveInterviewPanel({
               type="button"
               onClick={() => setCaptureMode(option.mode)}
               disabled={disabled || isRunning || isStarting || isStopping}
-              title={disabled ? disabledReason : option.description}
+              title={disabled ? normalizedDisabledReason : option.description}
               aria-pressed={isActive}
               className={`workspace-live-source-option workspace-live-source-option-${option.mode} ${isActive ? "active" : ""}`}
             >
@@ -1400,8 +1536,8 @@ export function LiveInterviewPanel({
         </div>
         <div className="workspace-live-control-divider" />
         {isCompleted ? (
-          <span className="text-sm font-semibold text-[#0068d6] bg-[#ebf5ff] dark:bg-[#003d7a]/30 dark:text-[#66b3ff] px-5 py-2.5 rounded-full whitespace-nowrap shrink-0 shadow-[0_0_0_1px_rgba(0,104,214,0.1)]">
-            录音已整理结束
+          <span className="text-sm font-semibold text-[#0969da] bg-[#eef6ff] dark:bg-[#071d36] dark:text-[#58a6ff] px-4 py-2 rounded-[6px] whitespace-nowrap shrink-0 border border-[#0969da]/20">
+            {copy.completed}
           </span>
         ) : !isRunning ? (
           <Button
@@ -1410,7 +1546,7 @@ export function LiveInterviewPanel({
             data-kemo-live-action="start"
             disabled={startButtonDisabled}
           >
-            {isStarting ? "正在连接..." : "开始处理"}
+            {isStarting ? copy.startConnecting : copy.startProcessing}
           </Button>
         ) : (
           <div className="flex items-center gap-4">
@@ -1422,7 +1558,7 @@ export function LiveInterviewPanel({
               disabled={stopButtonDisabled || pendingAction === "pausing"}
             >
               <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
-              {pendingAction === "pausing" ? "暂停中..." : "暂停录制"}
+              {pendingAction === "pausing" ? copy.pausePending : copy.pauseRecording}
             </Button>
             <Button
               onClick={stopLive}
@@ -1432,7 +1568,7 @@ export function LiveInterviewPanel({
               disabled={stopButtonDisabled}
             >
               <KemoLiveIcon name="stop" className="h-4 w-4 mr-2" />
-                {isStopping ? "正在停止..." : "结束处理"}
+                {isStopping ? copy.stopPending : copy.finishProcessing}
             </Button>
           </div>
         )}
@@ -1464,11 +1600,11 @@ export function LiveInterviewPanel({
 
       <div className="workspace-live-source-row">
         <div className="workspace-live-inline-meta">
-          <span className="workspace-live-inline-copy">{disabled ? disabledReason : captureDetails}</span>
+          <span className="workspace-live-inline-copy">{disabled ? normalizedDisabledReason : captureDetails}</span>
         </div>
         <div className={captureMode === "tab" ? "workspace-live-inline-actions" : "hidden"}>
           <span className="workspace-live-inline-hint">
-            浏览器页面模式会列出其他已打开标签页；选择目标页后记得勾选“分享音频”。
+            {copy.tabModeHint}
           </span>
         </div>
       </div>
@@ -1486,7 +1622,7 @@ export function LiveInterviewPanel({
           {transcriptExpanded ? (
             <div className={`px-1 pb-4 ${compact ? "" : "workspace-live-transcript-shell"}`}>
               <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                {disabled ? disabledReason : liveText}
+                {disabled ? normalizedDisabledReason : liveText}
               </div>
             </div>
           ) : null}

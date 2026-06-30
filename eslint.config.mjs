@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    ".codex-qa-screens/**",
     "next-env.d.ts",
   ]),
 ]);

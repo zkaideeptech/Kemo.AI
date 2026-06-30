@@ -1211,6 +1211,10 @@ body:has(.kemo-workspace) main.relative.z-10 {
   gap: 10px;
 }
 
+.kw-capture-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .kw-capture-grid button {
   display: grid;
   min-height: 140px;
@@ -1224,6 +1228,16 @@ body:has(.kemo-workspace) main.relative.z-10 {
   text-align: left;
 }
 
+.kw-capture-grid button:hover,
+.kw-capture-grid button.active {
+  border-color: var(--kw-primary);
+  background: var(--kw-surface-container-lowest);
+}
+
+.kw-capture-grid button.active {
+  box-shadow: inset 0 0 0 1px var(--kw-primary);
+}
+
 .kw-capture-grid svg {
   width: 22px;
   height: 22px;
@@ -1234,6 +1248,17 @@ body:has(.kemo-workspace) main.relative.z-10 {
   color: var(--kw-on-surface-variant);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.kw-project-mode-block {
+  display: grid;
+  gap: 10px;
+}
+
+.kw-project-mode-block > p {
+  color: var(--kw-on-surface-variant);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .kw-preview-layout {
@@ -7243,13 +7268,23 @@ body:has(.workspace-app-shell) main.relative.z-10 {
   background: var(--surface-container-low);
   padding: 24px 12px;
   color: var(--on-surface);
+  transition: width 180ms ease, padding 180ms ease;
+}
+
+.kw-designer-brand-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: start;
+  gap: 8px;
+  padding: 0 0 18px;
 }
 
 .kw-designer-brand {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 12px;
-  padding: 0 12px 24px;
+  padding: 0 4px 0 12px;
   color: var(--primary);
   text-decoration: none;
 }
@@ -7281,6 +7316,9 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 .kw-designer-brand strong,
 .kw-designer-brand small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kw-designer-brand strong {
@@ -7307,6 +7345,13 @@ body:has(.workspace-app-shell) main.relative.z-10 {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+}
+
+.kw-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kw-designer-nav-list,
@@ -7396,6 +7441,7 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 
 .kw-designer-nav-item {
   display: flex;
+  min-width: 0;
   min-height: 40px;
   align-items: center;
   gap: 12px;
@@ -7435,6 +7481,7 @@ body:has(.workspace-app-shell) main.relative.z-10 {
   border-left: 1px solid var(--outline-variant);
   background: var(--surface-container-low);
   padding: 0;
+  transition: width 180ms ease, opacity 120ms ease, border-color 180ms ease;
 }
 
 .kw-designer-inspector-head {
@@ -7449,11 +7496,18 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 
 .kw-designer-inspector-head h3 {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   color: var(--primary);
   font-size: 18px;
   font-weight: 700;
+}
+
+.kw-inspector-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .kw-designer-inspector > .flex {
@@ -7463,12 +7517,15 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 
 .kw-project-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 16px;
 }
 
 .kw-project-card {
   display: grid;
+  min-width: 0;
+  min-height: 236px;
+  align-content: start;
   gap: 16px;
   border: 1px solid var(--outline-variant);
   border-radius: 8px;
@@ -7488,9 +7545,14 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 
 .kw-project-card-head {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.kw-project-card-head > div {
+  min-width: 0;
 }
 
 .kw-project-card h2 {
@@ -7498,12 +7560,29 @@ body:has(.workspace-app-shell) main.relative.z-10 {
   color: var(--primary);
   font-size: 22px;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .kw-project-card p,
 .kw-project-card small {
   color: var(--on-surface-variant);
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.kw-project-card p {
+  display: -webkit-box;
+  min-height: 45px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kw-project-card > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kw-project-card-stats {
@@ -7565,6 +7644,7 @@ body:has(.workspace-app-shell) main.relative.z-10 {
 
 .kw-source-table-row {
   width: 100%;
+  min-width: 0;
   border: 0;
   border-bottom: 1px solid var(--outline-variant);
   background: transparent;
@@ -11707,5 +11787,975 @@ body::after {
     width: 100% !important;
     border-left: 0 !important;
     border-top: 1px solid var(--outline-variant) !important;
+  }
+}
+
+/* Vercel design alignment: final product skin for the commercial workbench. */
+:root,
+:root[data-workspace-theme="light"] {
+  --kw-background: #ffffff;
+  --kw-surface: #ffffff;
+  --kw-surface-bright: #ffffff;
+  --kw-surface-container-lowest: #ffffff;
+  --kw-surface-container-low: #f7f8fa;
+  --kw-surface-container: #f7f8fa;
+  --kw-surface-container-high: #f3f4f6;
+  --kw-surface-container-highest: #e9ecef;
+  --kw-surface-variant: #f3f4f6;
+  --kw-outline-variant: rgba(17, 24, 32, 0.12);
+  --kw-outline: rgba(17, 24, 32, 0.24);
+  --kw-primary: #0969da;
+  --kw-primary-container: #eef6ff;
+  --kw-on-primary: #ffffff;
+  --kw-on-primary-container: #052b5f;
+  --kw-secondary: #1f9d55;
+  --kw-secondary-container: #edfdf3;
+  --kw-on-secondary-container: #07391f;
+  --kw-tertiary: #b76e00;
+  --kw-tertiary-fixed: #fff8e6;
+  --kw-on-tertiary-fixed-variant: #402100;
+  --kw-error: #d92d45;
+  --kw-error-container: #fff0f1;
+  --kw-on-error-container: #4c0d1a;
+  --kw-on-background: #111820;
+  --kw-on-surface: #111820;
+  --kw-on-surface-variant: #4d5965;
+  --kw-inverse-surface: #111820;
+  --kw-inverse-on-surface: #f5f7fa;
+  --kw-font-heading: "Geist Sans", Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  --kw-font-body: "Geist Sans", Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+  --kw-font-mono: "Geist Mono", "JetBrains Mono", SFMono-Regular, Consolas, monospace;
+  --kw-radius-sm: 4px;
+  --kw-radius-md: 6px;
+  --kw-radius-lg: 8px;
+  --background: #ffffff;
+  --surface: #ffffff;
+  --surface-container-low: #f7f8fa;
+  --surface-container: #f7f8fa;
+  --surface-container-high: #f3f4f6;
+  --surface-container-lowest: #ffffff;
+  --surface-variant: #f3f4f6;
+  --outline-variant: rgba(17, 24, 32, 0.12);
+  --outline: rgba(17, 24, 32, 0.24);
+  --primary: #0969da;
+  --on-primary: #ffffff;
+  --on-background: #111820;
+  --on-surface: #111820;
+  --on-surface-variant: #4d5965;
+  --error: #d92d45;
+  --on-error: #ffffff;
+  color-scheme: light;
+}
+
+:root[data-workspace-theme="dark"] {
+  --kw-background: #0b0d10;
+  --kw-surface: #0b0d10;
+  --kw-surface-bright: #11151a;
+  --kw-surface-container-lowest: #0b0d10;
+  --kw-surface-container-low: #11151a;
+  --kw-surface-container: #11151a;
+  --kw-surface-container-high: #171b21;
+  --kw-surface-container-highest: #1d232b;
+  --kw-surface-variant: #171b21;
+  --kw-outline-variant: rgba(255, 255, 255, 0.14);
+  --kw-outline: rgba(255, 255, 255, 0.28);
+  --kw-primary: #58a6ff;
+  --kw-primary-container: #071d36;
+  --kw-on-primary: #071d36;
+  --kw-on-primary-container: #dceeff;
+  --kw-secondary: #2fb862;
+  --kw-secondary-container: #062414;
+  --kw-on-secondary-container: #dcfbe7;
+  --kw-tertiary: #ffc247;
+  --kw-tertiary-fixed: #251600;
+  --kw-on-tertiary-fixed-variant: #fff2c7;
+  --kw-error: #ef5368;
+  --kw-error-container: #2a0b13;
+  --kw-on-error-container: #ffe1e5;
+  --kw-on-background: #f5f7fa;
+  --kw-on-surface: #f5f7fa;
+  --kw-on-surface-variant: #adb7c2;
+  --kw-inverse-surface: #f5f7fa;
+  --kw-inverse-on-surface: #111820;
+  --background: #0b0d10;
+  --surface: #0b0d10;
+  --surface-container-low: #11151a;
+  --surface-container: #11151a;
+  --surface-container-high: #171b21;
+  --surface-container-lowest: #0b0d10;
+  --surface-variant: #171b21;
+  --outline-variant: rgba(255, 255, 255, 0.14);
+  --outline: rgba(255, 255, 255, 0.28);
+  --primary: #58a6ff;
+  --on-primary: #071d36;
+  --on-background: #f5f7fa;
+  --on-surface: #f5f7fa;
+  --on-surface-variant: #adb7c2;
+  --error: #ef5368;
+  --on-error: #2a0b13;
+  color-scheme: dark;
+}
+
+body:has(.kemo-reference-workspace),
+body:has(.kemo-reference-settings),
+body:has(.kemo-reference-live),
+body:has(.kemo-workspace),
+body:has(.kemo-auth-page) {
+  background: var(--kw-background) !important;
+  color: var(--kw-on-background) !important;
+}
+
+.kemo-reference-workspace,
+.kemo-reference-settings,
+.kemo-reference-live,
+.kemo-workspace,
+.kemo-auth-page {
+  background: var(--kw-background) !important;
+  color: var(--kw-on-background) !important;
+  font-family: var(--kw-font-body) !important;
+}
+
+.kemo-reference-workspace *,
+.kemo-reference-settings *,
+.kemo-reference-live *,
+.kemo-workspace *,
+.kemo-auth-page * {
+  letter-spacing: 0 !important;
+}
+
+.kemo-reference-workspace h1,
+.kemo-reference-workspace h2,
+.kemo-reference-workspace h3,
+.kemo-reference-settings h1,
+.kemo-reference-settings h2,
+.kemo-reference-settings h3,
+.kemo-reference-live h1,
+.kemo-reference-live h2,
+.kemo-reference-live h3,
+.kemo-auth-page h1,
+.kemo-auth-page h2,
+.kemo-auth-page h3,
+.kw-designer-brand strong,
+.kemo-live-brand strong,
+.kemo-auth-brand strong {
+  font-family: var(--kw-font-heading) !important;
+  color: var(--kw-on-surface) !important;
+  font-weight: 650 !important;
+}
+
+.kw-designer-nav,
+.kw-designer-inspector,
+.kemo-reference-live aside,
+.kemo-live-inspector,
+.kw-sidebar {
+  background: var(--kw-surface-container-low) !important;
+  border-color: var(--kw-outline-variant) !important;
+}
+
+.kemo-reference-workspace > main,
+.kemo-reference-workspace > main > section,
+.kemo-reference-live main > section,
+.kemo-reference-live > header,
+.kw-content,
+.kw-canvas,
+.kw-main,
+.kw-card,
+.kw-section,
+.kw-project-card,
+.kw-record-card,
+.kw-artifact-card,
+.kw-source-table,
+.kw-source-table-row,
+.kw-source-inspector,
+.kw-source-row,
+.kw-live-header,
+.kw-live-panel-shell,
+.kw-live-coach,
+.kw-modal,
+.kemo-settings-section,
+.kemo-settings-card,
+.kemo-settings-plan-card {
+  background: var(--kw-surface) !important;
+  border-color: var(--kw-outline-variant) !important;
+  box-shadow: none !important;
+}
+
+.kw-project-card,
+.kw-record-card,
+.kw-artifact-card,
+.kw-card,
+.kw-section,
+.kw-rail-card,
+.kw-source-table,
+.kw-source-inspector,
+.kw-modal,
+.kemo-settings-section,
+.kemo-settings-card,
+.kemo-settings-plan-card,
+.kemo-reference-live aside .rounded-lg {
+  border-radius: var(--kw-radius-lg) !important;
+}
+
+.kw-designer-avatar,
+.kemo-live-brand-mark {
+  background: #111820 !important;
+  border: 1px solid var(--kw-outline-variant) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.kw-designer-brand,
+.kemo-live-brand,
+.kemo-auth-brand {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  color: var(--kw-on-surface) !important;
+  text-decoration: none !important;
+}
+
+.kemo-live-brand-mark {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.kemo-live-brand-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.kemo-auth-brand span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.kemo-auth-mark {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--kw-outline-variant);
+  border-radius: 8px;
+  background: #111820;
+}
+
+.kemo-auth-brand strong {
+  display: block;
+  font-size: 18px;
+  line-height: 20px;
+}
+
+.kemo-auth-brand small {
+  display: block;
+  color: var(--kw-on-surface-variant);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.kemo-public-header {
+  background: color-mix(in srgb, var(--kw-background) 92%, transparent) !important;
+  border-color: var(--kw-outline-variant) !important;
+}
+
+.kemo-auth-page {
+  padding-bottom: 48px;
+}
+
+.kemo-auth-page > .rounded-\[8px\],
+.kemo-auth-page form input {
+  background: var(--kw-surface) !important;
+  border-color: var(--kw-outline-variant) !important;
+  border-radius: var(--kw-radius-lg) !important;
+  box-shadow: none !important;
+}
+
+.kemo-auth-page form button[type="submit"] {
+  background: var(--kw-primary) !important;
+  color: var(--kw-on-primary) !important;
+  border-radius: var(--kw-radius-md) !important;
+}
+
+.kemo-live-brand-copy small,
+.kw-designer-brand small,
+.kw-project-card p,
+.kw-project-card small,
+.kw-artifact-card p,
+.kw-record-card p,
+.kw-muted,
+.kemo-reference-live .text-on-surface-variant,
+.kemo-reference-live .placeholder-on-surface-variant::placeholder {
+  color: var(--kw-on-surface-variant) !important;
+}
+
+.kw-designer-new,
+.kw-button.primary,
+.kemo-reference-live .bg-error,
+.kemo-reference-live .workspace-live-start-button {
+  background: var(--kw-primary) !important;
+  color: var(--kw-on-primary) !important;
+  border: 1px solid var(--kw-primary) !important;
+  border-radius: var(--kw-radius-md) !important;
+  box-shadow: none !important;
+}
+
+.kw-designer-new:hover,
+.kw-button.primary:hover,
+.kemo-reference-live .workspace-live-start-button:hover {
+  background: #0759ba !important;
+  border-color: #0759ba !important;
+}
+
+.kw-icon-button,
+.kw-button.secondary,
+.kw-button.ghost,
+.workspace-ui-switcher,
+.kw-language-segment,
+.kw-designer-nav-item,
+.kemo-reference-live button,
+.kemo-reference-live input {
+  border-color: var(--kw-outline-variant) !important;
+  border-radius: var(--kw-radius-md) !important;
+  box-shadow: none !important;
+}
+
+.kw-designer-nav-item:hover,
+.kw-designer-nav-item.active,
+.workspace-ui-switcher-button-active,
+.kw-language-segment a.active,
+.kw-language-segment a:hover,
+.kw-project-card:hover,
+.kw-project-card.active,
+.kw-artifact-card:hover,
+.kw-record-card:hover,
+.kemo-reference-live .bg-primary\/5,
+.kemo-reference-live .hover\:bg-primary\/10:hover {
+  background: var(--kw-surface-container-high) !important;
+  color: var(--kw-on-surface) !important;
+  border-color: var(--kw-outline) !important;
+}
+
+.kw-designer-nav-item.active {
+  border-left-color: var(--kw-primary) !important;
+}
+
+.kemo-reference-workspace::before {
+  display: none !important;
+}
+
+.kemo-reference-live {
+  --background: var(--kw-background);
+  --surface: var(--kw-surface);
+  --surface-container-low: var(--kw-surface-container-low);
+  --surface-container: var(--kw-surface-container);
+  --surface-variant: var(--kw-surface-variant);
+  --outline-variant: var(--kw-outline-variant);
+  --outline: var(--kw-outline);
+  --primary: var(--kw-primary);
+  --on-primary: var(--kw-on-primary);
+  --on-surface: var(--kw-on-surface);
+  --on-surface-variant: var(--kw-on-surface-variant);
+  --on-background: var(--kw-on-background);
+  --error: var(--kw-error);
+  --on-error: var(--kw-on-primary);
+  background: var(--kw-background) !important;
+}
+
+.kemo-live-topbar {
+  min-height: 64px !important;
+  border-color: var(--kw-outline-variant) !important;
+  background: var(--kw-surface) !important;
+  box-shadow: none !important;
+}
+
+.kemo-live-session-title {
+  max-width: min(42vw, 520px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-live-status-badge {
+  min-height: 28px !important;
+  border-radius: 999px !important;
+  background: var(--kw-surface) !important;
+  border-color: var(--kw-outline-variant) !important;
+  color: var(--kw-on-surface-variant) !important;
+  padding: 0 10px !important;
+}
+
+.workspace-live-status-badge.ready {
+  background: var(--kw-secondary-container) !important;
+  border-color: rgba(31, 157, 85, 0.24) !important;
+  color: var(--kw-secondary) !important;
+}
+
+.workspace-live-status-badge.recording,
+.workspace-live-status-badge.error {
+  background: var(--kw-error-container) !important;
+  border-color: rgba(217, 45, 69, 0.24) !important;
+  color: var(--kw-error) !important;
+}
+
+.kemo-reference-live main > section {
+  background: var(--kw-surface) !important;
+}
+
+.kemo-reference-live main > section > .sticky,
+.kemo-reference-live aside > .sticky,
+.kemo-reference-live aside > .h-12 {
+  background: var(--kw-surface) !important;
+  border-color: var(--kw-outline-variant) !important;
+}
+
+.kemo-live-inspector {
+  width: 380px !important;
+  background: var(--kw-surface-container-low) !important;
+  border-left: 1px solid var(--kw-outline-variant) !important;
+}
+
+.kemo-reference-live aside .bg-surface,
+.kemo-reference-live aside .bg-surface-container-low {
+  background: var(--kw-surface) !important;
+}
+
+.kemo-reference-live .font-body-lg.text-body-lg,
+.kemo-reference-live .font-body-md.text-body-md,
+.kemo-reference-live .text-on-surface,
+.kemo-reference-live p,
+.kemo-reference-live input,
+.kemo-reference-live button {
+  color: var(--kw-on-surface) !important;
+  font-family: var(--kw-font-body) !important;
+}
+
+.kemo-reference-live .text-primary {
+  color: var(--kw-primary) !important;
+}
+
+.kemo-reference-live .text-secondary {
+  color: var(--kw-primary) !important;
+}
+
+.kemo-reference-live .bg-primary\/10 {
+  background: var(--kw-primary-container) !important;
+}
+
+.kemo-reference-live .border-primary\/20 {
+  border-color: rgba(9, 105, 218, 0.24) !important;
+}
+
+.kemo-reference-live .bg-gradient-to-t {
+  background: linear-gradient(to top, var(--kw-surface) 12%, rgba(255, 255, 255, 0)) !important;
+}
+
+.kemo-reference-live .bg-error {
+  background: var(--kw-error) !important;
+  border-color: var(--kw-error) !important;
+  color: #ffffff !important;
+}
+
+.kemo-reference-live .waveform-bar {
+  background: rgba(17, 24, 32, 0.28) !important;
+}
+
+.kemo-reference-live .waveform-bar.bg-primary\/80 {
+  background: rgba(9, 105, 218, 0.68) !important;
+}
+
+.kemo-live-progress {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--kw-outline-variant);
+  border-radius: var(--kw-radius-lg);
+  background: var(--kw-surface);
+  padding: 14px;
+}
+
+.kemo-live-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kemo-live-progress-head h3 {
+  margin: 0;
+  color: var(--kw-on-surface);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.kemo-live-progress-head span {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--kw-outline-variant);
+  border-radius: 999px;
+  color: var(--kw-on-surface-variant);
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.kemo-live-progress-list {
+  display: grid;
+  gap: 10px;
+}
+
+.kemo-live-progress-item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.kemo-live-progress-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--kw-outline);
+}
+
+.kemo-live-progress-item.running .kemo-live-progress-dot {
+  background: var(--kw-primary);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.kemo-live-progress-item.done .kemo-live-progress-dot {
+  background: var(--kw-secondary);
+}
+
+.kemo-live-progress-item.error .kemo-live-progress-dot {
+  background: var(--kw-error);
+}
+
+.kemo-live-progress-item strong {
+  display: block;
+  color: var(--kw-on-surface);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.kemo-live-progress-item small,
+.kemo-live-empty-copy {
+  display: block;
+  color: var(--kw-on-surface-variant);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.kemo-live-empty-copy {
+  border: 1px dashed var(--kw-outline-variant);
+  border-radius: var(--kw-radius-lg);
+  background: var(--kw-surface);
+  padding: 12px;
+}
+
+.kemo-reference-live input {
+  min-height: 40px !important;
+  border: 1px solid var(--kw-outline-variant) !important;
+  border-radius: var(--kw-radius-md) !important;
+  background: var(--kw-surface) !important;
+  padding: 0 42px 0 12px !important;
+  color: var(--kw-on-surface) !important;
+}
+
+.kemo-reference-live input:focus {
+  border-color: var(--kw-primary) !important;
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.16) !important;
+}
+
+.kemo-reference-settings .rounded-full {
+  border-radius: var(--kw-radius-lg) !important;
+}
+
+.kemo-reference-settings .w-8.h-8.rounded-full,
+.kemo-reference-settings .w-20.h-20.rounded-full {
+  border-radius: 999px !important;
+}
+
+@media (max-width: 767px) {
+  .kemo-reference-settings {
+    display: block !important;
+    min-height: 100vh !important;
+    overflow-y: auto !important;
+  }
+
+  .kemo-reference-settings .kw-designer-nav {
+    position: static !important;
+    width: 100% !important;
+    min-height: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--kw-outline-variant) !important;
+    padding: 16px !important;
+  }
+
+  .kemo-reference-settings .kw-designer-brand {
+    padding: 0 0 14px !important;
+  }
+
+  .kemo-reference-settings .kw-designer-new,
+  .kemo-reference-settings .kw-sidebar-control-row,
+  .kemo-reference-settings .kw-language-segment {
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  .kemo-reference-settings .kw-designer-nav-list,
+  .kemo-reference-settings .kw-designer-footer-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .kemo-reference-settings .kw-designer-nav-item {
+    border-left: 0 !important;
+    border-radius: var(--kw-radius-lg) !important;
+    padding: 0 12px !important;
+  }
+
+  .kemo-reference-settings > .flex-1 {
+    margin-left: 0 !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .kemo-reference-live main {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .kemo-live-inspector {
+    width: 100% !important;
+    max-height: 44dvh;
+    border-left: 0 !important;
+    border-top: 1px solid var(--kw-outline-variant) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .kemo-live-topbar {
+    height: auto !important;
+    min-height: 64px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    padding: 12px 16px !important;
+  }
+
+  .kemo-live-topbar-left,
+  .kemo-live-controls {
+    min-width: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .kemo-live-topbar-left {
+    align-items: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+
+  .kemo-live-session-title {
+    max-width: 100%;
+    flex-basis: 100%;
+    margin-left: 0 !important;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+}
+
+/* Commercial workspace layout hardening: collapsible rails and text-safe cards. */
+.kemo-reference-workspace {
+  --kw-sidebar-width: 280px;
+  --kw-inspector-width: 320px;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed {
+  --kw-sidebar-width: 72px;
+}
+
+.kemo-reference-workspace.is-inspector-collapsed {
+  --kw-inspector-width: 0px;
+}
+
+.kemo-reference-workspace .kw-designer-nav {
+  width: var(--kw-sidebar-width) !important;
+  overflow: hidden !important;
+  transition: none !important;
+}
+
+.kemo-reference-workspace .kw-workspace-main {
+  margin-left: var(--kw-sidebar-width) !important;
+  min-width: 0 !important;
+  transition: none !important;
+}
+
+.kemo-reference-workspace .kw-designer-inspector {
+  width: var(--kw-inspector-width) !important;
+  min-width: var(--kw-inspector-width) !important;
+  overflow: hidden !important;
+  opacity: 1;
+  transition: none !important;
+}
+
+.kemo-reference-workspace.is-inspector-collapsed .kw-designer-inspector {
+  border-left-color: transparent !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kemo-reference-workspace .kw-floating-inspector-toggle,
+.kemo-reference-live .kw-floating-inspector-toggle {
+  position: fixed;
+  right: 14px;
+  top: 78px;
+  z-index: 80;
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--kw-outline-variant);
+  border-radius: var(--kw-radius-lg);
+  background: var(--kw-surface);
+  color: var(--kw-on-surface);
+}
+
+.kemo-reference-workspace.is-inspector-collapsed .kw-floating-inspector-toggle,
+.kemo-reference-live.is-live-inspector-collapsed .kw-floating-inspector-toggle {
+  display: inline-flex;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-nav {
+  padding-right: 10px !important;
+  padding-left: 10px !important;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-brand-row {
+  grid-template-columns: 1fr !important;
+  justify-items: center;
+  padding-bottom: 14px;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-brand {
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-brand > span:last-child,
+.kemo-reference-workspace.is-sidebar-collapsed .kw-nav-label,
+.kemo-reference-workspace.is-sidebar-collapsed .kw-sidebar-control-row > span,
+.kemo-reference-workspace.is-sidebar-collapsed .kw-language-segment,
+.kemo-reference-workspace.is-sidebar-collapsed .workspace-ui-switcher {
+  display: none !important;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-sidebar-toggle {
+  margin-inline: auto;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-new,
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-nav-item {
+  width: 44px !important;
+  justify-content: center !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+  border-left-width: 0 !important;
+  border-radius: var(--kw-radius-lg) !important;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-sidebar-control-row {
+  min-height: 0 !important;
+  margin: 0 0 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.kemo-reference-workspace .kw-content,
+.kemo-reference-workspace .kw-page-stack,
+.kemo-reference-workspace .kw-project-card,
+.kemo-reference-workspace .kw-record-card,
+.kemo-reference-workspace .kw-artifact-card,
+.kemo-reference-workspace .kw-source-table,
+.kemo-reference-workspace .kw-source-inspector,
+.kemo-reference-workspace .kw-designer-inspector button,
+.kemo-reference-live .kemo-live-inspector,
+.kemo-reference-live .kemo-live-inspector *,
+.kemo-reference-live #transcript-container,
+.kemo-reference-live #transcript-container * {
+  min-width: 0 !important;
+}
+
+.kemo-reference-workspace .kw-page-heading {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+}
+
+.kemo-reference-workspace .kw-page-heading > div {
+  min-width: 0 !important;
+}
+
+.kemo-reference-workspace .kw-page-heading h1,
+.kemo-reference-workspace .kw-page-heading p,
+.kemo-reference-workspace .kw-record-card h3,
+.kemo-reference-workspace .kw-record-card p,
+.kemo-reference-workspace .kw-artifact-card h3,
+.kemo-reference-workspace .kw-artifact-card p,
+.kemo-reference-workspace .kw-designer-inspector p,
+.kemo-reference-workspace .kw-designer-inspector span,
+.kemo-reference-live p,
+.kemo-reference-live small,
+.kemo-reference-live strong {
+  overflow-wrap: anywhere !important;
+}
+
+.kemo-reference-workspace .kw-record-card,
+.kemo-reference-workspace .kw-artifact-card {
+  min-height: 132px !important;
+}
+
+.kemo-reference-workspace .kw-record-card p,
+.kemo-reference-workspace .kw-artifact-card p,
+.kemo-reference-workspace .kw-designer-inspector p {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.kemo-reference-live {
+  --kw-live-inspector-width: 380px;
+}
+
+.kemo-reference-live.is-live-inspector-collapsed {
+  --kw-live-inspector-width: 0px;
+}
+
+.kemo-reference-live .kemo-live-inspector {
+  width: var(--kw-live-inspector-width) !important;
+  min-width: var(--kw-live-inspector-width) !important;
+  overflow: hidden !important;
+  transition: none !important;
+}
+
+.kemo-reference-live.is-live-inspector-collapsed .kemo-live-inspector {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kemo-reference-live .kemo-live-progress-item small,
+.kemo-reference-live .kemo-live-empty-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.kemo-reference-live aside .bg-surface p {
+  max-height: 116px;
+  overflow-y: auto;
+}
+
+@media (max-width: 820px) {
+  .kemo-reference-workspace {
+    --kw-sidebar-width: 0px;
+  }
+
+  .kemo-reference-workspace .kw-workspace-main {
+    margin-left: 0 !important;
+  }
+
+  .kemo-reference-workspace .kw-designer-nav {
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .kemo-reference-workspace.is-sidebar-collapsed .kw-designer-nav {
+    display: none !important;
+  }
+
+  .kemo-reference-workspace .kw-page-heading {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+}
+
+/* Highest-priority rail state corrections. Keep this after all workspace rules. */
+.kemo-reference-workspace.is-sidebar-collapsed .kw-designer-nav {
+  width: 72px !important;
+  min-width: 72px !important;
+  flex-basis: 72px !important;
+}
+
+.kemo-reference-workspace.is-sidebar-collapsed .kw-workspace-main {
+  margin-left: 72px !important;
+}
+
+.kemo-reference-workspace:not(.is-sidebar-collapsed) .kw-designer-nav {
+  width: 280px !important;
+  min-width: 280px !important;
+  flex-basis: 280px !important;
+}
+
+.kemo-reference-workspace:not(.is-sidebar-collapsed) .kw-workspace-main {
+  margin-left: 280px !important;
+}
+
+.kemo-reference-workspace.is-inspector-collapsed .kw-designer-inspector {
+  width: 0 !important;
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+  border-left-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.kemo-reference-workspace:not(.is-inspector-collapsed) .kw-designer-inspector {
+  width: 320px !important;
+  min-width: 320px !important;
+  flex-basis: 320px !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.kemo-reference-live.is-live-inspector-collapsed .kemo-live-inspector {
+  width: 0 !important;
+  min-width: 0 !important;
+  flex-basis: 0 !important;
+  border-left-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.kemo-reference-live:not(.is-live-inspector-collapsed) .kemo-live-inspector {
+  width: 380px !important;
+  min-width: 380px !important;
+  flex-basis: 380px !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (max-width: 820px) {
+  .kemo-reference-workspace.is-sidebar-collapsed .kw-workspace-main,
+  .kemo-reference-workspace:not(.is-sidebar-collapsed) .kw-workspace-main {
+    margin-left: 0 !important;
+  }
+
+  .kemo-reference-workspace:not(.is-sidebar-collapsed) .kw-designer-nav {
+    width: 100% !important;
+    min-width: 100% !important;
+    flex-basis: auto !important;
   }
 }

@@ -153,19 +153,19 @@ export function NewJobForm({
     setError(null);
 
     try {
-      const supabase = createSupabaseBrowserClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
-
       const safeFileName = sanitizeFileName(file.name);
-      const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
       const mimeType = file.type || "application/octet-stream";
       const mediaFile = isMediaFile(file);
 
-      const { error: storageError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, { contentType: mimeType, upsert: false });
-      if (storageError) throw new Error(storageError.message || t("workspace.errors.uploadFailed"));
-
       if (mediaFile) {
+        const supabase = createSupabaseBrowserClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error(t("workspace.errors.notAuthenticated"));
+
+        const storagePath = `${user.id}/uploads/${crypto.randomUUID()}-${safeFileName}`;
+        const { error: storageError } = await supabase.storage.from(AUDIO_BUCKET).upload(storagePath, file, { contentType: mimeType, upsert: false });
+        if (storageError) throw new Error(storageError.message || t("workspace.errors.uploadFailed"));
+
         const sourceType = mimeType.startsWith("video/") ? "video_upload" : "audio_upload";
         const res = await fetch("/api/jobs", {
           method: "POST",
@@ -205,8 +205,8 @@ export function NewJobForm({
           rawText: documentText,
           extractedText: documentText,
           metadata: {
-            storage_path: storagePath,
             file_name: file.name,
+            safe_file_name: safeFileName,
             file_size: file.size,
             mime_type: mimeType,
           },
@@ -214,7 +214,6 @@ export function NewJobForm({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        await supabase.storage.from(AUDIO_BUCKET).remove([storagePath]).catch(() => {});
         throw new Error(json?.error?.message || t("workspace.errors.sourceImportFailed"));
       }
 

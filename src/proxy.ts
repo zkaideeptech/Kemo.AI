@@ -21,6 +21,17 @@ export default async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
+  if (pathname === "/") {
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = `/${defaultLocale}/app/jobs`;
+    const redirectResponse = NextResponse.redirect(homeUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+    });
+
+    return redirectResponse;
+  }
+
   const appRouteMatch = pathname.match(new RegExp(`^/(${locales.join("|")})/app(?:/|$)`));
   if (appRouteMatch && !user) {
     const loginUrl = request.nextUrl.clone();

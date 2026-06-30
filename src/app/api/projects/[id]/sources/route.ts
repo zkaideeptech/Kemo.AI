@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/response";
 import { extractSourceFromUrl } from "@/lib/providers/sourceProvider";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -37,9 +37,11 @@ export async function GET(
     return jsonError("not_found", "Project not found", { status: 404 });
   }
 
-  const { data, error } = await supabase
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
     .from("sources")
     .select("*")
+    .eq("user_id", user.id)
     .eq("project_id", id)
     .order("created_at", { ascending: false });
 
@@ -75,6 +77,8 @@ export async function POST(
     return jsonError("not_found", "Project not found", { status: 404 });
   }
 
+  const admin = createSupabaseAdminClient();
+
   const body = await req.json().catch(() => ({}));
   const rawUrl = typeof body?.url === "string" ? body.url : "";
   const rawTitle = typeof body?.title === "string" ? body.title.trim() : "";
@@ -104,9 +108,10 @@ export async function POST(
       return jsonError("invalid_payload", "Invalid url", { status: 400 });
     }
 
-    const { data: existing } = await supabase
+    const { data: existing } = await admin
       .from("sources")
       .select("*")
+      .eq("user_id", user.id)
       .eq("project_id", id)
       .eq("url", normalizedUrl)
       .maybeSingle();
@@ -153,7 +158,7 @@ export async function POST(
     } as Json;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("sources")
     .insert({
       user_id: user.id,
@@ -172,7 +177,8 @@ export async function POST(
     .single();
 
   if (error || !data) {
-    return jsonError("db_error", error?.message || "Unable to create source", { status: 500 });
+    console.error("Source insert failed:", error);
+    return jsonError("db_error", "Unable to create source", { status: 500 });
   }
 
   return jsonOk({ source: data as SourceRow }, { status: 201 });
